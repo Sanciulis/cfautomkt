@@ -86,6 +86,7 @@ Controles:
 - segredo dedicado para sessao (`ADMIN_SESSION_SECRET`)
 - senha dedicada para painel (`ADMIN_PANEL_PASSWORD`)
 - rate limit por IP e bloqueio temporario no `/admin/login` (ja implementado)
+- WAF/rate-limit na borda Cloudflare para `POST /admin/login` (ja configurado em producao)
 
 ## 5.3 Fluxo referral
 - Spoofing: cliques falsos para inflar `viral_points`

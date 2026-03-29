@@ -112,6 +112,16 @@ curl https://martech-viral-system-preview.bkpdsf.workers.dev/metrics/overview \
 
 ## 7) Troubleshooting
 
+### WAF login admin (producao)
+Configuracao ativa em `fluxoia.com`:
+- expressao: `POST /admin/login`
+- acao: `block`
+- limite: `5 requests / 10s` por `cf.colo.id + ip.src`
+- mitigacao: `10s`
+
+Observacao:
+- estes limites seguem restricoes do plano Free da Cloudflare para rate limiting.
+
 ### Deploy falha por conflito de rota no preview
 Sintoma:
 - erro `A route with the same pattern already exists`
