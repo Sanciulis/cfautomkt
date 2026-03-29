@@ -40,6 +40,10 @@ Tabelas:
 
 ## Endpoints principais
 - `GET /` status do sistema
+- `GET /admin/login` tela de autenticacao do painel admin
+- `POST /admin/login` cria sessao admin (cookie HttpOnly)
+- `POST /admin/logout` encerra sessao admin
+- `GET /admin` dashboard operacional (protegido por sessao)
 - `POST /user` cria usuario
 - `GET /user/:id` retorna perfil
 - `POST /campaign` cria campanha
@@ -101,10 +105,12 @@ Secrets necessarios no GitHub:
 ## Seguranca de segredos (obrigatorio)
 1. Nao commitar `.env` (protegido por `.gitignore`).
 2. Use apenas `.env.example` no repositorio.
-3. Rotacione imediatamente token Cloudflare e bearer token se houve exposicao.
+3. Rotacione imediatamente token Cloudflare e tokens/senhas administrativas se houve exposicao.
 4. Armazene segredos no GitHub Secrets e Cloudflare Secrets.
 5. Pipeline de scan de segredos: `.github/workflows/security-scan.yml`.
-6. Proteja endpoints administrativos com `ADMIN_API_KEY` (secret).
+6. Proteja APIs com `ADMIN_API_KEY`.
+7. Configure o painel admin com `ADMIN_PANEL_PASSWORD` e `ADMIN_SESSION_SECRET`.
+8. Login do painel admin possui bloqueio temporario por tentativas excessivas.
 
 ## Configuracao Wrangler
 Arquivo: `wrangler.toml`
@@ -115,14 +121,20 @@ Inclui:
 - `triggers.crons` para agente autonomo
 - ambiente `env.preview` com D1/KV separados de producao
 
-## Segredo de autenticacao do dispatcher
-Configure o token bearer usado no envio para o provedor externo:
+## Secrets de operacao (Cloudflare)
+Configure os segredos abaixo em producao e preview:
 ```bash
 npx wrangler secret put ADMIN_API_KEY
 npx wrangler secret put ADMIN_API_KEY --env preview
+npx wrangler secret put ADMIN_PANEL_PASSWORD
+npx wrangler secret put ADMIN_PANEL_PASSWORD --env preview
+npx wrangler secret put ADMIN_SESSION_SECRET
+npx wrangler secret put ADMIN_SESSION_SECRET --env preview
 npx wrangler secret put DISPATCH_BEARER_TOKEN
 npx wrangler secret put DISPATCH_BEARER_TOKEN --env preview
 ```
+
+Observacao: se `ADMIN_PANEL_PASSWORD` ou `ADMIN_SESSION_SECRET` nao forem definidos, o Worker usa `ADMIN_API_KEY` como fallback por compatibilidade.
 
 ## Teste rapido de dispatch (preview)
 1. Criar usuarios e campanha.

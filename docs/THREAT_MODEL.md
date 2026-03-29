@@ -17,6 +17,9 @@ Objetivo:
 - `CLOUDFLARE_API_TOKEN`
 - `CLOUDFLARE_ACCOUNT_ID` (nao secreto, mas sensivel operacionalmente)
 - `DISPATCH_BEARER_TOKEN`
+- `ADMIN_API_KEY`
+- `ADMIN_PANEL_PASSWORD`
+- `ADMIN_SESSION_SECRET`
 - dados de usuarios (telefone/email/perfil)
 - historico de interacoes e decisoes do agente
 - controles de deploy (pipeline CI/CD)
@@ -33,6 +36,8 @@ Objetivo:
 - log de segredo em CI ou terminal
 - token Cloudflare com privilegio excessivo
 - abuso de endpoint de dispatch sem autenticacao forte
+- brute force em `/admin/login`
+- furto/reuso de cookie de sessao admin
 - webhook externo comprometido ou mal configurado
 - replay/abuso de links de referral
 - uso malicioso de `webhookUrlOverride` em preview (SSRF/control plane abuse)
@@ -68,6 +73,20 @@ Controles:
 - logs de `send_failed` + monitoramento de erro
 - `webhookUrlOverride` permitido apenas em `preview` (ja implementado)
 
+## 5.2b Fluxo painel admin (senha + sessao)
+- Spoofing: tentativa de login com senha vazada
+- Tampering: manipulacao de cookie de sessao
+- Info Disclosure: vazamento de mensagem de erro com detalhe sensivel
+- DoS: brute force no endpoint de login
+- Elevation: uso da mesma chave em API e painel
+
+Controles:
+- cookie `HttpOnly + Secure + SameSite=Strict` (ja implementado)
+- sessao assinada com HMAC e TTL de 12h (ja implementado)
+- segredo dedicado para sessao (`ADMIN_SESSION_SECRET`)
+- senha dedicada para painel (`ADMIN_PANEL_PASSWORD`)
+- rate limit por IP e bloqueio temporario no `/admin/login` (ja implementado)
+
 ## 5.3 Fluxo referral
 - Spoofing: cliques falsos para inflar `viral_points`
 - Tampering: manipulacao do `ref` no link
@@ -83,6 +102,7 @@ Controles:
 |---|---|---|---|
 | Token Cloudflare vazado | Alta | Critico | Critico |
 | Dispatch sem auth robusta | Media | Alto | Alto |
+| Brute force no login admin | Media | Alto | Alto |
 | Workflow CI alterado maliciosamente | Media | Alto | Alto |
 | Webhook externo comprometido | Media | Medio/Alto | Alto |
 | Abuso de referral | Alta | Medio | Medio/Alto |
@@ -95,12 +115,14 @@ Controles:
 4. Configurar `DISPATCH_BEARER_TOKEN` em Cloudflare Secrets (prod e preview).
 5. Habilitar scanning de segredos no CI.
 6. Revisar escopo do token Cloudflare para privilegio minimo.
+7. Definir `ADMIN_PANEL_PASSWORD` e `ADMIN_SESSION_SECRET` dedicados.
 
 ## 8) Medidas recomendadas (curto prazo)
 1. Proteger endpoints administrativos com autenticacao explicita.
-2. Adicionar allowlist de host para `webhookUrlOverride` em preview.
-3. Criar retries com fila + backoff para dispatch.
-4. Adicionar alertas de:
+2. Aplicar regra WAF dedicada para `/admin/login` com threshold por ASN/pais.
+3. Adicionar allowlist de host para `webhookUrlOverride` em preview.
+4. Criar retries com fila + backoff para dispatch.
+5. Adicionar alertas de:
    - pico de `send_failed`
    - pico anormal de `referral_click`
    - deploy fora de janela esperada

@@ -11,6 +11,7 @@ O sistema roda na Cloudflare Edge para automatizar marketing com:
 | Componente | Papel | Arquivo/config |
 |---|---|---|
 | Cloudflare Worker + Hono | API HTTP, orchestracao de fluxo e agente scheduled | `src/index.ts` |
+| Admin Web Panel | Operacao manual com login/sessao (criar user/campaign e dispatch) | rotas `/admin/*` em `src/index.ts` |
 | D1 | Persistencia de usuarios, campanhas, eventos e decisoes do agente | `schema.sql` |
 | KV | Dedupe de clique referral por IP hash + janela TTL | binding `MARTECH_KV` |
 | Workers AI | Geracao de copy personalizada | binding `AI` |
@@ -19,7 +20,7 @@ O sistema roda na Cloudflare Edge para automatizar marketing com:
 
 ## 3) Arquitetura em alto nivel
 ```text
-[Client/Admin]
+[Client API + Browser Admin]
     |
     v
 [Cloudflare Worker API - Hono]
@@ -41,6 +42,16 @@ O sistema roda na Cloudflare Edge para automatizar marketing com:
 3. Persiste em `users`
 
 Resultado: usuario pronto para funis e referral.
+
+### 4.1b Painel admin (web)
+1. `GET /admin/login` abre tela de autenticacao
+2. `POST /admin/login` valida senha (`ADMIN_PANEL_PASSWORD`)
+3. Worker cria cookie de sessao assinado (`ADMIN_SESSION_SECRET`)
+4. `GET /admin` carrega dashboard com metricas, campanhas e decisoes
+5. Acoes via formulario:
+   - `POST /admin/actions/user/create`
+   - `POST /admin/actions/campaign/create`
+   - `POST /admin/actions/campaign/dispatch`
 
 ### 4.2 Registro de eventos
 1. `POST /interaction`
@@ -131,6 +142,8 @@ Tudo logado em `agent_decisions`.
 - `LANDING_PAGE_URL`: destino do redirect referral
 - `DISPATCH_WEBHOOK_URL` e overrides por canal (`WHATSAPP_`, `EMAIL_`, `TELEGRAM_`)
 - `DISPATCH_BEARER_TOKEN` (secret) para autenticar envio
+- `ADMIN_API_KEY` (secret) para proteger API administrativa
+- `ADMIN_PANEL_PASSWORD` e `ADMIN_SESSION_SECRET` (secrets) para painel web
 
 ## 9) Limites atuais
 - Sem fila com retry/backoff no dispatch (falhas sao logadas, mas sem reprocessamento automatico)

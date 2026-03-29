@@ -18,6 +18,30 @@ Endpoints protegidos:
 - `POST /campaign/:id/send`
 - `GET /metrics/overview`
 
+## Autenticacao do painel admin (web)
+O painel web usa login por senha e cookie de sessao assinado.
+
+Secrets recomendados:
+- `ADMIN_PANEL_PASSWORD`
+- `ADMIN_SESSION_SECRET`
+
+Compatibilidade:
+- Se esses secrets nao estiverem definidos, o Worker usa `ADMIN_API_KEY` como fallback.
+
+Rotas do painel:
+- `GET /admin/login` (formulario de login)
+- `POST /admin/login` (valida senha e seta cookie `martech_admin_session`)
+- `POST /admin/logout` (invalida cookie)
+- `GET /admin` (dashboard protegido)
+- `POST /admin/actions/user/create` (cria usuario via formulario)
+- `POST /admin/actions/campaign/create` (cria campanha via formulario)
+- `POST /admin/actions/campaign/dispatch` (executa dispatch via formulario)
+
+Protecoes adicionais:
+- rate limit no login por IP (janela de 10 min)
+- bloqueio temporario apos 5 falhas consecutivas (15 min)
+- em bloqueio, resposta `429` com header `Retry-After`
+
 ## GET /
 Status do worker.
 
@@ -202,4 +226,5 @@ Response:
 - `400`: payload invalido
 - `404`: usuario/campanha nao encontrado
 - `409`: campanha pausada sem `force=true`
+- `429`: muitas tentativas de login admin
 - `500`: webhook nao configurado para canal
