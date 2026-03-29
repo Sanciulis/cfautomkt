@@ -74,6 +74,11 @@ npm run dev
 npm run typecheck
 ```
 
+5. Rodar testes de integracao:
+```bash
+npm test
+```
+
 ## Deploy
 ### Producao
 ```bash
