@@ -239,6 +239,45 @@ Payload enviado ao webhook inclui:
 - `referralUrl`
 - `unsubscribeUrl` (quando disponivel para o usuario)
 
+### Exemplo de integracao WhatsApp com gateway Baileys
+Destino sugerido em `WHATSAPP_WEBHOOK_URL`:
+- `https://<gateway>/dispatch/whatsapp`
+
+Autenticacao:
+- Worker envia `Authorization: Bearer <DISPATCH_BEARER_TOKEN>`
+- Gateway deve validar o mesmo token
+
+Payload esperado no gateway:
+```json
+{
+  "channel": "whatsapp",
+  "campaign": { "id": "cmp-whats-001", "name": "Campanha WhatsApp MVP" },
+  "user": {
+    "id": "u-whats-001",
+    "name": "Ana",
+    "email": "ana@example.com",
+    "phone": "+5511999990001",
+    "preferredChannel": "whatsapp"
+  },
+  "message": "Oferta limitada para hoje",
+  "referralUrl": "https://fluxoia.com/ref/abc",
+  "unsubscribeUrl": "https://fluxoia.com/unsubscribe/abc",
+  "metadata": { "batch": "2026-03-29" }
+}
+```
+
+Resposta esperada (2xx):
+```json
+{
+  "status": "success",
+  "provider": "baileys",
+  "campaignId": "cmp-whats-001",
+  "userId": "u-whats-001",
+  "to": "5511999990001@s.whatsapp.net",
+  "messageId": "ABCD1234"
+}
+```
+
 ## GET /metrics/overview
 Consolida metricas do sistema.
 

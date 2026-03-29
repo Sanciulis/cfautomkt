@@ -13,6 +13,22 @@ npx wrangler d1 execute martech_db --local --file=./schema.sql
 npx wrangler dev
 ```
 
+### 2.1) Gateway WhatsApp (Baileys) local
+```bash
+cd integrations/whatsapp-baileys-gateway
+cp .env.example .env
+npm install
+npm run dev
+```
+
+Checklist:
+1. Definir `DISPATCH_BEARER_TOKEN` no `.env` do gateway.
+2. Autenticar WhatsApp via QR (terminal) ou pairing code.
+3. Confirmar health:
+```bash
+curl http://localhost:8788/health
+```
+
 ## 3) Migracoes de banco
 
 ### Banco novo
@@ -59,6 +75,10 @@ npx wrangler secret put ADMIN_SESSION_SECRET --env preview
 npx wrangler secret put DISPATCH_BEARER_TOKEN
 npx wrangler secret put DISPATCH_BEARER_TOKEN --env preview
 ```
+
+Gateway Baileys:
+- configure o mesmo valor de `DISPATCH_BEARER_TOKEN` no `.env` do gateway
+- configure `GATEWAY_ADMIN_TOKEN` dedicado para endpoints de sessao (`/session/*`)
 
 Observacao:
 - O painel admin funciona com fallback para `ADMIN_API_KEY`, mas em producao use `ADMIN_PANEL_PASSWORD` e `ADMIN_SESSION_SECRET` dedicados.
@@ -121,6 +141,19 @@ curl -X POST https://martech-viral-system-preview.bkpdsf.workers.dev/campaign/cm
 ```
 Esperado: erro `400` informando host nao allowlisted.
 
+### 6.10 Smoke test do gateway Baileys
+```bash
+curl http://localhost:8788/health
+
+curl -X GET http://localhost:8788/session/status \
+  -H "Authorization: Bearer <GATEWAY_ADMIN_TOKEN>"
+
+curl -X POST http://localhost:8788/dispatch/whatsapp \
+  -H "Authorization: Bearer <DISPATCH_BEARER_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d "{\"channel\":\"whatsapp\",\"user\":{\"id\":\"u-001\",\"phone\":\"+5511999990001\"},\"message\":\"Teste gateway\"}"
+```
+
 ### 6.7 Conferir metricas
 ```bash
 curl https://martech-viral-system-preview.bkpdsf.workers.dev/metrics/overview \
@@ -174,6 +207,13 @@ Checklist:
 2. Secret `DISPATCH_BEARER_TOKEN` configurado
 3. Destino do usuario existe (`phone` ou `email`)
 4. Provedor externo retornando 2xx
+
+### Gateway Baileys nao conecta
+Checklist:
+1. Verificar `/session/status` para `connected=true`.
+2. Se `connected=false`, obter QR novo ou usar `/session/pairing-code`.
+3. Confirmar que pasta `session/` persiste entre reinicios.
+4. Se sessao foi invalidada, remover `session/` e reautenticar.
 
 ### Dispatch retorna erro de `webhookUrlOverride`
 Checklist:

@@ -110,6 +110,13 @@ type AdminLoginThrottleState = {
   blockedUntil: number
 }
 
+type AdminWhatsAppIntegrationConfig = {
+  webhookUrl: string | null
+  testPhone: string | null
+  testMessage: string | null
+  updatedAt: string | null
+}
+
 const EVENT_WEIGHTS: Record<InteractionEvent, number> = {
   sent: 0.25,
   opened: 1,
@@ -129,6 +136,9 @@ const ADMIN_SESSION_TTL_SECONDS = 60 * 60 * 12
 const ADMIN_LOGIN_WINDOW_SECONDS = 60 * 10
 const ADMIN_LOGIN_MAX_FAILURES = 5
 const ADMIN_LOGIN_BLOCK_SECONDS = 60 * 15
+const ADMIN_WHATSAPP_INTEGRATION_CONFIG_KEY = 'admin_config:integration:whatsapp'
+const DEFAULT_WHATSAPP_TEST_MESSAGE =
+  'Mensagem de teste do painel admin. Se voce recebeu isso, a integracao esta funcionando.'
 
 const app = new Hono<{ Bindings: Bindings }>()
 
@@ -830,6 +840,73 @@ function buildAdminRedirect(notice: string, kind: 'success' | 'error' = 'success
   return `/admin?notice=${encodeURIComponent(notice)}&kind=${encodeURIComponent(kind)}`
 }
 
+function validateAdminIntegrationWebhookUrl(
+  value: string,
+  env: Bindings
+): { ok: true; normalizedUrl: string } | { ok: false; error: string } {
+  let parsedUrl: URL
+  try {
+    parsedUrl = new URL(value)
+  } catch {
+    return { ok: false, error: 'Webhook URL invalida.' }
+  }
+
+  if (parsedUrl.protocol !== 'https:' && parsedUrl.protocol !== 'http:') {
+    return { ok: false, error: 'Webhook URL deve usar http:// ou https://.' }
+  }
+
+  if ((env.APP_ENV ?? '').toLowerCase() === 'production' && parsedUrl.protocol !== 'https:') {
+    return { ok: false, error: 'Em producao, webhook URL deve usar https://.' }
+  }
+
+  if (parsedUrl.username || parsedUrl.password) {
+    return { ok: false, error: 'Webhook URL nao pode conter credenciais.' }
+  }
+
+  return { ok: true, normalizedUrl: parsedUrl.toString() }
+}
+
+function normalizeWhatsAppIntegrationConfig(input: unknown, env: Bindings): AdminWhatsAppIntegrationConfig {
+  const defaultsWebhook =
+    safeString(env.WHATSAPP_WEBHOOK_URL) ?? safeString(env.DISPATCH_WEBHOOK_URL) ?? null
+
+  if (!input || typeof input !== 'object') {
+    return {
+      webhookUrl: defaultsWebhook,
+      testPhone: null,
+      testMessage: DEFAULT_WHATSAPP_TEST_MESSAGE,
+      updatedAt: null,
+    }
+  }
+
+  const parsed = input as Partial<AdminWhatsAppIntegrationConfig>
+  return {
+    webhookUrl: safeString(parsed.webhookUrl) ?? defaultsWebhook,
+    testPhone: safeString(parsed.testPhone),
+    testMessage: safeString(parsed.testMessage) ?? DEFAULT_WHATSAPP_TEST_MESSAGE,
+    updatedAt: safeString(parsed.updatedAt),
+  }
+}
+
+async function getAdminWhatsAppIntegrationConfig(env: Bindings): Promise<AdminWhatsAppIntegrationConfig> {
+  const raw = await env.MARTECH_KV.get(ADMIN_WHATSAPP_INTEGRATION_CONFIG_KEY)
+  if (!raw) return normalizeWhatsAppIntegrationConfig(null, env)
+
+  try {
+    const parsed = JSON.parse(raw)
+    return normalizeWhatsAppIntegrationConfig(parsed, env)
+  } catch {
+    return normalizeWhatsAppIntegrationConfig(null, env)
+  }
+}
+
+async function saveAdminWhatsAppIntegrationConfig(
+  env: Bindings,
+  config: AdminWhatsAppIntegrationConfig
+): Promise<void> {
+  await env.MARTECH_KV.put(ADMIN_WHATSAPP_INTEGRATION_CONFIG_KEY, JSON.stringify(config))
+}
+
 function renderAdminLoginPage(message?: string): string {
   const messageHtml = message
     ? `<p class="notice">${escapeHtml(message)}</p>`
@@ -957,6 +1034,13 @@ function renderAdminDashboardPage(data: {
     conversionRate: number
     kFactor: number
   }
+  whatsappIntegration: {
+    webhookUrl: string | null
+    testPhone: string | null
+    testMessage: string | null
+    updatedAt: string | null
+    dispatchTokenConfigured: boolean
+  }
   campaigns: Array<{ id: string; name: string; channel: string; status: string; updated_at: string }>
   decisions: Array<{ decision_type: string; target_id: string | null; reason: string; created_at: string }>
 }): string {
@@ -978,6 +1062,16 @@ function renderAdminDashboardPage(data: {
         `<li><strong>${escapeHtml(decision.decision_type)}</strong> - ${escapeHtml(decision.reason)} <span>(${escapeHtml(decision.created_at)})</span></li>`
     )
     .join('')
+
+  const whatsappWebhookUrl = escapeHtml(data.whatsappIntegration.webhookUrl ?? '')
+  const whatsappTestPhone = escapeHtml(data.whatsappIntegration.testPhone ?? '')
+  const whatsappTestMessage = escapeHtml(data.whatsappIntegration.testMessage ?? DEFAULT_WHATSAPP_TEST_MESSAGE)
+  const whatsappUpdatedAtLabel = data.whatsappIntegration.updatedAt
+    ? `Atualizado em ${data.whatsappIntegration.updatedAt}`
+    : 'Sem configuracao salva ainda.'
+  const dispatchTokenStatus = data.whatsappIntegration.dispatchTokenConfigured
+    ? '<span class="status-pill status-ok">DISPATCH_BEARER_TOKEN configurado</span>'
+    : '<span class="status-pill status-warn">DISPATCH_BEARER_TOKEN nao configurado</span>'
 
   return `<!doctype html>
 <html lang="pt-BR">
@@ -1023,6 +1117,34 @@ function renderAdminDashboardPage(data: {
       align-items: center;
       justify-content: space-between;
     }
+    .menu {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px;
+      position: sticky;
+      top: 12px;
+      z-index: 4;
+      box-shadow: 0 8px 24px rgba(20, 27, 34, 0.08);
+    }
+    .menu a {
+      text-decoration: none;
+      color: var(--accent-dark);
+      border: 1px solid #c2d4d3;
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 0.86rem;
+      font-weight: 700;
+      background: #eef8f7;
+      transition: all 0.2s ease;
+    }
+    .menu a:hover {
+      background: #d8f1ef;
+      border-color: #8dc6c1;
+    }
     h1 { margin: 0; font-size: 1.5rem; }
     .muted { color: var(--muted); font-size: 0.9rem; margin-top: 4px; }
     .notice {
@@ -1066,12 +1188,16 @@ function renderAdminDashboardPage(data: {
       gap: 5px;
       margin-bottom: 10px;
     }
-    .field input, .field select {
+    .field input, .field select, .field textarea {
       width: 100%;
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 9px 10px;
       font: inherit;
+    }
+    .field textarea {
+      min-height: 88px;
+      resize: vertical;
     }
     .row {
       display: grid;
@@ -1090,11 +1216,25 @@ function renderAdminDashboardPage(data: {
       cursor: pointer;
     }
     button.secondary { background: #5f6b76; }
+    .helper { color: var(--muted); font-size: 0.85rem; margin: 0 0 10px 0; line-height: 1.35; }
+    .status-pill {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 4px 9px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+    .status-ok { background: #e7f7ef; color: #17663f; border: 1px solid #b5e7cc; }
+    .status-warn { background: #fff4e5; color: #8b5d14; border: 1px solid #efd7b2; }
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .actions button { flex: 1; min-width: 190px; }
     table { width: 100%; border-collapse: collapse; overflow: hidden; }
     th, td { text-align: left; padding: 8px; border-bottom: 1px solid #eef2f6; font-size: 0.92rem; }
     th { color: var(--muted); font-weight: 600; }
     ul { margin: 0; padding-left: 18px; display: grid; gap: 8px; }
     .logout { display: inline; }
+    .anchor-target { scroll-margin-top: 92px; }
   </style>
 </head>
 <body>
@@ -1109,7 +1249,16 @@ function renderAdminDashboardPage(data: {
       </form>
     </section>
     ${noticeHtml}
-    <section class="cards">
+    <nav class="menu" aria-label="Menu admin">
+      <a href="#visao-geral">Visao geral</a>
+      <a href="#usuarios">Usuarios</a>
+      <a href="#campanhas">Campanhas</a>
+      <a href="#disparo">Disparo</a>
+      <a href="#integracao">Integracao</a>
+      <a href="#agente">Agente</a>
+      <a href="#lista-campanhas">Lista de campanhas</a>
+    </nav>
+    <section id="visao-geral" class="cards anchor-target">
       <article class="card"><small>Usuarios</small><strong>${data.totals.users}</strong></article>
       <article class="card"><small>Interacoes</small><strong>${data.totals.interactions}</strong></article>
       <article class="card"><small>Envios</small><strong>${data.totals.sent}</strong></article>
@@ -1118,7 +1267,7 @@ function renderAdminDashboardPage(data: {
       <article class="card"><small>Campanhas ativas</small><strong>${data.totals.activeCampaigns}</strong></article>
     </section>
     <section class="grid">
-      <form method="post" action="/admin/actions/user/create">
+      <form id="usuarios" class="anchor-target" method="post" action="/admin/actions/user/create">
         <h2>Criar Usuario</h2>
         <div class="row">
           <label class="field"><span>ID (opcional)</span><input name="id" /></label>
@@ -1158,7 +1307,7 @@ function renderAdminDashboardPage(data: {
         </div>
         <button class="secondary" type="submit">Aplicar opt-out</button>
       </form>
-      <form method="post" action="/admin/actions/campaign/create">
+      <form id="campanhas" class="anchor-target" method="post" action="/admin/actions/campaign/create">
         <h2>Criar Campanha</h2>
         <div class="row">
           <label class="field"><span>ID (opcional)</span><input name="id" /></label>
@@ -1177,7 +1326,7 @@ function renderAdminDashboardPage(data: {
         </div>
         <button type="submit">Criar campanha</button>
       </form>
-      <form method="post" action="/admin/actions/campaign/dispatch">
+      <form id="disparo" class="anchor-target" method="post" action="/admin/actions/campaign/dispatch">
         <h2>Disparar Campanha</h2>
         <div class="row">
           <label class="field"><span>Campaign ID</span><input name="campaignId" required /></label>
@@ -1205,12 +1354,27 @@ function renderAdminDashboardPage(data: {
         </div>
         <button type="submit">Executar dispatch</button>
       </form>
-      <section class="log">
+      <form id="integracao" class="anchor-target" method="post" action="/admin/actions/integration/save">
+        <h2>Integracao WhatsApp</h2>
+        ${dispatchTokenStatus}
+        <p class="helper">Configure o webhook de entrega WhatsApp (ex.: gateway Baileys) e execute um envio de teste controlado.</p>
+        <label class="field"><span>Webhook URL</span><input name="webhookUrl" value="${whatsappWebhookUrl}" placeholder="https://wa-gateway.seu-dominio.com/dispatch/whatsapp" required /></label>
+        <div class="row">
+          <label class="field"><span>Telefone de teste</span><input name="testPhone" value="${whatsappTestPhone}" placeholder="+5511999990001" /></label>
+          <label class="field"><span>Ultima atualizacao</span><input value="${escapeHtml(whatsappUpdatedAtLabel)}" readonly /></label>
+        </div>
+        <label class="field"><span>Mensagem de teste</span><textarea name="testMessage">${whatsappTestMessage}</textarea></label>
+        <div class="actions">
+          <button type="submit">Salvar configuracao</button>
+          <button class="secondary" type="submit" formaction="/admin/actions/integration/test">Salvar e testar</button>
+        </div>
+      </form>
+      <section id="agente" class="log anchor-target">
         <h2 class="panel-title">Decisoes recentes do agente</h2>
         <ul>${decisionsHtml || '<li>Sem decisoes registradas.</li>'}</ul>
       </section>
     </section>
-    <section>
+    <section id="lista-campanhas" class="anchor-target">
       <h2 class="panel-title">Campanhas</h2>
       <table>
         <thead><tr><th>ID</th><th>Nome</th><th>Canal</th><th>Status</th><th>Atualizado em</th></tr></thead>
@@ -1518,13 +1682,16 @@ app.get('/admin', async (c) => {
   const unauthorized = await ensureAdminSession(c)
   if (unauthorized) return c.redirect('/admin/login', 302)
 
-  const overview = await getOverviewMetrics(c.env)
-  const campaigns = await c.env.DB.prepare(
-    'SELECT id, name, channel, status, updated_at FROM campaigns ORDER BY updated_at DESC LIMIT 30'
-  ).all<{ id: string; name: string; channel: string; status: string; updated_at: string }>()
-  const decisions = await c.env.DB.prepare(
-    'SELECT decision_type, target_id, reason, created_at FROM agent_decisions ORDER BY created_at DESC LIMIT 20'
-  ).all<{ decision_type: string; target_id: string | null; reason: string; created_at: string }>()
+  const [overview, campaigns, decisions, whatsappIntegration] = await Promise.all([
+    getOverviewMetrics(c.env),
+    c.env.DB.prepare(
+      'SELECT id, name, channel, status, updated_at FROM campaigns ORDER BY updated_at DESC LIMIT 30'
+    ).all<{ id: string; name: string; channel: string; status: string; updated_at: string }>(),
+    c.env.DB.prepare(
+      'SELECT decision_type, target_id, reason, created_at FROM agent_decisions ORDER BY created_at DESC LIMIT 20'
+    ).all<{ decision_type: string; target_id: string | null; reason: string; created_at: string }>(),
+    getAdminWhatsAppIntegrationConfig(c.env),
+  ])
 
   const notice = safeString(c.req.query('notice'))
   const noticeKind = safeString(c.req.query('kind'))
@@ -1535,6 +1702,13 @@ app.get('/admin', async (c) => {
       noticeKind,
       totals: overview.totals,
       metrics: overview.metrics,
+      whatsappIntegration: {
+        webhookUrl: whatsappIntegration.webhookUrl,
+        testPhone: whatsappIntegration.testPhone,
+        testMessage: whatsappIntegration.testMessage,
+        updatedAt: whatsappIntegration.updatedAt,
+        dispatchTokenConfigured: Boolean(safeString(c.env.DISPATCH_BEARER_TOKEN)),
+      },
       campaigns: campaigns.results ?? [],
       decisions: decisions.results ?? [],
     })
@@ -1650,6 +1824,148 @@ app.post('/admin/actions/campaign/dispatch', async (c) => {
     ),
     302
   )
+})
+
+// Admin Action - Save WhatsApp integration config
+app.post('/admin/actions/integration/save', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    const currentConfig = await getAdminWhatsAppIntegrationConfig(c.env)
+    const form = await c.req.parseBody()
+    const rawWebhookUrl =
+      safeString(typeof form.webhookUrl === 'string' ? form.webhookUrl : null) ??
+      currentConfig.webhookUrl
+    if (!rawWebhookUrl) {
+      return c.redirect(buildAdminRedirect('Webhook URL e obrigatoria.', 'error'), 302)
+    }
+
+    const validation = validateAdminIntegrationWebhookUrl(rawWebhookUrl, c.env)
+    if (!validation.ok) return c.redirect(buildAdminRedirect(validation.error, 'error'), 302)
+
+    const testPhone =
+      safeString(typeof form.testPhone === 'string' ? form.testPhone : null) ?? currentConfig.testPhone
+    const testMessage =
+      safeString(typeof form.testMessage === 'string' ? form.testMessage : null) ??
+      currentConfig.testMessage ??
+      DEFAULT_WHATSAPP_TEST_MESSAGE
+
+    const config: AdminWhatsAppIntegrationConfig = {
+      webhookUrl: validation.normalizedUrl,
+      testPhone,
+      testMessage,
+      updatedAt: new Date().toISOString(),
+    }
+    await saveAdminWhatsAppIntegrationConfig(c.env, config)
+
+    return c.redirect(buildAdminRedirect('Configuracao da integracao WhatsApp salva.'), 302)
+  } catch (error) {
+    return c.redirect(
+      buildAdminRedirect(`Falha ao salvar configuracao da integracao: ${String(error)}`, 'error'),
+      302
+    )
+  }
+})
+
+// Admin Action - Save and test WhatsApp integration
+app.post('/admin/actions/integration/test', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    const currentConfig = await getAdminWhatsAppIntegrationConfig(c.env)
+    const form = await c.req.parseBody()
+
+    const rawWebhookUrl =
+      safeString(typeof form.webhookUrl === 'string' ? form.webhookUrl : null) ??
+      currentConfig.webhookUrl
+    if (!rawWebhookUrl) {
+      return c.redirect(buildAdminRedirect('Webhook URL e obrigatoria para testar.', 'error'), 302)
+    }
+
+    const validation = validateAdminIntegrationWebhookUrl(rawWebhookUrl, c.env)
+    if (!validation.ok) return c.redirect(buildAdminRedirect(validation.error, 'error'), 302)
+
+    const testPhone =
+      safeString(typeof form.testPhone === 'string' ? form.testPhone : null) ?? currentConfig.testPhone
+    if (!testPhone) {
+      return c.redirect(buildAdminRedirect('Informe um telefone de teste para WhatsApp.', 'error'), 302)
+    }
+
+    const testMessage =
+      safeString(typeof form.testMessage === 'string' ? form.testMessage : null) ??
+      currentConfig.testMessage ??
+      DEFAULT_WHATSAPP_TEST_MESSAGE
+
+    const dispatchToken = safeString(c.env.DISPATCH_BEARER_TOKEN)
+    if (!dispatchToken) {
+      return c.redirect(
+        buildAdminRedirect('DISPATCH_BEARER_TOKEN nao configurado no Worker.', 'error'),
+        302
+      )
+    }
+
+    const config: AdminWhatsAppIntegrationConfig = {
+      webhookUrl: validation.normalizedUrl,
+      testPhone,
+      testMessage,
+      updatedAt: new Date().toISOString(),
+    }
+    await saveAdminWhatsAppIntegrationConfig(c.env, config)
+
+    const requestOrigin = new URL(c.req.url).origin
+    const payload = {
+      channel: 'whatsapp',
+      campaign: {
+        id: 'admin-integration-test',
+        name: 'Admin Integration Test',
+      },
+      user: {
+        id: 'admin-test-user',
+        name: 'Teste Admin',
+        email: null,
+        phone: testPhone,
+        preferredChannel: 'whatsapp',
+      },
+      message: testMessage,
+      referralUrl: `${requestOrigin}/ref/admin-test`,
+      unsubscribeUrl: `${requestOrigin}/unsubscribe/admin-test`,
+      metadata: {
+        source: 'admin_panel_integration_test',
+        requestedAt: new Date().toISOString(),
+      },
+    }
+
+    const response = await fetch(validation.normalizedUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${dispatchToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+
+    const responseText = await response.text()
+    const compactPreview = responseText.replace(/\s+/g, ' ').trim().slice(0, 120)
+    if (!response.ok) {
+      const suffix = compactPreview ? ` - ${compactPreview}` : ''
+      return c.redirect(
+        buildAdminRedirect(`Teste WhatsApp falhou (HTTP ${response.status})${suffix}`, 'error'),
+        302
+      )
+    }
+
+    return c.redirect(
+      buildAdminRedirect(`Teste WhatsApp enviado com sucesso (HTTP ${response.status}).`),
+      302
+    )
+  } catch (error) {
+    return c.redirect(
+      buildAdminRedirect(`Falha ao executar teste da integracao: ${String(error)}`, 'error'),
+      302
+    )
+  }
 })
 
 // Create User

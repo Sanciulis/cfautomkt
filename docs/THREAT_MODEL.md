@@ -20,6 +20,7 @@ Objetivo:
 - `ADMIN_API_KEY`
 - `ADMIN_PANEL_PASSWORD`
 - `ADMIN_SESSION_SECRET`
+- sessao autenticada do WhatsApp no gateway Baileys (`session/`)
 - dados de usuarios (telefone/email/perfil)
 - historico de interacoes e decisoes do agente
 - controles de deploy (pipeline CI/CD)
@@ -41,6 +42,7 @@ Objetivo:
 - webhook externo comprometido ou mal configurado
 - replay/abuso de links de referral
 - uso malicioso de `webhookUrlOverride` em preview (SSRF/control plane abuse)
+- exposicao de endpoints de sessao do gateway Baileys (`/session/*`)
 
 ## 5) STRIDE por fluxo
 
@@ -100,6 +102,20 @@ Controles:
 - normalizacao e lookup estrito de `referral_code`
 - monitor de anomalia em `referral_click` por usuario/IP
 
+## 5.4 Fluxo gateway WhatsApp (Baileys)
+- Spoofing: chamada falsa em `/dispatch/whatsapp`
+- Tampering: alteracao de payload para envio indevido
+- Information Disclosure: vazamento de QR/pairing code
+- DoS: reconexoes forçadas e spam de envio
+- Elevation: uso de `GATEWAY_ADMIN_TOKEN` para sequestro de sessao
+
+Controles:
+- bearer token obrigatorio em `/dispatch/whatsapp`
+- token administrativo dedicado para `/session/*`
+- TLS obrigatorio e restricao de IP no gateway
+- nao versionar pasta de sessao do Baileys
+- rotacao imediata de tokens em suspeita de vazamento
+
 ## 6) Matriz de risco (priorizada)
 | Risco | Probabilidade | Impacto | Nivel |
 |---|---|---|---|
@@ -108,6 +124,7 @@ Controles:
 | Brute force no login admin | Media | Alto | Alto |
 | Workflow CI alterado maliciosamente | Media | Alto | Alto |
 | Webhook externo comprometido | Media | Medio/Alto | Alto |
+| Vazamento de sessao/token do gateway Baileys | Media | Alto | Alto |
 | Abuso de referral | Alta | Medio | Medio/Alto |
 | Exposicao de PII em logs | Media | Medio | Medio |
 

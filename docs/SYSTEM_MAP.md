@@ -15,6 +15,7 @@ O sistema roda na Cloudflare Edge para automatizar marketing com:
 | D1 | Persistencia de usuarios, campanhas, eventos e decisoes do agente | `schema.sql` |
 | KV | Dedupe de clique referral por IP hash + janela TTL | binding `MARTECH_KV` |
 | Workers AI | Geracao de copy personalizada | binding `AI` |
+| WhatsApp Baileys Gateway (Node) | Entrega real de mensagens WhatsApp com sessao persistente | `integrations/whatsapp-baileys-gateway` |
 | Webhook externo | Entrega real (whatsapp/email/telegram) | vars `*_WEBHOOK_URL` |
 | GitHub Actions | CI/CD para preview e producao | `.github/workflows/deploy.yml` |
 
@@ -32,6 +33,8 @@ O sistema roda na Cloudflare Edge para automatizar marketing com:
     +-----> [KV] (referral dedupe)
     |
     +-----> [Webhook Provider] (disparo real por canal)
+               |
+               +--> [Baileys Gateway] -> [WhatsApp]
 ```
 
 ## 4) Fluxos de negocio
@@ -88,6 +91,7 @@ Observacao: evento `shared` incrementa `viral_points`.
    - `sent` em sucesso
    - `send_failed` em falha
 8. Usuarios em opt-out sao pulados automaticamente no dispatch
+9. Para WhatsApp, o endpoint recomendado e `/dispatch/whatsapp` do gateway Baileys.
 
 Observacao: em `preview`, existe `webhookUrlOverride` para testes controlados com restricao de host por allowlist.
 
@@ -154,6 +158,7 @@ Tudo logado em `agent_decisions`.
 - `ADMIN_API_KEY` (secret) para proteger API administrativa
 - `ADMIN_PANEL_PASSWORD` e `ADMIN_SESSION_SECRET` (secrets) para painel web
 - `PREVIEW_WEBHOOK_OVERRIDE_ALLOWLIST`: hosts permitidos no `webhookUrlOverride` (somente preview)
+- Gateway Baileys usa os mesmos tokens de dispatch para validar chamadas do Worker
 
 ## 9) Limites atuais
 - Sem fila com retry/backoff no dispatch (falhas sao logadas, mas sem reprocessamento automatico)

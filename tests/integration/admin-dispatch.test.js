@@ -37,6 +37,7 @@ class MockD1Database {
     this.campaigns = seed.campaigns ?? []
     this.users = seed.users ?? []
     this.interactions = seed.interactions ?? []
+    this.agentDecisions = seed.agentDecisions ?? []
   }
 
   prepare(sql) {
@@ -45,6 +46,42 @@ class MockD1Database {
 
   async first(sql, params) {
     const normalized = normalizeSql(sql)
+
+    if (normalized === 'select count(*) as value from users') {
+      return { value: this.users.length }
+    }
+
+    if (normalized === 'select count(*) as value from interactions') {
+      return { value: this.interactions.length }
+    }
+
+    if (normalized === "select count(*) as value from interactions where event_type = 'sent'") {
+      return {
+        value: this.interactions.filter((interaction) => interaction.event_type === 'sent').length,
+      }
+    }
+
+    if (normalized === "select count(*) as value from interactions where event_type = 'converted'") {
+      return {
+        value: this.interactions.filter((interaction) => interaction.event_type === 'converted').length,
+      }
+    }
+
+    if (
+      normalized ===
+      "select count(*) as value from interactions where event_type in ('shared', 'referral_click')"
+    ) {
+      return {
+        value: this.interactions.filter(
+          (interaction) =>
+            interaction.event_type === 'shared' || interaction.event_type === 'referral_click'
+        ).length,
+      }
+    }
+
+    if (normalized === "select count(*) as value from campaigns where status = 'active'") {
+      return { value: this.campaigns.filter((campaign) => campaign.status === 'active').length }
+    }
 
     if (normalized.startsWith('select * from campaigns where id = ?')) {
       const [campaignId] = params
@@ -66,6 +103,42 @@ class MockD1Database {
 
   async all(sql, params) {
     const normalized = normalizeSql(sql)
+
+    if (
+      normalized ===
+      'select id, name, channel, status, updated_at from campaigns order by updated_at desc limit 30'
+    ) {
+      return [...this.campaigns]
+        .sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)))
+        .slice(0, 30)
+        .map((campaign) => ({
+          id: campaign.id,
+          name: campaign.name,
+          channel: campaign.channel,
+          status: campaign.status,
+          updated_at: campaign.updated_at,
+        }))
+    }
+
+    if (
+      normalized ===
+      'select decision_type, target_id, reason, created_at from agent_decisions order by created_at desc limit 20'
+    ) {
+      return [...this.agentDecisions]
+        .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+        .slice(0, 20)
+    }
+
+    if (
+      normalized ===
+      'select id, viral_points from users where viral_points > 0 order by viral_points desc limit 5'
+    ) {
+      return this.users
+        .filter((user) => Number(user.viral_points) > 0)
+        .sort((a, b) => Number(b.viral_points) - Number(a.viral_points))
+        .slice(0, 5)
+        .map((user) => ({ id: user.id, viral_points: user.viral_points }))
+    }
 
     if (normalized.includes('select * from users where id in (') && normalized.endsWith('limit ?')) {
       const limit = Number(params[params.length - 1]) || 0
@@ -215,6 +288,10 @@ async function invokeWorker(path, init, env) {
   return worker.fetch(request, env, createExecutionContext())
 }
 
+function extractCookieHeader(setCookieValue) {
+  return (setCookieValue ?? '').split(';')[0] ?? ''
+}
+
 function createDispatchDbSeed() {
   return new MockD1Database({
     campaigns: [
@@ -300,6 +377,125 @@ describe('Integration: admin login and campaign dispatch', () => {
 
     expect(blockedResponse.status).toBe(429)
     expect(blockedResponse.headers.get('Retry-After')).toBeTruthy()
+  })
+
+  it('renders WhatsApp integration form in admin dashboard', async () => {
+    const env = createMockEnv()
+    const loginResponse = await invokeWorker(
+      '/admin/login',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'password=test-admin-password',
+      },
+      env
+    )
+    const cookie = extractCookieHeader(loginResponse.headers.get('set-cookie'))
+
+    const response = await invokeWorker(
+      '/admin',
+      {
+        method: 'GET',
+        headers: { Cookie: cookie },
+      },
+      env
+    )
+
+    expect(response.status).toBe(200)
+    const html = await response.text()
+    expect(html).toContain('Menu admin')
+    expect(html).toContain('href="#integracao"')
+    expect(html).toContain('/admin/actions/integration/save')
+    expect(html).toContain('/admin/actions/integration/test')
+    expect(html).toContain('Integracao WhatsApp')
+  })
+
+  it('saves WhatsApp integration config via admin form', async () => {
+    const env = createMockEnv()
+    const loginResponse = await invokeWorker(
+      '/admin/login',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'password=test-admin-password',
+      },
+      env
+    )
+    const cookie = extractCookieHeader(loginResponse.headers.get('set-cookie'))
+
+    const saveResponse = await invokeWorker(
+      '/admin/actions/integration/save',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Cookie: cookie,
+        },
+        body:
+          'webhookUrl=https%3A%2F%2Fwa.example.com%2Fdispatch%2Fwhatsapp&testPhone=%2B5511999990001&testMessage=Ping+admin',
+      },
+      env
+    )
+
+    expect(saveResponse.status).toBe(302)
+    expect(saveResponse.headers.get('location')).toContain('/admin?')
+
+    const storedRaw = await env.MARTECH_KV.get('admin_config:integration:whatsapp')
+    expect(storedRaw).toBeTruthy()
+    const stored = JSON.parse(storedRaw)
+    expect(stored.webhookUrl).toBe('https://wa.example.com/dispatch/whatsapp')
+    expect(stored.testPhone).toBe('+5511999990001')
+    expect(stored.testMessage).toBe('Ping admin')
+    expect(typeof stored.updatedAt).toBe('string')
+  })
+
+  it('runs WhatsApp integration test from admin panel', async () => {
+    const env = createMockEnv()
+    const loginResponse = await invokeWorker(
+      '/admin/login',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'password=test-admin-password',
+      },
+      env
+    )
+    const cookie = extractCookieHeader(loginResponse.headers.get('set-cookie'))
+
+    const calls = []
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = async (input, init) => {
+      calls.push({ input: String(input), init })
+      return new Response(JSON.stringify({ status: 'success' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    try {
+      const testResponse = await invokeWorker(
+        '/admin/actions/integration/test',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            Cookie: cookie,
+          },
+          body:
+            'webhookUrl=https%3A%2F%2Fwa.example.com%2Fdispatch%2Fwhatsapp&testPhone=%2B5511999990001&testMessage=Mensagem+de+teste',
+        },
+        env
+      )
+
+      expect(testResponse.status).toBe(302)
+      expect(testResponse.headers.get('location')).toContain('/admin?')
+      expect(calls.length).toBe(1)
+      expect(calls[0].input).toBe('https://wa.example.com/dispatch/whatsapp')
+      expect(calls[0].init?.method).toBe('POST')
+      expect(calls[0].init?.headers?.Authorization).toBe('Bearer dispatch-token')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
   })
 
   it('allows preview webhook override for allowlisted host', async () => {

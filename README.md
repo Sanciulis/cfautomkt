@@ -11,12 +11,14 @@ Motor de marketing autonomo na Cloudflare Edge com foco em:
 - Contrato de API e payloads: `docs/API_CONTRACT.md`
 - Runbook operacional (deploy, smoke tests e troubleshooting): `docs/OPERATIONS_RUNBOOK.md`
 - Modelagem de ameacas e seguranca de segredos: `docs/THREAT_MODEL.md`
+- Integracao WhatsApp via Baileys (gateway Node): `integrations/whatsapp-baileys-gateway/README.md`
 
 ## Stack
 - Cloudflare Workers + Hono
 - Cloudflare D1 (SQLite)
 - Cloudflare KV
 - Cloudflare Workers AI
+- Gateway Node.js (Baileys) para envio WhatsApp
 - GitHub Actions (CI/CD)
 
 ## Arquitetura (MVP executavel)
@@ -28,6 +30,7 @@ Motor de marketing autonomo na Cloudflare Edge com foco em:
    - pausar campanhas com baixa conversao
    - registrar decisoes em `agent_decisions`
 5. Endpoint de metricas agrega conversao e K-factor.
+6. Para canal WhatsApp, o Worker entrega em webhook externo (ex.: gateway Baileys).
 
 ## Modelagem de dados (D1)
 Arquivos: `schema.sql`
@@ -80,6 +83,18 @@ npm run typecheck
 ```bash
 npm test
 ```
+
+## Integracao WhatsApp com Baileys
+1. Subir gateway local:
+```bash
+cd integrations/whatsapp-baileys-gateway
+cp .env.example .env
+npm install
+npm run dev
+```
+2. Autenticar sessao WhatsApp (QR no terminal ou endpoint `/session/pairing-code`).
+3. Apontar `WHATSAPP_WEBHOOK_URL` para `https://<gateway>/dispatch/whatsapp`.
+4. Garantir que o token do gateway (`DISPATCH_BEARER_TOKEN` no `.env`) seja igual ao secret do Worker.
 
 ## Deploy
 ### Producao
