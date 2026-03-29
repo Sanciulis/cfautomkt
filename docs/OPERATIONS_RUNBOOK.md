@@ -29,6 +29,13 @@ Depois reaplique schema para garantir indexes e tabelas:
 npx wrangler d1 execute martech_db --remote --file=./schema.sql
 ```
 
+### Migracao de consentimento (LGPD)
+Aplicar uma vez por ambiente:
+```bash
+npx wrangler d1 execute martech_db --remote --file=./migrations/20260329_add_user_consent_columns.sql
+npx wrangler d1 execute martech_db_preview --remote --env preview --file=./migrations/20260329_add_user_consent_columns.sql
+```
+
 ## 4) Deploy
 
 ### Preview
@@ -78,7 +85,7 @@ curl -i -b cookies.txt https://martech-viral-system-preview.bkpdsf.workers.dev/a
 curl -X POST https://martech-viral-system-preview.bkpdsf.workers.dev/user \
   -H "x-api-key: <ADMIN_API_KEY>" \
   -H "Content-Type: application/json" \
-  -d '{"id":"u-001","name":"Ana","phone":"+5511999990001","preferredChannel":"whatsapp"}'
+  -d '{"id":"u-001","name":"Ana","phone":"+5511999990001","preferredChannel":"whatsapp","marketingOptIn":true,"consentSource":"pilot_form"}'
 ```
 
 ### 6.4 Criar campanha
@@ -118,6 +125,19 @@ Esperado: erro `400` informando host nao allowlisted.
 ```bash
 curl https://martech-viral-system-preview.bkpdsf.workers.dev/metrics/overview \
   -H "x-api-key: <ADMIN_API_KEY>"
+```
+
+### 6.8 Aplicar opt-out via API admin
+```bash
+curl -X POST https://martech-viral-system-preview.bkpdsf.workers.dev/user/u-001/consent \
+  -H "x-api-key: <ADMIN_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{"marketingOptIn":false,"source":"support_request"}'
+```
+
+### 6.9 Testar link publico de descadastro
+```bash
+curl -i https://martech-viral-system-preview.bkpdsf.workers.dev/unsubscribe/<referral_code>
 ```
 
 ## 7) Troubleshooting
@@ -160,6 +180,12 @@ Checklist:
 1. Confirmar `https://` no valor de `webhookUrlOverride`.
 2. Remover credenciais de URL (`user:pass@`).
 3. Verificar se host esta em `PREVIEW_WEBHOOK_OVERRIDE_ALLOWLIST`.
+
+### Usuario recebeu mensagem apos descadastro
+Checklist:
+1. Confirmar que `POST /user/:id/consent` retornou `marketingOptIn=false`.
+2. Confirmar se o usuario foi selecionado por `userIds` e se apareceu como `skipped` no retorno do dispatch.
+3. Verificar se a migration `20260329_add_user_consent_columns.sql` foi aplicada no ambiente.
 
 ### Login admin retorna erro
 Checklist:

@@ -56,6 +56,11 @@ class MockD1Database {
       return this.users.find((user) => user.id === userId) ?? null
     }
 
+    if (normalized.startsWith('select * from users where referral_code = ?')) {
+      const [referralCode] = params
+      return this.users.find((user) => user.referral_code === referralCode) ?? null
+    }
+
     throw new Error(`Unhandled first() query in test mock: ${sql}`)
   }
 
@@ -113,6 +118,30 @@ class MockD1Database {
       const weight = Number(weightRaw) || 0
       const user = this.users.find((row) => row.id === userId)
       if (user) user.engagement_score += weight
+      return
+    }
+
+    if (normalized.startsWith('update users set marketing_opt_in = 1,')) {
+      const [source, userId] = params
+      const user = this.users.find((row) => row.id === userId)
+      if (user) {
+        user.marketing_opt_in = 1
+        user.opt_out_at = null
+        user.consent_source = source
+        user.consent_updated_at = '2026-03-29 00:00:00'
+      }
+      return
+    }
+
+    if (normalized.startsWith('update users set marketing_opt_in = 0,')) {
+      const [source, userId] = params
+      const user = this.users.find((row) => row.id === userId)
+      if (user) {
+        user.marketing_opt_in = 0
+        user.opt_out_at = '2026-03-29 00:00:00'
+        user.consent_source = source
+        user.consent_updated_at = '2026-03-29 00:00:00'
+      }
       return
     }
 
@@ -211,6 +240,10 @@ function createDispatchDbSeed() {
         referral_code: 'ana123',
         referred_by: null,
         viral_points: 0,
+        marketing_opt_in: 1,
+        opt_out_at: null,
+        consent_source: 'seed',
+        consent_updated_at: '2026-03-28 00:00:00',
         last_active: '2026-03-29 00:00:00',
         created_at: '2026-03-28 00:00:00',
       },
@@ -330,5 +363,72 @@ describe('Integration: admin login and campaign dispatch', () => {
     expect(response.status).toBe(400)
     const payload = await response.json()
     expect(payload.error).toContain('allowlisted')
+  })
+
+  it('updates consent via admin API and skips opted-out user in dispatch', async () => {
+    const db = createDispatchDbSeed()
+    const env = createMockEnv({ DB: db })
+
+    const consentResponse = await invokeWorker(
+      '/user/u-001/consent',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': 'test-admin-api-key',
+        },
+        body: JSON.stringify({
+          marketingOptIn: false,
+          source: 'admin_test',
+        }),
+      },
+      env
+    )
+
+    expect(consentResponse.status).toBe(200)
+    const consentPayload = await consentResponse.json()
+    expect(consentPayload.user).toMatchObject({
+      id: 'u-001',
+      marketingOptIn: false,
+      consentSource: 'admin_test',
+    })
+
+    const dispatchResponse = await invokeWorker(
+      '/campaign/cmp-001/send',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': 'test-admin-api-key',
+        },
+        body: JSON.stringify({
+          dryRun: true,
+          personalize: false,
+          userIds: ['u-001'],
+        }),
+      },
+      env
+    )
+
+    expect(dispatchResponse.status).toBe(200)
+    const dispatchPayload = await dispatchResponse.json()
+    expect(dispatchPayload.sent).toBe(0)
+    expect(dispatchPayload.skipped).toBe(1)
+    expect(dispatchPayload.failures[0].reason).toContain('opted out')
+  })
+
+  it('supports public unsubscribe route using referral code', async () => {
+    const db = createDispatchDbSeed()
+    const env = createMockEnv({ DB: db })
+
+    const response = await invokeWorker('/unsubscribe/ana123', { method: 'GET' }, env)
+    expect(response.status).toBe(200)
+
+    const html = await response.text()
+    expect(html).toContain('Descadastro concluido')
+
+    const updatedUser = db.users.find((user) => user.id === 'u-001')
+    expect(updatedUser?.marketing_opt_in).toBe(0)
+    expect(updatedUser?.consent_source).toBe('unsubscribe_link')
   })
 })

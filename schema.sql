@@ -9,6 +9,10 @@ CREATE TABLE IF NOT EXISTS users (
   referral_code TEXT UNIQUE,
   referred_by TEXT,
   viral_points INTEGER DEFAULT 0,
+  marketing_opt_in INTEGER DEFAULT 1 CHECK (marketing_opt_in IN (0, 1)),
+  opt_out_at TIMESTAMP,
+  consent_source TEXT DEFAULT 'unknown',
+  consent_updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -47,5 +51,6 @@ CREATE TABLE IF NOT EXISTS agent_decisions (
 
 CREATE INDEX IF NOT EXISTS idx_users_referral_code ON users(referral_code);
 CREATE INDEX IF NOT EXISTS idx_users_last_active ON users(last_active);
+CREATE INDEX IF NOT EXISTS idx_users_marketing_opt_in ON users(marketing_opt_in);
 CREATE INDEX IF NOT EXISTS idx_interactions_user_event ON interactions(user_id, event_type);
 CREATE INDEX IF NOT EXISTS idx_interactions_campaign_event ON interactions(campaign_id, event_type);

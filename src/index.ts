@@ -45,6 +45,10 @@ type UserRecord = {
   referral_code: string | null
   referred_by: string | null
   viral_points: number
+  marketing_opt_in?: number | null
+  opt_out_at?: string | null
+  consent_source?: string | null
+  consent_updated_at?: string | null
   last_active: string
   created_at: string
 }
@@ -576,6 +580,116 @@ async function clearAdminLoginThrottle(kv: KVNamespace, ip: string): Promise<voi
   await kv.delete(getAdminLoginThrottleKey(ip))
 }
 
+function isUserOptedOut(user: UserRecord): boolean {
+  if (typeof user.marketing_opt_in === 'number') return user.marketing_opt_in === 0
+  if (typeof user.marketing_opt_in === 'string') {
+    const parsed = Number(user.marketing_opt_in)
+    return Number.isFinite(parsed) ? parsed === 0 : false
+  }
+  return false
+}
+
+function resolveConsentSource(rawSource: unknown, fallback: string): string {
+  return safeString(rawSource) ?? fallback
+}
+
+async function setUserMarketingConsent(
+  env: Bindings,
+  userId: string,
+  marketingOptIn: boolean,
+  consentSource: string
+): Promise<{ updated: boolean; user: UserRecord | null }> {
+  const existing = await getUserById(env, userId)
+  if (!existing) return { updated: false, user: null }
+
+  const normalizedSource = resolveConsentSource(consentSource, 'admin_api')
+  if (marketingOptIn) {
+    await env.DB.prepare(
+      `UPDATE users
+       SET marketing_opt_in = 1,
+           opt_out_at = NULL,
+           consent_source = ?,
+           consent_updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`
+    )
+      .bind(normalizedSource, userId)
+      .run()
+  } else {
+    await env.DB.prepare(
+      `UPDATE users
+       SET marketing_opt_in = 0,
+           opt_out_at = CURRENT_TIMESTAMP,
+           consent_source = ?,
+           consent_updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`
+    )
+      .bind(normalizedSource, userId)
+      .run()
+  }
+
+  const updated = await getUserById(env, userId)
+  return { updated: true, user: updated }
+}
+
+function renderUnsubscribePage(data: {
+  title: string
+  message: string
+  success: boolean
+}): string {
+  return `<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${escapeHtml(data.title)}</title>
+  <style>
+    :root {
+      --bg: #f4f7f9;
+      --panel: #ffffff;
+      --ink: #1a2228;
+      --ok-bg: #e7f7ef;
+      --ok-ink: #16653f;
+      --err-bg: #fde9e9;
+      --err-ink: #9f1c1c;
+      --line: #d8e0e8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Arial, sans-serif;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+    }
+    main {
+      width: min(520px, 100%);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 22px;
+    }
+    h1 { margin: 0 0 10px 0; font-size: 1.4rem; }
+    p {
+      margin: 0;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: ${data.success ? 'var(--ok-bg)' : 'var(--err-bg)'};
+      color: ${data.success ? 'var(--ok-ink)' : 'var(--err-ink)'};
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>${escapeHtml(data.title)}</h1>
+    <p>${escapeHtml(data.message)}</p>
+  </main>
+</body>
+</html>`
+}
+
 async function createUserRecord(
   env: Bindings,
   input: Partial<{
@@ -586,6 +700,8 @@ async function createUserRecord(
     preferredChannel: string
     psychologicalProfile: string
     referredBy: string
+    marketingOptIn: boolean | string
+    consentSource: string
   }>
 ): Promise<{ userId: string; referralCode: string }> {
   const userId = safeString(input.id) ?? crypto.randomUUID()
@@ -595,12 +711,15 @@ async function createUserRecord(
   const preferredChannel = safeString(input.preferredChannel) ?? 'whatsapp'
   const psychologicalProfile = safeString(input.psychologicalProfile) ?? 'generic'
   const referredBy = safeString(input.referredBy)
+  const marketingOptIn = toBoolean(input.marketingOptIn, true)
+  const consentSource = resolveConsentSource(input.consentSource, 'api_create')
   const referralCode = buildReferralCode(userId)
 
   await env.DB.prepare(
     `INSERT INTO users (
-      id, name, email, phone, preferred_channel, psychological_profile, referral_code, referred_by
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      id, name, email, phone, preferred_channel, psychological_profile, referral_code, referred_by,
+      marketing_opt_in, opt_out_at, consent_source, consent_updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
   )
     .bind(
       userId,
@@ -610,7 +729,10 @@ async function createUserRecord(
       preferredChannel,
       psychologicalProfile,
       referralCode,
-      referredBy
+      referredBy,
+      marketingOptIn ? 1 : 0,
+      marketingOptIn ? null : new Date().toISOString(),
+      consentSource
     )
     .run()
 
@@ -1017,7 +1139,24 @@ function renderAdminDashboardPage(data: {
           </label>
           <label class="field"><span>Perfil psicologico</span><input name="psychologicalProfile" value="generic" /></label>
         </div>
+        <div class="row">
+          <label class="field"><span>Consentimento marketing</span>
+            <select name="marketingOptIn">
+              <option value="true">opt_in</option>
+              <option value="false">opt_out</option>
+            </select>
+          </label>
+          <label class="field"><span>Fonte do consentimento</span><input name="consentSource" value="admin_panel" /></label>
+        </div>
         <button type="submit">Criar usuario</button>
+      </form>
+      <form method="post" action="/admin/actions/user/optout">
+        <h2>Opt-out Usuario</h2>
+        <div class="row">
+          <label class="field"><span>User ID</span><input name="userId" required /></label>
+          <label class="field"><span>Fonte</span><input name="source" value="admin_panel_optout" /></label>
+        </div>
+        <button class="secondary" type="submit">Aplicar opt-out</button>
       </form>
       <form method="post" action="/admin/actions/campaign/create">
         <h2>Criar Campanha</h2>
@@ -1162,6 +1301,20 @@ async function executeCampaignDispatch(
   const failures: Array<{ userId: string; reason: string; status?: number }> = []
 
   for (const user of users) {
+    if (isUserOptedOut(user)) {
+      skippedCount += 1
+      const reason = 'User opted out of marketing communications'
+      failures.push({ userId: user.id, reason })
+      await logInteraction(env, {
+        userId: user.id,
+        campaignId,
+        channel,
+        eventType: 'send_failed',
+        metadata: { reason, stage: 'consent' },
+      })
+      continue
+    }
+
     const destination = channel === 'email' ? user.email : user.phone
     if (!destination) {
       skippedCount += 1
@@ -1202,6 +1355,9 @@ async function executeCampaignDispatch(
     const referralUrl = user.referral_code
       ? `${requestOrigin}/ref/${encodeURIComponent(user.referral_code)}`
       : null
+    const unsubscribeUrl = user.referral_code
+      ? `${requestOrigin}/unsubscribe/${encodeURIComponent(user.referral_code)}`
+      : null
 
     const payload = {
       channel,
@@ -1218,6 +1374,7 @@ async function executeCampaignDispatch(
       },
       message,
       referralUrl,
+      unsubscribeUrl,
       metadata: body.metadata ?? null,
     }
 
@@ -1400,10 +1557,37 @@ app.post('/admin/actions/user/create', async (c) => {
       psychologicalProfile:
         typeof form.psychologicalProfile === 'string' ? form.psychologicalProfile : undefined,
       referredBy: typeof form.referredBy === 'string' ? form.referredBy : undefined,
+      marketingOptIn: typeof form.marketingOptIn === 'string' ? form.marketingOptIn : undefined,
+      consentSource: typeof form.consentSource === 'string' ? form.consentSource : undefined,
     })
     return c.redirect(buildAdminRedirect(`Usuario criado: ${result.userId}`), 302)
   } catch (error) {
     return c.redirect(buildAdminRedirect(`Falha ao criar usuario: ${String(error)}`, 'error'), 302)
+  }
+})
+
+// Admin Action - User Opt-out
+app.post('/admin/actions/user/optout', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    const form = await c.req.parseBody()
+    const userId = safeString(typeof form.userId === 'string' ? form.userId : null)
+    if (!userId) return c.redirect(buildAdminRedirect('userId e obrigatorio.', 'error'), 302)
+
+    const source = resolveConsentSource(
+      typeof form.source === 'string' ? form.source : null,
+      'admin_panel_optout'
+    )
+    const consentResult = await setUserMarketingConsent(c.env, userId, false, source)
+    if (!consentResult.updated || !consentResult.user) {
+      return c.redirect(buildAdminRedirect('Usuario nao encontrado para opt-out.', 'error'), 302)
+    }
+
+    return c.redirect(buildAdminRedirect(`Opt-out aplicado: ${consentResult.user.id}`), 302)
+  } catch (error) {
+    return c.redirect(buildAdminRedirect(`Falha no opt-out: ${String(error)}`, 'error'), 302)
   }
 })
 
@@ -1481,6 +1665,8 @@ app.post('/user', async (c) => {
     preferredChannel: string
     psychologicalProfile: string
     referredBy: string
+    marketingOptIn: boolean | string
+    consentSource: string
   }> | null
 
   if (!body) return c.json({ error: 'Invalid JSON body' }, 400)
@@ -1507,6 +1693,40 @@ app.get('/user/:id', async (c) => {
   const user = await getUserById(c.env, userId)
   if (!user) return c.json({ error: 'User not found' }, 404)
   return c.json(user)
+})
+
+// Update User Marketing Consent
+app.post('/user/:id/consent', async (c) => {
+  const unauthorized = ensureAdminAccess(c)
+  if (unauthorized) return unauthorized
+
+  const userId = c.req.param('id')
+  const body = (await c.req.json().catch(() => null)) as
+    | Partial<{ marketingOptIn: boolean | string; source: string }>
+    | null
+  if (!body) return c.json({ error: 'Invalid JSON body' }, 400)
+
+  if (typeof body.marketingOptIn === 'undefined') {
+    return c.json({ error: 'marketingOptIn is required' }, 400)
+  }
+
+  const marketingOptIn = toBoolean(body.marketingOptIn, true)
+  const source = resolveConsentSource(body.source, 'admin_api')
+  const consentResult = await setUserMarketingConsent(c.env, userId, marketingOptIn, source)
+  if (!consentResult.updated || !consentResult.user) {
+    return c.json({ error: 'User not found' }, 404)
+  }
+
+  return c.json({
+    status: 'success',
+    user: {
+      id: consentResult.user.id,
+      marketingOptIn: toNumber(consentResult.user.marketing_opt_in) === 1,
+      optOutAt: consentResult.user.opt_out_at ?? null,
+      consentSource: consentResult.user.consent_source ?? null,
+      consentUpdatedAt: consentResult.user.consent_updated_at ?? null,
+    },
+  })
 })
 
 // Create Campaign
@@ -1620,6 +1840,49 @@ app.post('/personalize/:id', async (c) => {
     campaignId,
     personalizedMessage,
   })
+})
+
+// Public Unsubscribe (LGPD opt-out)
+app.get('/unsubscribe/:code', async (c) => {
+  const referralCode = c.req.param('code').trim().toLowerCase()
+  if (!referralCode) {
+    return c.html(
+      renderUnsubscribePage({
+        title: 'Link invalido',
+        message: 'Nao foi possivel processar seu descadastro.',
+        success: false,
+      }),
+      400
+    )
+  }
+
+  const user = await c.env.DB.prepare('SELECT * FROM users WHERE referral_code = ?')
+    .bind(referralCode)
+    .first<UserRecord>()
+
+  if (!user?.id) {
+    return c.html(
+      renderUnsubscribePage({
+        title: 'Usuario nao encontrado',
+        message: 'Este link de descadastro nao e valido ou expirou.',
+        success: false,
+      }),
+      404
+    )
+  }
+
+  const alreadyOptedOut = isUserOptedOut(user)
+  await setUserMarketingConsent(c.env, user.id, false, 'unsubscribe_link')
+
+  return c.html(
+    renderUnsubscribePage({
+      title: 'Descadastro concluido',
+      message: alreadyOptedOut
+        ? 'Seu contato ja estava descadastrado de comunicacoes de marketing.'
+        : 'Seu contato foi removido das comunicacoes de marketing com sucesso.',
+      success: true,
+    })
+  )
 })
 
 // Referral Tracking

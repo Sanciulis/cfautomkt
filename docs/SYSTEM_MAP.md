@@ -50,6 +50,7 @@ Resultado: usuario pronto para funis e referral.
 4. `GET /admin` carrega dashboard com metricas, campanhas e decisoes
 5. Acoes via formulario:
    - `POST /admin/actions/user/create`
+   - `POST /admin/actions/user/optout`
    - `POST /admin/actions/campaign/create`
    - `POST /admin/actions/campaign/dispatch`
 
@@ -86,8 +87,15 @@ Observacao: evento `shared` incrementa `viral_points`.
 7. Registra:
    - `sent` em sucesso
    - `send_failed` em falha
+8. Usuarios em opt-out sao pulados automaticamente no dispatch
 
 Observacao: em `preview`, existe `webhookUrlOverride` para testes controlados com restricao de host por allowlist.
+
+### 4.5b Opt-out (LGPD)
+1. Endpoint admin `POST /user/:id/consent` permite alterar opt-in/opt-out
+2. Endpoint publico `GET /unsubscribe/:code` realiza descadastro sem autenticacao
+3. Worker grava `marketing_opt_in`, `opt_out_at`, `consent_source` e `consent_updated_at`
+4. Dispatch passa a respeitar consentimento
 
 ### 4.6 Agente autonomo (cron)
 Executa a cada 6h:
@@ -106,6 +114,7 @@ Tudo logado em `agent_decisions`.
 - perfil psicologico
 - score de engajamento
 - referral (`referral_code`, `referred_by`, `viral_points`)
+- consentimento LGPD (`marketing_opt_in`, `opt_out_at`, `consent_source`, `consent_updated_at`)
 
 ### `campaigns`
 - copy base
@@ -148,5 +157,5 @@ Tudo logado em `agent_decisions`.
 
 ## 9) Limites atuais
 - Sem fila com retry/backoff no dispatch (falhas sao logadas, mas sem reprocessamento automatico)
-- Sem testes automatizados de integracao ainda
+- Testes de integracao ainda parciais (admin/login e dispatch cobertos; faltam cenarios de referral/interaction/consent completo)
 - Sem painel frontend dedicado para `agent_decisions` (dados ja existem no D1)

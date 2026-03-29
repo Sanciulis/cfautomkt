@@ -12,6 +12,7 @@ Quando o secret `ADMIN_API_KEY` estiver configurado no Worker, os endpoints admi
 Endpoints protegidos:
 - `GET /user/:id`
 - `POST /user`
+- `POST /user/:id/consent`
 - `POST /campaign`
 - `POST /interaction`
 - `POST /personalize/:id`
@@ -83,6 +84,31 @@ Response `201`:
 
 ## GET /user/:id
 Retorna perfil do usuario.
+
+## POST /user/:id/consent
+Atualiza consentimento de marketing (opt-in/opt-out).
+
+Request:
+```json
+{
+  "marketingOptIn": false,
+  "source": "admin_api"
+}
+```
+
+Response:
+```json
+{
+  "status": "success",
+  "user": {
+    "id": "u-whats-001",
+    "marketingOptIn": false,
+    "optOutAt": "2026-03-29 12:00:00",
+    "consentSource": "admin_api",
+    "consentUpdatedAt": "2026-03-29 12:00:00"
+  }
+}
+```
 
 ## POST /campaign
 Cria campanha.
@@ -163,6 +189,14 @@ Comportamento:
 - soma `viral_points` para dono do code
 - redirect `302` para `LANDING_PAGE_URL?ref=<code>`
 
+## GET /unsubscribe/:code
+Descadastro publico usando o `referral_code` do usuario.
+
+Comportamento:
+- aplica `marketing_opt_in = 0`
+- registra `opt_out_at` e atualiza metadados de consentimento
+- retorna pagina HTML de confirmacao (sucesso ou erro)
+
 ## POST /campaign/:id/send
 Dispara campanha para lote de usuarios.
 
@@ -200,6 +234,10 @@ Response:
   "failures": []
 }
 ```
+
+Payload enviado ao webhook inclui:
+- `referralUrl`
+- `unsubscribeUrl` (quando disponivel para o usuario)
 
 ## GET /metrics/overview
 Consolida metricas do sistema.

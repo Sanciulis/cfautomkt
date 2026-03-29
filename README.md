@@ -46,11 +46,13 @@ Tabelas:
 - `GET /admin` dashboard operacional (protegido por sessao)
 - `POST /user` cria usuario
 - `GET /user/:id` retorna perfil
+- `POST /user/:id/consent` atualiza consentimento (`marketingOptIn`) para opt-in/opt-out
 - `POST /campaign` cria campanha
 - `POST /interaction` registra evento (`sent`, `opened`, `clicked`, `shared`, `converted`, `referral_click`, `personalized`, `send_failed`)
 - `POST /personalize/:id` gera copy personalizada com IA
 - `POST /campaign/:id/send` dispara campanha para lote de usuarios via webhook (whatsapp/email/telegram)
 - `GET /ref/:code` tracking viral + redirect para landing
+- `GET /unsubscribe/:code` descadastro publico (opt-out LGPD)
 - `GET /metrics/overview` metricas consolidadas do funil
 
 ## Setup local
@@ -94,6 +96,12 @@ npx wrangler deploy --env preview --minify
 Se o banco de producao foi criado com o schema antigo, aplique:
 ```bash
 npx wrangler d1 execute martech_db --remote --file=./migrations/20260329_expand_legacy_schema.sql
+```
+
+Para habilitar campos de consentimento LGPD em bancos ja existentes:
+```bash
+npx wrangler d1 execute martech_db --remote --file=./migrations/20260329_add_user_consent_columns.sql
+npx wrangler d1 execute martech_db_preview --remote --env preview --file=./migrations/20260329_add_user_consent_columns.sql
 ```
 
 ## CI/CD (GitHub Actions)
@@ -161,6 +169,6 @@ Observacao:
 - `webhookUrlOverride` em preview aceita apenas hosts presentes em `PREVIEW_WEBHOOK_OVERRIDE_ALLOWLIST`.
 
 ## Proximo ciclo recomendado
-1. Adicionar testes de integracao para `/campaign/:id/send`, `/interaction` e `/ref/:code`.
+1. Adicionar testes de integracao para `/interaction`, `/ref/:code`, `/unsubscribe/:code` e `/user/:id/consent`.
 2. Conectar provedores reais (Meta/Twilio/Resend) aos webhooks de dispatcher.
 3. Criar retries com backoff e fila para falhas de envio.

@@ -73,6 +73,7 @@ Controles:
 - logs de `send_failed` + monitoramento de erro
 - `webhookUrlOverride` permitido apenas em `preview` (ja implementado)
 - allowlist de host no `webhookUrlOverride` em preview (ja implementado)
+- bloqueio de envios para usuarios com opt-out (`marketing_opt_in = 0`)
 
 ## 5.2b Fluxo painel admin (senha + sessao)
 - Spoofing: tentativa de login com senha vazada
@@ -118,6 +119,7 @@ Controles:
 5. Habilitar scanning de segredos no CI.
 6. Revisar escopo do token Cloudflare para privilegio minimo.
 7. Definir `ADMIN_PANEL_PASSWORD` e `ADMIN_SESSION_SECRET` dedicados.
+8. Garantir rota de opt-out operacional (`/user/:id/consent` e `/unsubscribe/:code`).
 
 ## 8) Medidas recomendadas (curto prazo)
 1. Proteger endpoints administrativos com autenticacao explicita.
@@ -126,6 +128,7 @@ Controles:
 4. Adicionar alertas de:
    - pico de `send_failed`
    - pico anormal de `referral_click`
+   - tentativa de envio para usuario opt-out
    - deploy fora de janela esperada
 
 ## 9) Playbook de incidente (vazamento de token)

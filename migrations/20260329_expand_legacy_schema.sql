@@ -7,6 +7,10 @@ ALTER TABLE users ADD COLUMN psychological_profile TEXT DEFAULT 'generic';
 ALTER TABLE users ADD COLUMN referral_code TEXT;
 ALTER TABLE users ADD COLUMN referred_by TEXT;
 ALTER TABLE users ADD COLUMN viral_points INTEGER DEFAULT 0;
+ALTER TABLE users ADD COLUMN marketing_opt_in INTEGER DEFAULT 1 CHECK (marketing_opt_in IN (0, 1));
+ALTER TABLE users ADD COLUMN opt_out_at TIMESTAMP;
+ALTER TABLE users ADD COLUMN consent_source TEXT DEFAULT 'unknown';
+ALTER TABLE users ADD COLUMN consent_updated_at TIMESTAMP;
 ALTER TABLE users ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
 
 ALTER TABLE interactions ADD COLUMN campaign_id TEXT;
@@ -46,6 +50,18 @@ SET viral_points = 0
 WHERE viral_points IS NULL;
 
 UPDATE users
+SET marketing_opt_in = 1
+WHERE marketing_opt_in IS NULL;
+
+UPDATE users
+SET consent_source = COALESCE(consent_source, 'legacy_migration')
+WHERE consent_source IS NULL;
+
+UPDATE users
+SET consent_updated_at = COALESCE(consent_updated_at, CURRENT_TIMESTAMP)
+WHERE consent_updated_at IS NULL;
+
+UPDATE users
 SET created_at = COALESCE(created_at, last_active, CURRENT_TIMESTAMP)
 WHERE created_at IS NULL;
 
@@ -55,5 +71,6 @@ WHERE channel IS NULL;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_referral_code ON users(referral_code);
 CREATE INDEX IF NOT EXISTS idx_users_last_active ON users(last_active);
+CREATE INDEX IF NOT EXISTS idx_users_marketing_opt_in ON users(marketing_opt_in);
 CREATE INDEX IF NOT EXISTS idx_interactions_user_event ON interactions(user_id, event_type);
 CREATE INDEX IF NOT EXISTS idx_interactions_campaign_event ON interactions(campaign_id, event_type);
