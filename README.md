@@ -118,6 +118,7 @@ Arquivo: `wrangler.toml`
 Inclui:
 - `APP_ENV` e `LANDING_PAGE_URL`
 - URLs de dispatcher por canal (`DISPATCH_WEBHOOK_URL`, `WHATSAPP_WEBHOOK_URL`, `EMAIL_WEBHOOK_URL`, `TELEGRAM_WEBHOOK_URL`)
+- `PREVIEW_WEBHOOK_OVERRIDE_ALLOWLIST` para restringir host de `webhookUrlOverride` em preview
 - `triggers.crons` para agente autonomo
 - ambiente `env.preview` com D1/KV separados de producao
 
@@ -150,6 +151,9 @@ curl -X POST https://martech-viral-system-preview.bkpdsf.workers.dev/campaign/<c
   -H "Content-Type: application/json" \
   -d '{"dryRun":false,"personalize":false,"includeInactive":true,"webhookUrlOverride":"https://httpbin.org/post"}'
 ```
+
+Observacao:
+- `webhookUrlOverride` em preview aceita apenas hosts presentes em `PREVIEW_WEBHOOK_OVERRIDE_ALLOWLIST`.
 
 ## Proximo ciclo recomendado
 1. Adicionar testes de integracao para `/campaign/:id/send`, `/interaction` e `/ref/:code`.

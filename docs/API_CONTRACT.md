@@ -184,6 +184,7 @@ Campos especiais:
 - `dryRun=true`: nao envia webhook; valida selecao/fluxo
 - `force=true`: ignora bloqueio de campanha `paused`
 - `webhookUrlOverride` (apenas preview): override temporario de destino do webhook
+- `webhookUrlOverride` exige `https://`, sem credenciais em URL, e host presente em `PREVIEW_WEBHOOK_OVERRIDE_ALLOWLIST`
 
 Response:
 ```json

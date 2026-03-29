@@ -24,6 +24,7 @@ type Bindings = {
   LANDING_PAGE_URL?: string
   APP_ENV?: string
   DISPATCH_WEBHOOK_URL?: string
+  PREVIEW_WEBHOOK_OVERRIDE_ALLOWLIST?: string
   WHATSAPP_WEBHOOK_URL?: string
   EMAIL_WEBHOOK_URL?: string
   TELEGRAM_WEBHOOK_URL?: string
@@ -118,6 +119,7 @@ const EVENT_WEIGHTS: Record<InteractionEvent, number> = {
 
 const DEFAULT_LANDING_PAGE = 'https://fluxoia.com/inscricao'
 const DEFAULT_AI_MODEL = '@cf/meta/llama-3-8b-instruct'
+const DEFAULT_PREVIEW_WEBHOOK_OVERRIDE_ALLOWLIST = ['httpbin.org']
 const ADMIN_SESSION_COOKIE = 'martech_admin_session'
 const ADMIN_SESSION_TTL_SECONDS = 60 * 60 * 12
 const ADMIN_LOGIN_WINDOW_SECONDS = 60 * 10
@@ -200,6 +202,59 @@ function resolveDispatchUrl(channel: string, env: Bindings): string | null {
   if (normalizedChannel === 'email') return env.EMAIL_WEBHOOK_URL ?? env.DISPATCH_WEBHOOK_URL ?? null
   if (normalizedChannel === 'telegram') return env.TELEGRAM_WEBHOOK_URL ?? env.DISPATCH_WEBHOOK_URL ?? null
   return env.DISPATCH_WEBHOOK_URL ?? null
+}
+
+function getPreviewWebhookOverrideAllowlist(env: Bindings): string[] {
+  const raw = safeString(env.PREVIEW_WEBHOOK_OVERRIDE_ALLOWLIST)
+  if (!raw) return DEFAULT_PREVIEW_WEBHOOK_OVERRIDE_ALLOWLIST
+  return raw
+    .split(',')
+    .map((entry) => entry.trim().toLowerCase())
+    .filter((entry) => entry.length > 0)
+}
+
+function isHostAllowed(hostname: string, allowlist: string[]): boolean {
+  const normalized = hostname.trim().toLowerCase()
+  if (!normalized) return false
+  return allowlist.some((entry) => {
+    if (entry.startsWith('*.')) {
+      const baseDomain = entry.slice(2)
+      if (!baseDomain) return false
+      return normalized === baseDomain || normalized.endsWith(`.${baseDomain}`)
+    }
+    return normalized === entry
+  })
+}
+
+function validatePreviewWebhookOverrideUrl(
+  overrideUrl: string,
+  env: Bindings
+): { ok: true; normalizedUrl: string } | { ok: false; error: string } {
+  let parsedUrl: URL
+  try {
+    parsedUrl = new URL(overrideUrl)
+  } catch {
+    return { ok: false, error: 'webhookUrlOverride must be a valid URL' }
+  }
+
+  if (parsedUrl.protocol !== 'https:') {
+    return { ok: false, error: 'webhookUrlOverride must use https://' }
+  }
+
+  if (parsedUrl.username || parsedUrl.password) {
+    return { ok: false, error: 'webhookUrlOverride cannot contain URL credentials' }
+  }
+
+  const allowlist = getPreviewWebhookOverrideAllowlist(env)
+  if (!isHostAllowed(parsedUrl.hostname, allowlist)) {
+    return {
+      ok: false,
+      error:
+        'webhookUrlOverride host is not allowlisted for preview. Configure PREVIEW_WEBHOOK_OVERRIDE_ALLOWLIST.',
+    }
+  }
+
+  return { ok: true, normalizedUrl: parsedUrl.toString() }
 }
 
 async function generatePersonalizedMessage(
@@ -1051,10 +1106,11 @@ async function executeCampaignDispatch(
 
   const overrideUrl = safeString(body.webhookUrlOverride)
   if ((env.APP_ENV ?? '').toLowerCase() === 'preview' && overrideUrl) {
-    if (!overrideUrl.startsWith('https://')) {
-      return { ok: false, status: 400, error: 'webhookUrlOverride must use https://' }
+    const overrideValidation = validatePreviewWebhookOverrideUrl(overrideUrl, env)
+    if (!overrideValidation.ok) {
+      return { ok: false, status: 400, error: overrideValidation.error }
     }
-    dispatchUrl = overrideUrl
+    dispatchUrl = overrideValidation.normalizedUrl
   }
 
   if (!dispatchUrl) {

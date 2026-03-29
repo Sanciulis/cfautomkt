@@ -72,6 +72,7 @@ Controles:
 - limites de lote (`limit <= 500`) ja implementado
 - logs de `send_failed` + monitoramento de erro
 - `webhookUrlOverride` permitido apenas em `preview` (ja implementado)
+- allowlist de host no `webhookUrlOverride` em preview (ja implementado)
 
 ## 5.2b Fluxo painel admin (senha + sessao)
 - Spoofing: tentativa de login com senha vazada
@@ -121,9 +122,8 @@ Controles:
 ## 8) Medidas recomendadas (curto prazo)
 1. Proteger endpoints administrativos com autenticacao explicita.
 2. Aplicar regra WAF dedicada para `/admin/login` com threshold por ASN/pais.
-3. Adicionar allowlist de host para `webhookUrlOverride` em preview.
-4. Criar retries com fila + backoff para dispatch.
-5. Adicionar alertas de:
+3. Criar retries com fila + backoff para dispatch.
+4. Adicionar alertas de:
    - pico de `send_failed`
    - pico anormal de `referral_click`
    - deploy fora de janela esperada

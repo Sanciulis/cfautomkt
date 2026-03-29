@@ -87,7 +87,7 @@ Observacao: evento `shared` incrementa `viral_points`.
    - `sent` em sucesso
    - `send_failed` em falha
 
-Observacao: em `preview`, existe `webhookUrlOverride` para testes controlados.
+Observacao: em `preview`, existe `webhookUrlOverride` para testes controlados com restricao de host por allowlist.
 
 ### 4.6 Agente autonomo (cron)
 Executa a cada 6h:
@@ -144,6 +144,7 @@ Tudo logado em `agent_decisions`.
 - `DISPATCH_BEARER_TOKEN` (secret) para autenticar envio
 - `ADMIN_API_KEY` (secret) para proteger API administrativa
 - `ADMIN_PANEL_PASSWORD` e `ADMIN_SESSION_SECRET` (secrets) para painel web
+- `PREVIEW_WEBHOOK_OVERRIDE_ALLOWLIST`: hosts permitidos no `webhookUrlOverride` (somente preview)
 
 ## 9) Limites atuais
 - Sem fila com retry/backoff no dispatch (falhas sao logadas, mas sem reprocessamento automatico)

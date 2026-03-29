@@ -55,6 +55,7 @@ npx wrangler secret put DISPATCH_BEARER_TOKEN --env preview
 
 Observacao:
 - O painel admin funciona com fallback para `ADMIN_API_KEY`, mas em producao use `ADMIN_PANEL_PASSWORD` e `ADMIN_SESSION_SECRET` dedicados.
+- `webhookUrlOverride` em preview so aceita hosts definidos em `PREVIEW_WEBHOOK_OVERRIDE_ALLOWLIST` (em `wrangler.toml`).
 
 ## 6) Smoke test em preview
 
@@ -104,6 +105,15 @@ curl -X POST https://martech-viral-system-preview.bkpdsf.workers.dev/campaign/cm
   -d '{"dryRun":false,"personalize":false,"includeInactive":true,"webhookUrlOverride":"https://httpbin.org/post"}'
 ```
 
+### 6.6.1 Validar bloqueio de host nao permitido
+```bash
+curl -X POST https://martech-viral-system-preview.bkpdsf.workers.dev/campaign/cmp-001/send \
+  -H "x-api-key: <ADMIN_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{"dryRun":true,"personalize":false,"includeInactive":true,"webhookUrlOverride":"https://example.com/hook"}'
+```
+Esperado: erro `400` informando host nao allowlisted.
+
 ### 6.7 Conferir metricas
 ```bash
 curl https://martech-viral-system-preview.bkpdsf.workers.dev/metrics/overview \
@@ -144,6 +154,12 @@ Checklist:
 2. Secret `DISPATCH_BEARER_TOKEN` configurado
 3. Destino do usuario existe (`phone` ou `email`)
 4. Provedor externo retornando 2xx
+
+### Dispatch retorna erro de `webhookUrlOverride`
+Checklist:
+1. Confirmar `https://` no valor de `webhookUrlOverride`.
+2. Remover credenciais de URL (`user:pass@`).
+3. Verificar se host esta em `PREVIEW_WEBHOOK_OVERRIDE_ALLOWLIST`.
 
 ### Login admin retorna erro
 Checklist:

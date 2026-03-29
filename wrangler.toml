@@ -40,6 +40,7 @@ routes = []
 APP_ENV = "preview"
 LANDING_PAGE_URL = "https://preview.fluxoia.com/inscricao"
 DISPATCH_WEBHOOK_URL = "https://preview-api.fluxoia.com/webhooks/dispatch"
+PREVIEW_WEBHOOK_OVERRIDE_ALLOWLIST = "httpbin.org"
 WHATSAPP_WEBHOOK_URL = "https://preview-api.fluxoia.com/webhooks/dispatch/whatsapp"
 EMAIL_WEBHOOK_URL = "https://preview-api.fluxoia.com/webhooks/dispatch/email"
 TELEGRAM_WEBHOOK_URL = "https://preview-api.fluxoia.com/webhooks/dispatch/telegram"
