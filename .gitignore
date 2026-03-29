@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Local env secrets
+.env
+.env.*
+!.env.example
+
+# Cloudflare local state
+.wrangler/state/
+.wrangler/tmp/
+
+# Build and logs
+dist/
+coverage/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

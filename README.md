@@ -1,0 +1,145 @@
+# AI Viral Marketing System (Martech)
+
+Motor de marketing autonomo na Cloudflare Edge com foco em:
+- disparo multicanal
+- hiperpersonalizacao com IA
+- tracking viral por referral
+- otimizacao automatica por agente agendado
+
+## Documentacao do sistema
+- Mapa completo de arquitetura e fluxos: `docs/SYSTEM_MAP.md`
+- Contrato de API e payloads: `docs/API_CONTRACT.md`
+- Runbook operacional (deploy, smoke tests e troubleshooting): `docs/OPERATIONS_RUNBOOK.md`
+- Modelagem de ameacas e seguranca de segredos: `docs/THREAT_MODEL.md`
+
+## Stack
+- Cloudflare Workers + Hono
+- Cloudflare D1 (SQLite)
+- Cloudflare KV
+- Cloudflare Workers AI
+- GitHub Actions (CI/CD)
+
+## Arquitetura (MVP executavel)
+1. API recebe eventos e atualiza score do usuario.
+2. Worker gera copy personalizada com Workers AI.
+3. Links `/ref/:code` rastreiam clique, incrementam viral_points e redirecionam para landing com `?ref=`.
+4. Agente `scheduled` roda a cada 6h para:
+   - migrar usuarios frios para SMS
+   - pausar campanhas com baixa conversao
+   - registrar decisoes em `agent_decisions`
+5. Endpoint de metricas agrega conversao e K-factor.
+
+## Modelagem de dados (D1)
+Arquivos: `schema.sql`
+
+Tabelas:
+- `users`
+- `campaigns`
+- `interactions`
+- `agent_decisions`
+
+## Endpoints principais
+- `GET /` status do sistema
+- `POST /user` cria usuario
+- `GET /user/:id` retorna perfil
+- `POST /campaign` cria campanha
+- `POST /interaction` registra evento (`sent`, `opened`, `clicked`, `shared`, `converted`, `referral_click`, `personalized`, `send_failed`)
+- `POST /personalize/:id` gera copy personalizada com IA
+- `POST /campaign/:id/send` dispara campanha para lote de usuarios via webhook (whatsapp/email/telegram)
+- `GET /ref/:code` tracking viral + redirect para landing
+- `GET /metrics/overview` metricas consolidadas do funil
+
+## Setup local
+1. Instalar dependencias:
+```bash
+npm install
+```
+
+2. Aplicar schema no D1 local:
+```bash
+npx wrangler d1 execute martech_db --local --file=./schema.sql
+```
+
+3. Rodar em desenvolvimento:
+```bash
+npm run dev
+```
+
+4. Validar TypeScript:
+```bash
+npm run typecheck
+```
+
+## Deploy
+### Producao
+```bash
+npm run deploy
+```
+
+### Preview
+```bash
+npx wrangler deploy --env preview --minify
+```
+
+## Migracao de banco legado (producao)
+Se o banco de producao foi criado com o schema antigo, aplique:
+```bash
+npx wrangler d1 execute martech_db --remote --file=./migrations/20260329_expand_legacy_schema.sql
+```
+
+## CI/CD (GitHub Actions)
+Arquivo: `.github/workflows/deploy.yml`
+
+Fluxo:
+- Pull Request em `main`: valida + deploy `preview`
+- Push em `main`: valida + deploy `production`
+
+Secrets necessarios no GitHub:
+- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_ACCOUNT_ID`
+
+## Seguranca de segredos (obrigatorio)
+1. Nao commitar `.env` (protegido por `.gitignore`).
+2. Use apenas `.env.example` no repositorio.
+3. Rotacione imediatamente token Cloudflare e bearer token se houve exposicao.
+4. Armazene segredos no GitHub Secrets e Cloudflare Secrets.
+5. Pipeline de scan de segredos: `.github/workflows/security-scan.yml`.
+6. Proteja endpoints administrativos com `ADMIN_API_KEY` (secret).
+
+## Configuracao Wrangler
+Arquivo: `wrangler.toml`
+
+Inclui:
+- `APP_ENV` e `LANDING_PAGE_URL`
+- URLs de dispatcher por canal (`DISPATCH_WEBHOOK_URL`, `WHATSAPP_WEBHOOK_URL`, `EMAIL_WEBHOOK_URL`, `TELEGRAM_WEBHOOK_URL`)
+- `triggers.crons` para agente autonomo
+- ambiente `env.preview` com D1/KV separados de producao
+
+## Segredo de autenticacao do dispatcher
+Configure o token bearer usado no envio para o provedor externo:
+```bash
+npx wrangler secret put ADMIN_API_KEY
+npx wrangler secret put ADMIN_API_KEY --env preview
+npx wrangler secret put DISPATCH_BEARER_TOKEN
+npx wrangler secret put DISPATCH_BEARER_TOKEN --env preview
+```
+
+## Teste rapido de dispatch (preview)
+1. Criar usuarios e campanha.
+2. Testar selecao e personalizacao sem envio externo:
+```bash
+curl -X POST https://martech-viral-system-preview.bkpdsf.workers.dev/campaign/<campaign_id>/send \
+  -H "Content-Type: application/json" \
+  -d '{"dryRun":true,"personalize":true,"includeInactive":true,"limit":50}'
+```
+3. Em `preview`, pode validar envio real sem trocar `wrangler.toml` usando override temporario:
+```bash
+curl -X POST https://martech-viral-system-preview.bkpdsf.workers.dev/campaign/<campaign_id>/send \
+  -H "Content-Type: application/json" \
+  -d '{"dryRun":false,"personalize":false,"includeInactive":true,"webhookUrlOverride":"https://httpbin.org/post"}'
+```
+
+## Proximo ciclo recomendado
+1. Adicionar testes de integracao para `/campaign/:id/send`, `/interaction` e `/ref/:code`.
+2. Conectar provedores reais (Meta/Twilio/Resend) aos webhooks de dispatcher.
+3. Criar retries com backoff e fila para falhas de envio.

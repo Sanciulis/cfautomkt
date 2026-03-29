@@ -1,0 +1,63 @@
+#:schema node_modules/wrangler/config-schema.json
+name = "martech-viral-system"
+main = "src/index.ts"
+compatibility_date = "2024-03-28"
+workers_dev = false
+
+[[routes]]
+pattern = "fluxoia.com/*"
+zone_name = "fluxoia.com"
+
+[vars]
+APP_ENV = "production"
+LANDING_PAGE_URL = "https://fluxoia.com/inscricao"
+DISPATCH_WEBHOOK_URL = "https://api.fluxoia.com/webhooks/dispatch"
+WHATSAPP_WEBHOOK_URL = "https://api.fluxoia.com/webhooks/dispatch/whatsapp"
+EMAIL_WEBHOOK_URL = "https://api.fluxoia.com/webhooks/dispatch/email"
+TELEGRAM_WEBHOOK_URL = "https://api.fluxoia.com/webhooks/dispatch/telegram"
+
+[[kv_namespaces]]
+binding = "MARTECH_KV"
+id = "70edae18a45244dfb98a2d99e2cce33e"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "martech_db"
+database_id = "d43527f8-c4e1-4ff4-ac3f-85c175a3ddd5"
+
+[ai]
+binding = "AI"
+
+[triggers]
+crons = ["0 */6 * * *"]
+
+[env.preview]
+name = "martech-viral-system-preview"
+workers_dev = true
+routes = []
+
+[env.preview.vars]
+APP_ENV = "preview"
+LANDING_PAGE_URL = "https://preview.fluxoia.com/inscricao"
+DISPATCH_WEBHOOK_URL = "https://preview-api.fluxoia.com/webhooks/dispatch"
+WHATSAPP_WEBHOOK_URL = "https://preview-api.fluxoia.com/webhooks/dispatch/whatsapp"
+EMAIL_WEBHOOK_URL = "https://preview-api.fluxoia.com/webhooks/dispatch/email"
+TELEGRAM_WEBHOOK_URL = "https://preview-api.fluxoia.com/webhooks/dispatch/telegram"
+
+[[env.preview.kv_namespaces]]
+binding = "MARTECH_KV"
+id = "059caa2e15ef4818883eb9e59a734709"
+
+[[env.preview.d1_databases]]
+binding = "DB"
+database_name = "martech_db_preview"
+database_id = "f9b9617c-4939-447e-aa3d-77f9792ebda7"
+
+[env.preview.ai]
+binding = "AI"
+
+[env.preview.triggers]
+crons = ["15 */6 * * *"]
+
+[observability]
+enabled = true

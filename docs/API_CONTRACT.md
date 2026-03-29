@@ -1,0 +1,205 @@
+# API Contract - Martech Viral System
+
+Base URLs:
+- Preview: `https://martech-viral-system-preview.bkpdsf.workers.dev`
+- Production: `https://fluxoia.com`
+
+## Autenticacao administrativa
+Quando o secret `ADMIN_API_KEY` estiver configurado no Worker, os endpoints administrativos exigem:
+- Header `x-api-key: <token>`, ou
+- Header `Authorization: Bearer <token>`
+
+Endpoints protegidos:
+- `GET /user/:id`
+- `POST /user`
+- `POST /campaign`
+- `POST /interaction`
+- `POST /personalize/:id`
+- `POST /campaign/:id/send`
+- `GET /metrics/overview`
+
+## GET /
+Status do worker.
+
+Response:
+```json
+{
+  "name": "Viral Marketing System",
+  "status": "ok",
+  "env": "preview"
+}
+```
+
+## POST /user
+Cria usuario.
+
+Request:
+```json
+{
+  "id": "u-whats-001",
+  "name": "Ana",
+  "email": "ana@example.com",
+  "phone": "+5511999990001",
+  "preferredChannel": "whatsapp",
+  "psychologicalProfile": "empreendedor",
+  "referredBy": "u-root-001"
+}
+```
+
+Response `201`:
+```json
+{
+  "status": "success",
+  "user": {
+    "id": "u-whats-001",
+    "referralCode": "uwhats00abc123"
+  }
+}
+```
+
+## GET /user/:id
+Retorna perfil do usuario.
+
+## POST /campaign
+Cria campanha.
+
+Request:
+```json
+{
+  "id": "cmp-whats-001",
+  "name": "Campanha WhatsApp MVP",
+  "baseCopy": "Oferta limitada para hoje.",
+  "incentiveOffer": "Convide 2 amigos e ganhe bonus",
+  "channel": "whatsapp"
+}
+```
+
+Response `201`:
+```json
+{
+  "status": "success",
+  "campaignId": "cmp-whats-001"
+}
+```
+
+## POST /interaction
+Registra evento no funil.
+
+Eventos aceitos:
+- `sent`
+- `opened`
+- `clicked`
+- `shared`
+- `converted`
+- `referral_click`
+- `personalized`
+- `send_failed`
+
+Request:
+```json
+{
+  "userId": "u-whats-001",
+  "campaignId": "cmp-whats-001",
+  "channel": "whatsapp",
+  "eventType": "clicked",
+  "metadata": { "source": "landing" }
+}
+```
+
+## POST /personalize/:id
+Gera copy personalizada para usuario.
+
+Request:
+```json
+{
+  "campaignId": "cmp-whats-001",
+  "baseCopy": "Oferta base opcional"
+}
+```
+
+Response:
+```json
+{
+  "user": {
+    "id": "u-whats-001",
+    "preferredChannel": "whatsapp",
+    "engagementScore": 3.5
+  },
+  "campaignId": "cmp-whats-001",
+  "personalizedMessage": "..."
+}
+```
+
+## GET /ref/:code
+Rastreia clique viral e redireciona para landing.
+
+Comportamento:
+- aplica dedupe em KV (janela 1h por user+ipHash)
+- grava `referral_click` quando elegivel
+- soma `viral_points` para dono do code
+- redirect `302` para `LANDING_PAGE_URL?ref=<code>`
+
+## POST /campaign/:id/send
+Dispara campanha para lote de usuarios.
+
+Request:
+```json
+{
+  "userIds": ["u-whats-001", "u-whats-002"],
+  "limit": 100,
+  "personalize": true,
+  "dryRun": false,
+  "channel": "whatsapp",
+  "includeInactive": false,
+  "force": false,
+  "metadata": { "batch": "2026-03-29" }
+}
+```
+
+Campos especiais:
+- `dryRun=true`: nao envia webhook; valida selecao/fluxo
+- `force=true`: ignora bloqueio de campanha `paused`
+- `webhookUrlOverride` (apenas preview): override temporario de destino do webhook
+
+Response:
+```json
+{
+  "status": "success",
+  "campaignId": "cmp-whats-001",
+  "channel": "whatsapp",
+  "dryRun": false,
+  "requested": 2,
+  "sent": 2,
+  "failed": 0,
+  "skipped": 0,
+  "failures": []
+}
+```
+
+## GET /metrics/overview
+Consolida metricas do sistema.
+
+Response:
+```json
+{
+  "totals": {
+    "users": 3,
+    "interactions": 6,
+    "sent": 2,
+    "conversions": 0,
+    "shares": 0,
+    "activeCampaigns": 1
+  },
+  "metrics": {
+    "conversionRate": 0,
+    "kFactor": 0
+  },
+  "topReferrers": []
+}
+```
+
+## Erros comuns
+- `400`: payload invalido
+- `404`: usuario/campanha nao encontrado
+- `409`: campanha pausada sem `force=true`
+- `500`: webhook nao configurado para canal
