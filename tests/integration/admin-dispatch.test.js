@@ -403,13 +403,14 @@ describe('Integration: admin login and campaign dispatch', () => {
 
     expect(response.status).toBe(200)
     const html = await response.text()
-    expect(html).toContain('Menu admin')
-    expect(html).toContain('href="#integracao"')
-    expect(html).toContain('href="#integracao-teste"')
+    expect(html).toContain('Martech')
+    expect(html).toContain('Cloud')
+    expect(html).toContain('data-view="integrations"')
+    expect(html).toContain('data-view="ai-agent"')
     expect(html).toContain('/admin/actions/integration/save')
     expect(html).toContain('/admin/actions/integration/test')
-    expect(html).toContain('Configuracao WhatsApp')
-    expect(html).toContain('Teste da Integracao WhatsApp')
+    expect(html).toContain('Configurador WhatsApp Gateway')
+    expect(html).toContain('Diagnostic Tool')
   })
 
   it('saves WhatsApp integration config via admin form', async () => {

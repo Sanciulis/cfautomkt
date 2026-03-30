@@ -2,112 +2,157 @@ import { escapeHtml } from '../utils'
 
 export function renderAdminLoginPage(message?: string): string {
   const messageHtml = message
-    ? `<p class="notice">${escapeHtml(message)}</p>`
-    : '<p class="hint">Use sua senha administrativa para entrar.</p>'
+    ? `<div class="alert alert-error">${escapeHtml(message)}</div>`
+    : '<div class="alert alert-info">Identifique-se para acessar o console de rádio.</div>'
+    
   return `<!doctype html>
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Martech Admin Login</title>
+  <title>Martech Cloud | Autenticação</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap');
     :root {
-      --bg: #f7f4ea;
-      --panel: #fffdf6;
-      --ink: #192126;
-      --muted: #5d666d;
-      --accent: #005f5a;
-      --accent-soft: #d6f0ee;
-      --danger: #b42318;
-      --line: #d7d8cf;
+      --primary: #10b981;
+      --primary-glow: rgba(16, 185, 129, 0.2);
+      --bg-dark: #0f172a;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --border: rgba(255, 255, 255, 0.08);
+      --glass: rgba(30, 41, 59, 0.7);
     }
+
     * { box-sizing: border-box; }
     body {
       margin: 0;
       min-height: 100vh;
-      background:
-        radial-gradient(circle at 10% 10%, #d6f0ee 0%, transparent 40%),
-        radial-gradient(circle at 90% 90%, #f0e7d3 0%, transparent 38%),
-        var(--bg);
-      color: var(--ink);
-      font-family: 'Space Grotesk', sans-serif;
-      display: grid;
-      place-items: center;
+      background-color: var(--bg-dark);
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(16, 185, 129, 0.1) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(99, 102, 241, 0.1) 0px, transparent 50%);
+      color: var(--text-main);
+      font-family: 'Outfit', sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       padding: 24px;
     }
-    .card {
-      width: min(480px, 100%);
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 16px;
-      padding: 28px;
-      box-shadow: 0 20px 55px rgba(0, 0, 0, 0.12);
+
+    .login-card {
+      width: min(440px, 100%);
+      background: var(--glass);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 40px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+      animation: appear 0.6s cubic-bezier(0.16, 1, 0.3, 1);
     }
-    h1 {
-      margin: 0 0 6px 0;
-      font-size: 1.55rem;
-      letter-spacing: 0.02em;
+
+    @keyframes appear {
+      from { opacity: 0; transform: scale(0.9) translateY(20px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
     }
-    .subtitle {
-      margin: 0 0 14px 0;
-      color: var(--muted);
-      font-size: 0.95rem;
+
+    .brand {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      margin-bottom: 32px;
     }
-    .notice, .hint {
-      margin: 0 0 16px 0;
-      border-radius: 10px;
-      padding: 10px 12px;
-      font-size: 0.92rem;
+    .brand-logo {
+      width: 48px;
+      height: 48px;
+      background: linear-gradient(135deg, var(--primary), #6366f1);
+      border-radius: 12px;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      font-size: 1.5rem;
+      color: white;
+      margin-bottom: 16px;
+      box-shadow: 0 8px 16px var(--primary-glow);
     }
-    .notice {
-      background: #fde8e8;
-      color: var(--danger);
-      border: 1px solid #f9c8c8;
+    .brand-name { font-size: 1.5rem; font-weight: 700; color: white; letter-spacing: -0.02em; }
+    .brand-name span { color: var(--primary); }
+
+    .alert {
+      padding: 12px 16px;
+      border-radius: 12px;
+      font-size: 0.85rem;
+      margin-bottom: 24px;
+      text-align: center;
+      border: 1px solid transparent;
     }
-    .hint {
-      background: var(--accent-soft);
-      color: var(--accent);
-      border: 1px solid #b7e2de;
-    }
-    label {
-      display: block;
-      font-size: 0.9rem;
-      margin-bottom: 8px;
-    }
-    input[type="password"] {
+    .alert-info { background: rgba(255, 255, 255, 0.05); color: var(--text-muted); border-color: var(--border); }
+    .alert-error { background: rgba(239, 68, 68, 0.1); color: #ef4444; border-color: rgba(239, 68, 68, 0.2); }
+
+    .form-group { margin-bottom: 24px; }
+    .label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 8px; color: var(--text-muted); }
+    .input {
       width: 100%;
-      padding: 12px;
-      border: 1px solid var(--line);
-      border-radius: 10px;
-      font: inherit;
-      background: #ffffff;
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      color: white;
+      padding: 14px 16px;
+      font-family: inherit;
+      font-size: 1rem;
+      transition: all 0.2s;
     }
-    button {
+    .input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px var(--primary-glow); }
+
+    .btn {
       width: 100%;
-      margin-top: 14px;
+      background: var(--primary);
+      color: white;
       border: none;
-      border-radius: 10px;
-      background: var(--accent);
-      color: #fff;
-      padding: 12px;
-      font: inherit;
+      padding: 14px;
+      border-radius: 12px;
+      font-family: inherit;
       font-weight: 700;
+      font-size: 1rem;
       cursor: pointer;
+      transition: all 0.2s;
+      box-shadow: 0 4px 12px var(--primary-glow);
+    }
+    .btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px var(--primary-glow); }
+    .btn:active { transform: translateY(0); }
+
+    .footer-text {
+      margin-top: 32px;
+      text-align: center;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      opacity: 0.6;
     }
   </style>
 </head>
 <body>
-  <main class="card">
-    <h1>Martech Admin</h1>
-    <p class="subtitle">Acesso protegido para operacao de campanhas.</p>
+  <div class="login-card">
+    <div class="brand">
+      <div class="brand-logo">M</div>
+      <div class="brand-name">Martech<span>Cloud</span></div>
+    </div>
+
     ${messageHtml}
+
     <form method="post" action="/admin/login">
-      <label for="password">Senha administrativa</label>
-      <input id="password" name="password" type="password" autocomplete="current-password" required />
-      <button type="submit">Entrar</button>
+      <div class="form-group">
+        <label class="label" for="password">Chave de Acesso Administrativa</label>
+        <input class="input" id="password" name="password" type="password" placeholder="••••••••" autocomplete="current-password" required autofocus />
+      </div>
+      <button class="btn" type="submit">Entrar no Console</button>
     </form>
-  </main>
+
+    <div class="footer-text">
+      &copy; 2026 AI Viral Strategy. Autenticação Edge-Protected.
+    </div>
+  </div>
 </body>
 </html>`
 }
