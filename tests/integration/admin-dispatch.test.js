@@ -405,9 +405,11 @@ describe('Integration: admin login and campaign dispatch', () => {
     const html = await response.text()
     expect(html).toContain('Menu admin')
     expect(html).toContain('href="#integracao"')
+    expect(html).toContain('href="#integracao-teste"')
     expect(html).toContain('/admin/actions/integration/save')
     expect(html).toContain('/admin/actions/integration/test')
-    expect(html).toContain('Integracao WhatsApp')
+    expect(html).toContain('Configuracao WhatsApp')
+    expect(html).toContain('Teste da Integracao WhatsApp')
   })
 
   it('saves WhatsApp integration config via admin form', async () => {

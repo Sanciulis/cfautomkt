@@ -37,11 +37,41 @@ Rotas do painel:
 - `POST /admin/actions/user/create` (cria usuario via formulario)
 - `POST /admin/actions/campaign/create` (cria campanha via formulario)
 - `POST /admin/actions/campaign/dispatch` (executa dispatch via formulario)
+- `POST /admin/actions/integration/save` (salva configuracao WhatsApp)
+- `POST /admin/actions/integration/test` (executa teste real no webhook WhatsApp)
 
 Protecoes adicionais:
 - rate limit no login por IP (janela de 10 min)
 - bloqueio temporario apos 5 falhas consecutivas (15 min)
 - em bloqueio, resposta `429` com header `Retry-After`
+
+## Integracao WhatsApp no Admin (sessao web)
+
+### POST /admin/actions/integration/save
+Salva configuracao da integracao WhatsApp no KV (`admin_config:integration:whatsapp`).
+
+Campos de formulario:
+- `webhookUrl` (obrigatorio)
+- `testPhone` (opcional)
+- `testMessage` (opcional)
+
+Comportamento:
+- valida URL (`http/https`, em producao exige `https`)
+- grava timestamp de atualizacao
+- redireciona de volta para `/admin` com notice de sucesso/erro
+
+### POST /admin/actions/integration/test
+Dispara teste da integracao usando o webhook configurado (ou `webhookUrl` override no formulario).
+
+Campos de formulario:
+- `testPhone` (obrigatorio, ou ja salvo)
+- `testMessage` (opcional)
+- `webhookUrl` (opcional; override apenas para este teste)
+
+Comportamento:
+- envia payload no formato de dispatch para o webhook WhatsApp
+- usa `Authorization: Bearer <DISPATCH_BEARER_TOKEN>`
+- em sucesso/falha, redireciona para `/admin` com status
 
 ## GET /
 Status do worker.

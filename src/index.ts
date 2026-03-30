@@ -1254,7 +1254,8 @@ function renderAdminDashboardPage(data: {
       <a href="#usuarios">Usuarios</a>
       <a href="#campanhas">Campanhas</a>
       <a href="#disparo">Disparo</a>
-      <a href="#integracao">Integracao</a>
+      <a href="#integracao">Config. integracao</a>
+      <a href="#integracao-teste">Teste integracao</a>
       <a href="#agente">Agente</a>
       <a href="#lista-campanhas">Lista de campanhas</a>
     </nav>
@@ -1355,19 +1356,30 @@ function renderAdminDashboardPage(data: {
         <button type="submit">Executar dispatch</button>
       </form>
       <form id="integracao" class="anchor-target" method="post" action="/admin/actions/integration/save">
-        <h2>Integracao WhatsApp</h2>
+        <h2>Configuracao WhatsApp</h2>
         ${dispatchTokenStatus}
-        <p class="helper">Configure o webhook de entrega WhatsApp (ex.: gateway Baileys) e execute um envio de teste controlado.</p>
-        <label class="field"><span>Webhook URL</span><input name="webhookUrl" value="${whatsappWebhookUrl}" placeholder="https://wa-gateway.seu-dominio.com/dispatch/whatsapp" required /></label>
+        <p class="helper">Defina a URL do webhook de entrega WhatsApp (ex.: gateway Baileys). Esta URL sera usada pelo botao de teste e tambem para os dispatches da campanha quando informado override no admin.</p>
+        <label class="field"><span>Webhook URL da integracao</span><input name="webhookUrl" value="${whatsappWebhookUrl}" placeholder="https://wa-gateway.seu-dominio.com/dispatch/whatsapp" required /></label>
         <div class="row">
-          <label class="field"><span>Telefone de teste</span><input name="testPhone" value="${whatsappTestPhone}" placeholder="+5511999990001" /></label>
+          <label class="field"><span>Telefone padrao de teste (opcional)</span><input name="testPhone" value="${whatsappTestPhone}" placeholder="+5511999990001" /></label>
           <label class="field"><span>Ultima atualizacao</span><input value="${escapeHtml(whatsappUpdatedAtLabel)}" readonly /></label>
         </div>
-        <label class="field"><span>Mensagem de teste</span><textarea name="testMessage">${whatsappTestMessage}</textarea></label>
-        <div class="actions">
-          <button type="submit">Salvar configuracao</button>
-          <button class="secondary" type="submit" formaction="/admin/actions/integration/test">Salvar e testar</button>
+        <label class="field"><span>Mensagem padrao de teste</span><textarea name="testMessage">${whatsappTestMessage}</textarea></label>
+        <button type="submit">Salvar configuracao</button>
+      </form>
+      <form id="integracao-teste" class="anchor-target" method="post" action="/admin/actions/integration/test">
+        <h2>Teste da Integracao WhatsApp</h2>
+        <p class="helper">Este teste envia um payload real para o webhook com Authorization Bearer usando o secret <code>DISPATCH_BEARER_TOKEN</code>.</p>
+        <div class="row">
+          <label class="field"><span>Webhook configurado (somente leitura)</span><input value="${whatsappWebhookUrl || 'Nao configurado'}" readonly /></label>
+          <label class="field"><span>Webhook override para este teste (opcional)</span><input name="webhookUrl" placeholder="https://wa-gateway.seu-dominio.com/dispatch/whatsapp" /></label>
         </div>
+        <div class="row">
+          <label class="field"><span>Telefone de teste</span><input name="testPhone" value="${whatsappTestPhone}" placeholder="+5511999990001" /></label>
+          <label class="field"><span>Canal</span><input value="whatsapp" readonly /></label>
+        </div>
+        <label class="field"><span>Mensagem de teste</span><textarea name="testMessage">${whatsappTestMessage}</textarea></label>
+        <button class="secondary" type="submit">Executar teste da integracao</button>
       </form>
       <section id="agente" class="log anchor-target">
         <h2 class="panel-title">Decisoes recentes do agente</h2>
