@@ -32,6 +32,7 @@ export type Bindings = {
   ADMIN_SESSION_SECRET?: string
   RESEND_API_KEY?: string
   RESEND_DEFAULT_FROM?: string
+  TELEGRAM_BOT_TOKEN?: string
 }
 
 export type UserRecord = {

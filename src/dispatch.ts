@@ -33,9 +33,10 @@ export async function executeCampaignDispatch(
 
   const channel = (safeString(body.channel) ?? campaign.channel ?? 'whatsapp').toLowerCase()
   const isDirectEmail = channel === 'email' && !!env.RESEND_API_KEY
+  const isDirectTelegram = channel === 'telegram' && !!env.TELEGRAM_BOT_TOKEN
   let dispatchUrl: string | null = null
 
-  if (!isDirectEmail) {
+  if (!isDirectEmail && !isDirectTelegram) {
     const baseDispatchUrl = resolveDispatchUrl(channel, env)
     dispatchUrl = baseDispatchUrl
 
@@ -204,6 +205,63 @@ export async function executeCampaignDispatch(
         text: message + (referralUrl ? `\n\nLink: ${referralUrl}` : ''),
       })
       emailBatchUsers.push(user)
+      continue
+    }
+
+    if (isDirectTelegram) {
+      const telegramText = [
+        message,
+        referralUrl ? `\n\n🎁 Indique e ganhe: ${referralUrl}` : '',
+        unsubscribeUrl ? `\n\n🛑 Descadastro: ${unsubscribeUrl}` : ''
+      ].filter(Boolean).join('')
+
+      const tgPayload = {
+        chat_id: destination,
+        text: telegramText,
+      }
+
+      const tgUrl = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`
+
+      try {
+        const response = await fetch(tgUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(tgPayload),
+        })
+
+        const tgRes = (await response.json().catch(() => ({}))) as any
+
+        if (response.ok && tgRes.ok) {
+          sentCount += 1
+          await logInteraction(env, {
+            userId: user.id,
+            campaignId,
+            channel,
+            eventType: 'sent',
+            metadata: { messageId: tgRes.result?.message_id },
+          })
+        } else {
+          failedCount += 1
+          failures.push({ userId: user.id, reason: tgRes.description || 'Telegram API returned error', status: response.status })
+          await logInteraction(env, {
+            userId: user.id,
+            campaignId,
+            channel,
+            eventType: 'send_failed',
+            metadata: { error: tgRes.description || 'Telegram API error', statusCode: response.status },
+          })
+        }
+      } catch (error) {
+        failedCount += 1
+        failures.push({ userId: user.id, reason: 'Telegram request failed' })
+        await logInteraction(env, {
+          userId: user.id,
+          campaignId,
+          channel,
+          eventType: 'send_failed',
+          metadata: { error: String(error) },
+        })
+      }
       continue
     }
 
