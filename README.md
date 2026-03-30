@@ -32,6 +32,31 @@ Motor de marketing autonomo na Cloudflare Edge com foco em:
 5. Endpoint de metricas agrega conversao e K-factor.
 6. Para canal WhatsApp, o Worker entrega em webhook externo (ex.: gateway Baileys).
 
+## Estrutura modular (`src/`)
+```
+src/
+├── index.ts              # Entry point — monta rotas e exporta handlers
+├── types.ts              # Tipos compartilhados (Bindings, UserRecord, etc.)
+├── constants.ts          # Constantes (pesos, TTLs, modelos AI)
+├── utils.ts              # Helpers puros (parsing, escapeHtml, validação)
+├── auth.ts               # Sessão admin, API key, throttle de login
+├── ai.ts                 # Personalização via Workers AI (Llama 3)
+├── db.ts                 # Operações D1 (users, campaigns, interactions)
+├── consent.ts            # Lógica LGPD (opt-in/opt-out)
+├── dispatch.ts           # Orquestração de disparo multicanal
+├── integration.ts        # Config WhatsApp (KV-based)
+├── scheduled.ts          # Agente autônomo (cron)
+├── routes/
+│   ├── admin.ts          # Rotas /admin/* (painel, CRUD, dispatch)
+│   ├── api.ts            # API REST (/user, /campaign, /interaction, etc.)
+│   └── public.ts         # Rotas públicas (/, /ref/:code, /unsubscribe/:code)
+└── templates/
+    ├── index.ts           # Barrel export
+    ├── admin-login.ts     # Página de login admin
+    ├── admin-dashboard.ts # Dashboard operacional
+    └── unsubscribe.ts     # Página de descadastro LGPD
+```
+
 ## Modelagem de dados (D1)
 Arquivos: `schema.sql`
 
