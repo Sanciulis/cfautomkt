@@ -1,0 +1,17 @@
+services:
+  whatsapp-gateway:
+    build:
+      context: .
+    container_name: wainews-whatsapp-gateway
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./session:/app/session
+    ports:
+      - "127.0.0.1:8788:8788"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -12,7 +12,7 @@ zone_name = "fluxoia.com"
 APP_ENV = "production"
 LANDING_PAGE_URL = "https://fluxoia.com/inscricao"
 DISPATCH_WEBHOOK_URL = "https://api.fluxoia.com/webhooks/dispatch"
-WHATSAPP_WEBHOOK_URL = "https://api.fluxoia.com/webhooks/dispatch/whatsapp"
+WHATSAPP_WEBHOOK_URL = "https://wainews.com.br/webhooks/dispatch/whatsapp"
 EMAIL_WEBHOOK_URL = "https://api.fluxoia.com/webhooks/dispatch/email"
 TELEGRAM_WEBHOOK_URL = "https://api.fluxoia.com/webhooks/dispatch/telegram"
 

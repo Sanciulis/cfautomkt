@@ -21,6 +21,19 @@ npm install
 npm run dev
 ```
 
+## Deploy com Docker
+```bash
+cd integrations/whatsapp-baileys-gateway
+cp .env.example .env
+# ajuste os tokens e opcoes no .env
+docker compose up -d --build
+```
+
+Exemplo seguro de exposicao:
+- publicar apenas `POST /dispatch/whatsapp` no Nginx
+- manter `session/*` acessivel apenas localmente (`127.0.0.1`)
+- mapear porta do container apenas em loopback: `127.0.0.1:8788:8788`
+
 ## Variaveis de ambiente
 - `DISPATCH_BEARER_TOKEN` (obrigatoria): deve ser igual ao secret `DISPATCH_BEARER_TOKEN` do Worker.
 - `GATEWAY_ADMIN_TOKEN` (opcional): token para endpoints de sessao (`/session/*`).
@@ -56,6 +69,11 @@ Defina `WHATSAPP_WEBHOOK_URL` no Worker apontando para o gateway:
 
 ```toml
 WHATSAPP_WEBHOOK_URL = "https://wa-gateway.seu-dominio.com/dispatch/whatsapp"
+```
+
+Exemplo alternativo via path no dominio principal:
+```toml
+WHATSAPP_WEBHOOK_URL = "https://seu-dominio.com/webhooks/dispatch/whatsapp"
 ```
 
 E configure no Worker:
