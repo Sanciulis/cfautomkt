@@ -11,6 +11,8 @@ import { safeString, toNumber, toBoolean, resolveDispatchUrl, validatePreviewWeb
 import { logInteraction } from './db'
 import { isUserOptedOut } from './consent'
 import { generatePersonalizedMessage } from './ai'
+import { Resend } from 'resend'
+import type { CreateEmailOptions } from 'resend'
 
 export async function executeCampaignDispatch(
   env: Bindings,
@@ -30,20 +32,25 @@ export async function executeCampaignDispatch(
   }
 
   const channel = (safeString(body.channel) ?? campaign.channel ?? 'whatsapp').toLowerCase()
-  const baseDispatchUrl = resolveDispatchUrl(channel, env)
-  let dispatchUrl = baseDispatchUrl
+  const isDirectEmail = channel === 'email' && !!env.RESEND_API_KEY
+  let dispatchUrl: string | null = null
 
-  const overrideUrl = safeString(body.webhookUrlOverride)
-  if ((env.APP_ENV ?? '').toLowerCase() === 'preview' && overrideUrl) {
-    const overrideValidation = validatePreviewWebhookOverrideUrl(overrideUrl, env)
-    if (!overrideValidation.ok) {
-      return { ok: false, status: 400, error: overrideValidation.error }
+  if (!isDirectEmail) {
+    const baseDispatchUrl = resolveDispatchUrl(channel, env)
+    dispatchUrl = baseDispatchUrl
+
+    const overrideUrl = safeString(body.webhookUrlOverride)
+    if ((env.APP_ENV ?? '').toLowerCase() === 'preview' && overrideUrl) {
+      const overrideValidation = validatePreviewWebhookOverrideUrl(overrideUrl, env)
+      if (!overrideValidation.ok) {
+        return { ok: false, status: 400, error: overrideValidation.error }
+      }
+      dispatchUrl = overrideValidation.normalizedUrl
     }
-    dispatchUrl = overrideValidation.normalizedUrl
-  }
 
-  if (!dispatchUrl) {
-    return { ok: false, status: 500, error: 'Dispatch webhook URL is not configured for this channel.' }
+    if (!dispatchUrl) {
+      return { ok: false, status: 500, error: 'Dispatch webhook URL is not configured for this channel.' }
+    }
   }
 
   const limit = Math.min(Math.max(toNumber(body.limit) || 100, 1), 500)
@@ -89,6 +96,9 @@ export async function executeCampaignDispatch(
   let failedCount = 0
   let skippedCount = 0
   const failures: Array<{ userId: string; reason: string; status?: number }> = []
+
+  const emailBatchOptions: CreateEmailOptions[] = []
+  const emailBatchUsers: UserRecord[] = []
 
   for (const user of users) {
     if (isUserOptedOut(user)) {
@@ -173,6 +183,30 @@ export async function executeCampaignDispatch(
       continue
     }
 
+    if (isDirectEmail) {
+      const formattedMessage = message.replace(/\n/g, '<br/>')
+      const htmlContent = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #333; padding: 20px; line-height: 1.6;">
+          <p>Olá${user.name ? ` ${user.name}` : ''},</p>
+          <div style="margin: 20px 0;">
+            ${formattedMessage}
+          </div>
+          ${referralUrl ? `<div style="margin: 30px 0;"><a href="${referralUrl}" style="display:inline-block;padding:12px 24px;background:#005f5a;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:bold;">Seu Link de Convite</a></div>` : ''}
+          ${unsubscribeUrl ? `<hr style="border:none;border-top:1px solid #eaeaea;margin-top:40px;"/><p style="font-size:12px;color:#888;"><a href="${unsubscribeUrl}" style="color:#005f5a;">Cancelar inscrição</a></p>` : ''}
+        </div>
+      `
+
+      emailBatchOptions.push({
+        from: safeString(env.RESEND_DEFAULT_FROM) || 'Acme <onboarding@resend.dev>',
+        to: [destination],
+        subject: campaign.name,
+        html: htmlContent,
+        text: message + (referralUrl ? `\n\nLink: ${referralUrl}` : ''),
+      })
+      emailBatchUsers.push(user)
+      continue
+    }
+
     try {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -181,7 +215,7 @@ export async function executeCampaignDispatch(
         headers.Authorization = `Bearer ${env.DISPATCH_BEARER_TOKEN}`
       }
 
-      const response = await fetch(dispatchUrl, {
+      const response = await fetch(dispatchUrl as string, {
         method: 'POST',
         headers,
         body: JSON.stringify(payload),
@@ -226,6 +260,71 @@ export async function executeCampaignDispatch(
         eventType: 'send_failed',
         metadata: { error: String(error) },
       })
+    }
+  }
+
+  if (isDirectEmail && emailBatchOptions.length > 0 && !dryRun) {
+    const resend = new Resend(env.RESEND_API_KEY)
+    
+    for (let i = 0; i < emailBatchOptions.length; i += 100) {
+      const chunkOptions = emailBatchOptions.slice(i, i + 100)
+      const chunkUsers = emailBatchUsers.slice(i, i + 100)
+      
+      try {
+        const result = await resend.batch.send(chunkOptions)
+        
+        if (result.error) {
+          failedCount += chunkUsers.length
+          for (const u of chunkUsers) {
+            failures.push({ userId: u.id, reason: result.error.message || 'Batch failed' })
+            await logInteraction(env, {
+              userId: u.id,
+              campaignId,
+              channel,
+              eventType: 'send_failed',
+              metadata: { error: result.error.message },
+            })
+          }
+        } else if (result.data?.data) {
+          for (let j = 0; j < chunkUsers.length; j++) {
+            const u = chunkUsers[j]
+            const responseItem = result.data.data[j]
+            // We assume success if we got back an ID
+            if (responseItem?.id) {
+              sentCount += 1
+              await logInteraction(env, {
+                userId: u.id,
+                campaignId,
+                channel,
+                eventType: 'sent',
+                metadata: { messageId: responseItem.id },
+              })
+            } else {
+              failedCount += 1
+              failures.push({ userId: u.id, reason: 'Email rejected' })
+              await logInteraction(env, {
+                userId: u.id,
+                campaignId,
+                channel,
+                eventType: 'send_failed',
+                metadata: { error: 'Rejected by Resend' },
+              })
+            }
+          }
+        }
+      } catch (error) {
+        failedCount += chunkUsers.length
+        for (const u of chunkUsers) {
+          failures.push({ userId: u.id, reason: 'Batch request failed' })
+          await logInteraction(env, {
+            userId: u.id,
+            campaignId,
+            channel,
+            eventType: 'send_failed',
+            metadata: { error: String(error) },
+          })
+        }
+      }
     }
   }
 

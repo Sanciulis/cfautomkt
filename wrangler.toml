@@ -15,6 +15,8 @@ DISPATCH_WEBHOOK_URL = "https://api.fluxoia.com/webhooks/dispatch"
 WHATSAPP_WEBHOOK_URL = "https://wainews.com.br/webhooks/dispatch/whatsapp"
 EMAIL_WEBHOOK_URL = "https://api.fluxoia.com/webhooks/dispatch/email"
 TELEGRAM_WEBHOOK_URL = "https://api.fluxoia.com/webhooks/dispatch/telegram"
+RESEND_DEFAULT_FROM = "Fluxo IA <onboarding@resend.dev>"
+
 
 [[kv_namespaces]]
 binding = "MARTECH_KV"
@@ -44,6 +46,8 @@ PREVIEW_WEBHOOK_OVERRIDE_ALLOWLIST = "httpbin.org"
 WHATSAPP_WEBHOOK_URL = "https://preview-api.fluxoia.com/webhooks/dispatch/whatsapp"
 EMAIL_WEBHOOK_URL = "https://preview-api.fluxoia.com/webhooks/dispatch/email"
 TELEGRAM_WEBHOOK_URL = "https://preview-api.fluxoia.com/webhooks/dispatch/telegram"
+RESEND_DEFAULT_FROM = "Fluxo IA Preview <onboarding@resend.dev>"
+
 
 [[env.preview.kv_namespaces]]
 binding = "MARTECH_KV"

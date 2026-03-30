@@ -30,6 +30,8 @@ export type Bindings = {
   ADMIN_API_KEY?: string
   ADMIN_PANEL_PASSWORD?: string
   ADMIN_SESSION_SECRET?: string
+  RESEND_API_KEY?: string
+  RESEND_DEFAULT_FROM?: string
 }
 
 export type UserRecord = {
