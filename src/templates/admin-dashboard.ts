@@ -558,6 +558,10 @@ export function renderAdminDashboardPage(data: {
         <svg fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 0l-2 2a1 1 0 101.414 1.414L8 10.414l1.293 1.293a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
         <span>Jornadas AI</span>
       </a>
+      <a class="nav-item" data-view="playground">
+        <svg fill="currentColor" viewBox="0 0 20 20"><path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z"></path><path d="M15 7v2a4 4 0 01-4 4H9.828l-1.766 1.767c.28.149.599.233.938.233h2l3 3v-3h2a2 2 0 002-2V9a2 2 0 00-2-2h-1z"></path></svg>
+        <span>Playground AI</span>
+      </a>
 
       <div class="nav-label">Configuração</div>
       <a class="nav-item" data-view="ai-agent">
@@ -971,6 +975,64 @@ export function renderAdminDashboardPage(data: {
       </div>
     </div>
 
+    <!-- VIEW: Playground AI -->
+    <div id="view-playground" class="view-content">
+      <div class="panel-grid" style="grid-template-columns: 1fr 2fr; align-items: start;">
+        <!-- Setup Mocks -->
+        <section class="panel">
+          <h3 class="panel-title">Configurar Simulação</h3>
+          <p class="text-sm opacity-60 mb-6">Ajuste os blocos antes de conversar.</p>
+          
+          <div class="space-y-4">
+            <div class="form-group">
+              <label class="input-label">Persona (System Prompt)</label>
+              <textarea id="pg-sys-prompt" class="input-control" rows="3">Você é a Ana, consultora super amigável de onboarding do FluxoIA, fala de forma natural e rápida.</textarea>
+            </div>
+            
+            <div class="form-group">
+              <label class="input-label">Produto / Objetivo da Jornada</label>
+              <input id="pg-objective" class="input-control" value="Vender Mentoria Premium Trimestral" />
+            </div>
+            
+            <div class="form-group">
+              <label class="input-label">Fase Inicial do Lead (AIDA)</label>
+              <select id="pg-phase" class="input-control">
+                <option value="discovery">Discovery (Atenção/Descoberta)</option>
+                <option value="interest">Interest (Aprofundamento/Interesse)</option>
+                <option value="desire">Desire (Construção de Desejo)</option>
+                <option value="action">Action (Fechamento explícito)</option>
+              </select>
+            </div>
+            
+            <div class="form-group">
+              <label class="input-label">Perfil do Lead (Simulado)</label>
+              <input id="pg-profile" class="input-control" value="Empreendedor iniciante, muito desconfiado" />
+            </div>
+
+            <button id="btn-pg-reset" class="btn btn-outline" style="width:100%">Resetar Chat</button>
+          </div>
+        </section>
+
+        <!-- Chat UI -->
+        <section class="panel" style="display:flex; flex-direction:column; height: 600px;">
+          <div class="panel-header" style="border-bottom: 1px solid var(--border); padding-bottom: 16px;">
+            <h3 class="panel-title">Chat <span id="pg-status-badge" class="badge badge-glass">Aguardando</span></h3>
+            <span class="badge badge-primary font-mono" id="pg-current-phase-display">Fase: discovery</span>
+          </div>
+          
+          <div id="pg-chat-history" style="flex:1; overflow-y:auto; padding: 16px 0; display:flex; flex-direction:column; gap:12px;">
+             <!-- Messages will appear here -->
+             <div class="text-center opacity-40 text-sm mt-8">Nenhuma mensagem ainda. Envie um "Olá" para começar a simulação.</div>
+          </div>
+          
+          <div style="border-top:1px solid var(--border); padding-top: 16px; display:flex; gap: 8px;">
+            <input type="text" id="pg-chat-input" class="input-control" placeholder="Digite como se fosse o Lead..." style="flex:1;" />
+            <button id="btn-pg-send" class="btn btn-primary" style="width:100px;">Enviar</button>
+          </div>
+        </section>
+      </div>
+    </div>
+
     <!-- VIEW: AI Agent -->
     <div id="view-ai-agent" class="view-content">
        <div class="panel-grid" style="grid-template-columns: 1.5fr 1fr;">
@@ -1053,6 +1115,7 @@ export function renderAdminDashboardPage(data: {
       'wa-groups': { title: 'Explorador de Grupos', subtitle: 'Extração e captura de audiência via grupos de WhatsApp.' },
       'integrations': { title: 'Integrações de Canais', subtitle: 'Configure webhooks e gateways de entrega multicanal.' },
       'journeys': { title: 'Jornadas AI', subtitle: 'Crie e gerencie jornadas conversacionais com persona AI inteligente.' },
+      'playground': { title: 'Playground AI', subtitle: 'Ambiente seguro para simular e calibrar o funil de IA.' },
       'ai-agent': { title: 'Agente Autônomo', subtitle: 'Supervisão das decisões tomadas pela IA na Edge.' }
     };
 
@@ -1171,6 +1234,107 @@ export function renderAdminDashboardPage(data: {
            participantsContainer.innerHTML = '<tr><td colspan="2" class="text-error text-center py-8">Erro ao extrair participantes.</td></tr>';
        }
     }
+
+    // Playground AI Chat Logic
+    let pgChatHistory = [];
+    const chatContainer = document.getElementById('pg-chat-history');
+    const pgInput = document.getElementById('pg-chat-input');
+    const btnPgSend = document.getElementById('btn-pg-send');
+    const phaseDisplay = document.getElementById('pg-current-phase-display');
+
+    function appendPgMessage(role, text) {
+      if (chatContainer.querySelector('.text-center.opacity-40')) {
+        chatContainer.innerHTML = '';
+      }
+      const isUser = role === 'user';
+      const div = document.createElement('div');
+      div.style.alignSelf = isUser ? 'flex-end' : 'flex-start';
+      div.style.background = isUser ? 'var(--primary)' : 'rgba(255,255,255,0.05)';
+      div.style.color = isUser ? '#000' : 'var(--text)';
+      div.style.padding = '12px 16px';
+      div.style.borderRadius = '12px';
+      div.style.maxWidth = '80%';
+      div.style.border = isUser ? 'none' : '1px solid var(--border)';
+      div.style.lineHeight = '1.4';
+      div.innerText = text;
+      chatContainer.appendChild(div);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+      
+      pgChatHistory.push({ role, content: text });
+    }
+
+    async function sendPgMessage() {
+      const msg = pgInput.value.trim();
+      if (!msg) return;
+      
+      appendPgMessage('user', msg);
+      pgInput.value = '';
+      btnPgSend.disabled = true;
+      btnPgSend.innerText = '...';
+
+      const payload = {
+        message: msg,
+        systemPrompt: document.getElementById('pg-sys-prompt').value,
+        objective: document.getElementById('pg-objective').value,
+        currentPhase: document.getElementById('pg-phase').value,
+        userProfile: {
+          name: 'Lead Simulado',
+          psychologicalProfile: document.getElementById('pg-profile').value,
+          preferredChannel: 'whatsapp'
+        },
+        chatHistory: pgChatHistory.slice(0, -1) // remove the one we just added to send as current
+      };
+
+      try {
+        const response = await fetch('/playground/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        
+        const data = await response.json();
+        if (data.status === 'success') {
+           appendPgMessage('assistant', data.response);
+           
+           if (data.phaseAdvanced) {
+              const notice = document.createElement('div');
+              notice.className = 'text-center text-xs font-mono mb-2 mt-2';
+              notice.style.color = 'var(--success)';
+              notice.innerText = '⚡ SINAL DETECTADO: Funil Avançou para -> ' + data.currentPhase.toUpperCase();
+              chatContainer.appendChild(notice);
+              
+              document.getElementById('pg-phase').value = data.currentPhase;
+              phaseDisplay.innerText = 'Fase: ' + data.currentPhase;
+           }
+        } else {
+           appendPgMessage('assistant', '[Erro da API] ' + (data.error || 'Falha no playground'));
+        }
+      } catch (err) {
+        appendPgMessage('assistant', '[Exceção] Falha de comunicação de rede');
+      } finally {
+        btnPgSend.disabled = false;
+        btnPgSend.innerText = 'Enviar';
+        pgInput.focus();
+      }
+    }
+
+    if(btnPgSend) {
+      btnPgSend.addEventListener('click', sendPgMessage);
+      pgInput.addEventListener('keypress', (e) => { 
+        if (e.key === 'Enter') sendPgMessage(); 
+      });
+
+      document.getElementById('btn-pg-reset').addEventListener('click', () => {
+        pgChatHistory = [];
+        chatContainer.innerHTML = '<div class="text-center opacity-40 text-sm mt-8">Histórico resetado. Nova simulação.</div>';
+        phaseDisplay.innerText = 'Fase: ' + document.getElementById('pg-phase').value;
+      });
+      
+      document.getElementById('pg-phase').addEventListener('change', (e) => {
+        phaseDisplay.innerText = 'Fase: ' + e.target.value;
+      });
+    }
+
   </script>
 </body>
 </html>`

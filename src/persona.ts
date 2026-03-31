@@ -217,3 +217,72 @@ Lembre: máximo 400 caracteres, tom de conversa de WhatsApp entre amigos.`
 
   return `E aí${user.name ? ` ${user.name}` : ''}! Tudo bem? 😊 Vi que você tem interesse em ${journey.objective.toLowerCase()}. Posso te contar uma coisa rápida sobre isso?`
 }
+
+/**
+ * Isolated Persona Simulator for the Playground.
+ * Tests prompt generation and phase advancement logic without writing to the database.
+ */
+export async function simulatePersonaConversation(
+  env: Bindings,
+  journey: JourneyRecord,
+  user: UserRecord,
+  currentPhase: JourneyPhase,
+  chatHistory: JourneyConversationMessage[],
+  leadMessage: string
+): Promise<{
+  response: string
+  phaseAdvanced: boolean
+  newPhase: JourneyPhase
+  updatedHistory: JourneyConversationMessage[]
+}> {
+  // 1. Append user's message in memory
+  const history = [...chatHistory, { role: 'user' as const, content: leadMessage, timestamp: new Date().toISOString() }]
+
+  // 2. Predict Phase Advance
+  let phaseAdvanced = false
+  let activePhase = currentPhase
+
+  if (detectPhaseAdvanceSignal(leadMessage, currentPhase)) {
+    // In simulation, we just fake the transition using the JOURNEY_PHASES array
+    const { JOURNEY_PHASES } = await import('./types')
+    const currentIndex = JOURNEY_PHASES.indexOf(currentPhase)
+    if (currentIndex !== -1 && currentIndex < JOURNEY_PHASES.length - 1) {
+      phaseAdvanced = true
+      activePhase = JOURNEY_PHASES[currentIndex + 1]
+    }
+  }
+
+  // 3. Prompt building
+  const systemPrompt = buildPersonaSystemPrompt(journey, activePhase, user)
+
+  // 4. Build message array
+  const contextWindow = history.slice(-10)
+  const aiMessages: Array<{ role: string; content: string }> = [
+    { role: 'system', content: systemPrompt },
+    ...contextWindow.map((msg) => ({ role: msg.role, content: msg.content })),
+  ]
+
+  // 5. Generate Response
+  let response: string
+  try {
+    const aiResult = await env.AI.run(DEFAULT_AI_MODEL, { messages: aiMessages })
+    response = extractAIText(aiResult) || '[Simulação] Falha ao gerar resposta.'
+  } catch {
+    response = '[Simulação] Erro ao comunicar com Cloudflare AI.'
+  }
+
+  // 6. Truncate response
+  if (response.length > 400) {
+    response = response.slice(0, 397) + '...'
+  }
+
+  // 7. Append assistant message in memory
+  history.push({ role: 'assistant' as const, content: response, timestamp: new Date().toISOString() })
+
+  return {
+    response,
+    phaseAdvanced,
+    newPhase: activePhase,
+    updatedHistory: history,
+  }
+}

@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import type { Bindings, InteractionPayload, CampaignRecord, DispatchRequestBody, JourneyPhase } from '../types'
+import type { Bindings, InteractionPayload, CampaignRecord, DispatchRequestBody, JourneyPhase, JourneyConversationMessage } from '../types'
 import { DEFAULT_AI_MODEL } from '../constants'
 import { safeString, toNumber, toBoolean, isInteractionEvent, resolveConsentSource } from '../utils'
 import { ensureAdminAccess } from '../auth'
@@ -23,7 +23,7 @@ import {
 import { setUserMarketingConsent } from '../consent'
 import { generatePersonalizedMessage } from '../ai'
 import { executeCampaignDispatch } from '../dispatch'
-import { runPersonaConversation, generateJourneyOpeningMessage } from '../persona'
+import { runPersonaConversation, generateJourneyOpeningMessage, simulatePersonaConversation } from '../persona'
 
 const api = new Hono<{ Bindings: Bindings }>()
 
@@ -440,4 +440,73 @@ api.post('/journey/:journeyId/user/:userId/open', async (c) => {
 
   const message = await generateJourneyOpeningMessage(c.env, journey, user)
   return c.json({ status: 'success', message })
+})
+
+// ── Playground API Routes ───────────────────────────────────────
+
+api.post('/playground/chat', async (c) => {
+  const unauthorized = ensureAdminAccess(c)
+  if (unauthorized) return unauthorized
+
+  const body = (await c.req.json().catch(() => null)) as Partial<{
+    message: string
+    systemPrompt: string
+    objective: string
+    currentPhase: JourneyPhase
+    chatHistory: JourneyConversationMessage[]
+    userProfile: { name: string; preferredChannel: string; engagementScore: number; psychologicalProfile: string }
+  }> | null
+
+  if (!body) return c.json({ error: 'Invalid JSON body' }, 400)
+
+  const message = safeString(body.message)
+  if (!message) return c.json({ error: 'message is required' }, 400)
+
+  const phase = body.currentPhase ?? 'discovery'
+  const history = Array.isArray(body.chatHistory) ? body.chatHistory : []
+
+  // Create mocked objects for simulation
+  const mockedJourney = {
+    id: 'simulated-journey',
+    name: 'Playground Simulation',
+    objective: safeString(body.objective) || 'Converter em vendas',
+    system_prompt: safeString(body.systemPrompt) || 'Você é um assistente amigável.',
+    status: 'active' as const,
+  }
+
+  const mockedUser = {
+    id: 'simulated-user',
+    name: body.userProfile?.name || 'Visitante',
+    email: null,
+    phone: null,
+    preferred_channel: body.userProfile?.preferredChannel || 'whatsapp',
+    psychological_profile: body.userProfile?.psychologicalProfile || 'generic',
+    engagement_score: toNumber(body.userProfile?.engagementScore) || 5.0,
+    referral_code: 'simul123',
+    referred_by: null,
+    viral_points: 0,
+    marketing_opt_in: 1,
+    opt_out_at: null,
+    consent_source: 'simulation',
+    consent_updated_at: new Date().toISOString(),
+    last_active: new Date().toISOString(),
+    created_at: new Date().toISOString(),
+  }
+
+  const result = await simulatePersonaConversation(
+    c.env,
+    mockedJourney,
+    mockedUser,
+    phase,
+    history,
+    message
+  )
+
+  return c.json({
+    status: 'success',
+    response: result.response,
+    phaseAdvanced: result.phaseAdvanced,
+    currentPhase: result.newPhase,
+    updatedHistory: result.updatedHistory,
+  })
 })
