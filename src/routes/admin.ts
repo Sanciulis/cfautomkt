@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import type { Bindings } from '../types'
+import type { Bindings, JourneyPhase, JourneyConversationMessage } from '../types'
 import { DEFAULT_WHATSAPP_TEST_MESSAGE, DEFAULT_EMAIL_TEST_MESSAGE, DEFAULT_TELEGRAM_TEST_MESSAGE } from '../constants'
 import { safeString, toNumber, toBoolean, resolveConsentSource, buildAdminRedirect, constantTimeEqual } from '../utils'
 import {
@@ -17,6 +17,7 @@ import {
 } from '../auth'
 import { createUserRecord, createCampaignRecord, getOverviewMetrics, createJourneyRecord, listJourneys, getJourneyById, updateJourneyStatus, enrollUserInJourney, listJourneyEnrollments } from '../db'
 import { setUserMarketingConsent } from '../consent'
+import { simulatePersonaConversation } from '../persona'
 import {
   validateAdminIntegrationWebhookUrl,
   getAdminWhatsAppIntegrationConfig,
@@ -720,6 +721,73 @@ admin.post('/actions/journey/enroll', async (c) => {
   } catch (error) {
     return c.redirect(buildAdminRedirect(`Falha ao inscrever lead: ${String(error)}`, 'error'), 302)
   }
+})
+
+// --- Playground Action ---
+admin.post('/api/playground/chat', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.json({ error: 'Unauthorized' }, 401)
+
+  const body = (await c.req.json().catch(() => null)) as Partial<{
+    message: string
+    systemPrompt: string
+    objective: string
+    currentPhase: JourneyPhase
+    chatHistory: JourneyConversationMessage[]
+    userProfile: { name: string; preferredChannel: string; engagementScore: number; psychologicalProfile: string }
+  }> | null
+
+  if (!body) return c.json({ error: 'Invalid JSON body' }, 400)
+
+  const message = safeString(body.message)
+  if (!message) return c.json({ error: 'message is required' }, 400)
+
+  const phase = body.currentPhase ?? 'discovery'
+  const history = Array.isArray(body.chatHistory) ? body.chatHistory : []
+
+  const mockedJourney = {
+    id: 'simulated-journey',
+    name: 'Playground Simulation',
+    objective: safeString(body.objective) || 'Converter em vendas',
+    system_prompt: safeString(body.systemPrompt) || 'Você é um assistente amigável.',
+    status: 'active' as const,
+  }
+
+  const mockedUser = {
+    id: 'simulated-user',
+    name: body.userProfile?.name || 'Visitante',
+    email: null,
+    phone: null,
+    preferred_channel: body.userProfile?.preferredChannel || 'whatsapp',
+    psychological_profile: body.userProfile?.psychologicalProfile || 'generic',
+    engagement_score: toNumber(body.userProfile?.engagementScore) || 5.0,
+    referral_code: 'simul123',
+    referred_by: null,
+    viral_points: 0,
+    marketing_opt_in: 1,
+    opt_out_at: null,
+    consent_source: 'simulation',
+    consent_updated_at: new Date().toISOString(),
+    last_active: new Date().toISOString(),
+    created_at: new Date().toISOString(),
+  }
+
+  const result = await simulatePersonaConversation(
+    c.env,
+    mockedJourney,
+    mockedUser,
+    phase,
+    history,
+    message
+  )
+
+  return c.json({
+    status: 'success',
+    response: result.response,
+    phaseAdvanced: result.phaseAdvanced,
+    currentPhase: result.newPhase,
+    updatedHistory: result.updatedHistory,
+  })
 })
 
 export { admin }

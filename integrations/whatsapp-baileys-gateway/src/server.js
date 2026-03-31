@@ -40,10 +40,11 @@ function extractBearerToken(headerValue) {
   return token.length > 0 ? token : null
 }
 
-function requireToken(expectedToken) {
+function requireToken(expectedTokens) {
+  const allowed = Array.isArray(expectedTokens) ? expectedTokens : [expectedTokens]
   return (req, res, next) => {
     const token = extractBearerToken(req.headers.authorization)
-    if (!token || token !== expectedToken) {
+    if (!token || !allowed.includes(token)) {
       return res.status(401).json({ error: 'Unauthorized' })
     }
     return next()
@@ -60,8 +61,8 @@ const app = express()
 app.disable('x-powered-by')
 app.use(express.json({ limit: '256kb' }))
 
-const requireDispatchToken = requireToken(config.dispatchBearerToken)
-const requireAdminToken = requireToken(config.gatewayAdminToken)
+const requireDispatchToken = requireToken([config.dispatchBearerToken])
+const requireAdminToken = requireToken([config.gatewayAdminToken, config.dispatchBearerToken])
 
 app.get('/health', (_req, res) => {
   const status = waClient.getStatus()

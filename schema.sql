@@ -49,8 +49,31 @@ CREATE TABLE IF NOT EXISTS agent_decisions (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS journeys (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  objective TEXT NOT NULL,
+  system_prompt TEXT NOT NULL,
+  status TEXT DEFAULT 'active' CHECK (status IN ('active', 'paused')),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS journey_enrollments (
+  user_id TEXT NOT NULL,
+  journey_id TEXT NOT NULL,
+  current_phase TEXT DEFAULT 'discovery',
+  last_interaction_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  conversation_history TEXT,
+  metadata TEXT,
+  PRIMARY KEY (user_id, journey_id),
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (journey_id) REFERENCES journeys(id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_users_referral_code ON users(referral_code);
 CREATE INDEX IF NOT EXISTS idx_users_last_active ON users(last_active);
 CREATE INDEX IF NOT EXISTS idx_users_marketing_opt_in ON users(marketing_opt_in);
 CREATE INDEX IF NOT EXISTS idx_interactions_user_event ON interactions(user_id, event_type);
 CREATE INDEX IF NOT EXISTS idx_interactions_campaign_event ON interactions(campaign_id, event_type);
+CREATE INDEX IF NOT EXISTS idx_journeys_status ON journeys(status);
+CREATE INDEX IF NOT EXISTS idx_journey_enrollments_phase ON journey_enrollments(journey_id, current_phase);

@@ -1286,7 +1286,7 @@ export function renderAdminDashboardPage(data: {
       };
 
       try {
-        const response = await fetch('/playground/chat', {
+        const response = await fetch('/admin/api/playground/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
