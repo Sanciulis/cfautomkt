@@ -162,7 +162,7 @@ export function renderAdminDashboardPage(data: {
       width: var(--sidebar-width);
       height: 100vh;
       border-right: 1px solid var(--border);
-      background: rgba(15, 23, 42, 0.8);
+      background: rgba(15, 23, 42, 0.95);
       backdrop-filter: blur(20px);
       position: fixed;
       left: 0;
@@ -171,6 +171,32 @@ export function renderAdminDashboardPage(data: {
       flex-direction: column;
       z-index: 50;
       padding: 0;
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    @media (max-width: 768px) {
+      .sidebar {
+        transform: translateX(-100%);
+        width: 280px;
+        box-shadow: 10px 0 30px rgba(0,0,0,0.5);
+      }
+      .sidebar.open {
+        transform: translateX(0);
+      }
+      .sidebar-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.5);
+        backdrop-filter: blur(4px);
+        z-index: 40;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.3s;
+      }
+      .sidebar-overlay.open {
+        opacity: 1;
+        pointer-events: auto;
+      }
     }
 
     .brand {
@@ -254,14 +280,35 @@ export function renderAdminDashboardPage(data: {
       padding: 32px 48px;
     }
 
+    @media (max-width: 768px) {
+      .main-canvas {
+        margin-left: 0;
+        width: 100%;
+        padding: 24px 16px;
+      }
+    }
+
     .header-bar {
       display: flex;
       justify-content: space-between;
       align-items: flex-end;
       margin-bottom: 40px;
+      gap: 16px;
     }
+    
+    @media (max-width: 768px) {
+      .header-bar {
+        align-items: flex-start;
+        flex-direction: column;
+        margin-bottom: 24px;
+      }
+      .page-title {
+        font-size: 1.5rem;
+      }
+    }
+
     .page-title { margin: 0; font-size: 2rem; font-weight: 700; letter-spacing: -0.03em; }
-    .page-subtitle { color: var(--text-muted); margin-top: 4px; font-weight: 400; }
+    .page-subtitle { color: var(--text-muted); margin-top: 4px; font-weight: 400; font-size: 0.9rem; }
 
     /* Views */
     .view-content { display: none; animation: fadeIn 0.4s ease-out; }
@@ -420,20 +467,37 @@ export function renderAdminDashboardPage(data: {
     .uppercase { text-transform: uppercase; }
     .tracking-tighter { letter-spacing: -0.05em; }
 
-    @media (max-width: 900px) {
-      .sidebar { width: 80px; }
-      .brand-name, .nav-label, .nav-item span { display: none; }
-      .brand { padding: 20px; justify-content: center; }
-      .nav-item { justify-content: center; padding: 16px; }
-      .main-canvas { margin-left: 80px; width: calc(100% - 80px); padding: 24px; }
+    @media (max-width: 1024px) {
       .stats-grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    .mobile-toggle {
+      display: none;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      color: white;
+      padding: 8px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    @media (max-width: 768px) {
+      .mobile-toggle { display: block; }
+      .stats-grid { grid-template-columns: 1fr; }
+      
+      /* Reset conflicting tablet rules */
+      .brand-name, .nav-label { display: block; }
+      .nav-item { justify-content: flex-start; padding: 12px; }
+      .brand { padding: 32px 24px; justify-content: flex-start; }
     }
   </style>
 </head>
 <body>
   ${noticeHtml}
-  
-  <aside class="sidebar">
+
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+  <aside class="sidebar" id="sidebar">
     <div class="brand">
       <div class="brand-logo">M</div>
       <span class="brand-name">Martech<span style="color:var(--primary)">Cloud</span></span>
@@ -488,7 +552,12 @@ export function renderAdminDashboardPage(data: {
     <!-- Header -->
     <header class="header-bar">
       <div>
-        <h2 id="view-title" class="page-title">Dashboard Operacional</h2>
+        <div class="header-title-flex">
+          <button id="mobile-menu-btn" class="mobile-toggle">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" width="24" height="24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+          </button>
+          <h2 id="view-title" class="page-title">Dashboard Operacional</h2>
+        </div>
         <p id="view-subtitle" class="page-subtitle">Visão 360º de interações e métricas virais.</p>
       </div>
       <div class="flex items-center gap-4">
@@ -836,6 +905,21 @@ export function renderAdminDashboardPage(data: {
   </main>
 
   <script>
+    // Mobile Sidebar Logic
+    const mobileBtn = document.getElementById('mobile-menu-btn');
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+
+    if (mobileBtn && sidebar && overlay) {
+      function toggleSidebar() {
+        sidebar.classList.toggle('open');
+        overlay.classList.toggle('open');
+        document.body.style.overflow = sidebar.classList.contains('open') ? 'hidden' : '';
+      }
+      mobileBtn.addEventListener('click', toggleSidebar);
+      overlay.addEventListener('click', toggleSidebar);
+    }
+
     // Tab System Logic
     const navItems = document.querySelectorAll('.nav-item');
     const views = document.querySelectorAll('.view-content');
@@ -863,6 +947,11 @@ export function renderAdminDashboardPage(data: {
         // Update Content
         views.forEach(v => v.classList.remove('active'));
         document.getElementById('view-' + targetView).classList.add('active');
+
+        // Close sidebar on mobile if open
+        if (sidebar && sidebar.classList.contains('open')) {
+          toggleSidebar();
+        }
 
         // Update Headers
         viewTitle.innerText = viewMeta[targetView].title;
