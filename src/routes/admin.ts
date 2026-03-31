@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { Bindings } from '../types'
 import { DEFAULT_WHATSAPP_TEST_MESSAGE, DEFAULT_EMAIL_TEST_MESSAGE, DEFAULT_TELEGRAM_TEST_MESSAGE } from '../constants'
-import { safeString, toNumber, toBoolean, resolveConsentSource, buildAdminRedirect, constantTimeEqual, applyWorkerSubrequestBypass } from '../utils'
+import { safeString, toNumber, toBoolean, resolveConsentSource, buildAdminRedirect, constantTimeEqual } from '../utils'
 import {
   hasValidAdminSession,
   ensureAdminSession,
@@ -551,8 +551,7 @@ admin.post('/actions/integration/test', async (c) => {
       },
     }
 
-    const finalUrl = applyWorkerSubrequestBypass(validation.normalizedUrl)
-    const response = await fetch(finalUrl!, {
+    const response = await fetch(validation.normalizedUrl, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${dispatchToken}`,
@@ -587,10 +586,8 @@ admin.post('/actions/integration/test', async (c) => {
 
 function deriveGatewayBaseUrl(webhookUrl: string | null): string | null {
   if (!webhookUrl) return null
-  const bypassedUrl = applyWorkerSubrequestBypass(webhookUrl)
-  if (!bypassedUrl) return null
   try {
-    const parsed = new URL(bypassedUrl)
+    const parsed = new URL(webhookUrl)
     return `${parsed.protocol}//${parsed.host}`
   } catch {
     return null
@@ -599,14 +596,14 @@ function deriveGatewayBaseUrl(webhookUrl: string | null): string | null {
 
 admin.get('/api/gateway/groups', async (c) => {
   const unauthorized = await ensureAdminSession(c)
-  if (unauthorized) return c.json({ error: 'Unauthorized' }, 401)
+  if (unauthorized) return c.json({ error: 'Unauthorized Session' }, 401)
 
   const config = await getAdminWhatsAppIntegrationConfig(c.env)
   const baseUrl = deriveGatewayBaseUrl(config.webhookUrl)
-  const token = safeString(config.gatewayToken)
+  const token = safeString(config.gatewayToken) || safeString(c.env.DISPATCH_BEARER_TOKEN)
 
   if (!baseUrl || !token) {
-    return c.json({ error: 'Gateway não configurado. Salve Webhook URL e Gateway Token nas Integrações.' }, 400)
+    return c.json({ error: 'Gateway não configurado. Salve Webhook URL nas Integrações.' }, 400)
   }
 
   try {
@@ -622,11 +619,11 @@ admin.get('/api/gateway/groups', async (c) => {
 
 admin.get('/api/gateway/groups/:groupId/participants', async (c) => {
   const unauthorized = await ensureAdminSession(c)
-  if (unauthorized) return c.json({ error: 'Unauthorized' }, 401)
+  if (unauthorized) return c.json({ error: 'Unauthorized Session' }, 401)
 
   const config = await getAdminWhatsAppIntegrationConfig(c.env)
   const baseUrl = deriveGatewayBaseUrl(config.webhookUrl)
-  const token = safeString(config.gatewayToken)
+  const token = safeString(config.gatewayToken) || safeString(c.env.DISPATCH_BEARER_TOKEN)
 
   if (!baseUrl || !token) {
     return c.json({ error: 'Gateway não configurado.' }, 400)

@@ -69,20 +69,6 @@ export function toBoolean(value: unknown, fallback = false): boolean {
   return fallback
 }
 
-// Bypasses Cloudflare Worker to Proxied Domain DNS resolution issues (error 1016)
-export function applyWorkerSubrequestBypass(url: string | null): string | null {
-  if (!url) return null
-  try {
-    const parsed = new URL(url)
-    if (parsed.host === 'wainews.com.br' || parsed.host === 'preview-api.fluxoia.com') {
-      return `http://168.231.94.189${parsed.pathname}${parsed.search}`
-    }
-    return url
-  } catch {
-    return url
-  }
-}
-
 export async function resolveDispatchUrl(channel: string, env: Bindings): Promise<string | null> {
   const normalizedChannel = channel.toLowerCase()
   let resultUrl: string | null = null
@@ -121,7 +107,7 @@ export async function resolveDispatchUrl(channel: string, env: Bindings): Promis
   }
   
   if (!resultUrl) resultUrl = env.DISPATCH_WEBHOOK_URL ?? null
-  return applyWorkerSubrequestBypass(resultUrl)
+  return resultUrl
 }
 
 export function getPreviewWebhookOverrideAllowlist(env: Bindings): string[] {

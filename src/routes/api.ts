@@ -225,7 +225,7 @@ api.get('/metrics/overview', async (c) => {
 
 api.get('/test-fetch', async (c) => {
   try {
-    const res = await fetch('https://wainews.com.br/health')
+    const res = await fetch('https://wainews.com.br/webhooks/gateway/groups')
     const text = await res.text()
     return c.json({ status: res.status, text })
   } catch (e) {

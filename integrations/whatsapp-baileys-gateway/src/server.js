@@ -122,6 +122,26 @@ app.post('/session/reconnect', requireAdminToken, async (_req, res) => {
   return res.json({ status: 'success' })
 })
 
+app.get('/groups', requireAdminToken, async (_req, res) => {
+  try {
+    const groups = await waClient.getGroups()
+    return res.json({ status: 'success', groups })
+  } catch (error) {
+    logger.error({ error: String(error) }, 'Failed to fetch groups')
+    return res.status(500).json({ error: String(error) })
+  }
+})
+
+app.get('/groups/:id/participants', requireAdminToken, async (req, res) => {
+  try {
+    const participants = await waClient.getGroupParticipants(req.params.id)
+    return res.json({ status: 'success', participants })
+  } catch (error) {
+    logger.error({ error: String(error) }, 'Failed to fetch group participants')
+    return res.status(500).json({ error: String(error) })
+  }
+})
+
 app.post('/dispatch/whatsapp', requireDispatchToken, async (req, res) => {
   try {
     const channel = asNonEmptyString(req.body?.channel)?.toLowerCase()
