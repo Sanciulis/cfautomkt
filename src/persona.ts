@@ -1,4 +1,4 @@
-import type { Bindings, UserRecord, JourneyRecord, JourneyEnrollment, JourneyPhase, JourneyConversationMessage } from './types'
+import { JOURNEY_PHASES, type Bindings, type UserRecord, type JourneyRecord, type JourneyEnrollment, type JourneyPhase, type JourneyConversationMessage } from './types'
 import { DEFAULT_AI_MODEL } from './constants'
 import { extractAIText } from './utils'
 import { parseConversationHistory, appendConversationMessage, advanceJourneyPhase, getEnrollment, logAgentDecision } from './db'
@@ -243,8 +243,6 @@ export async function simulatePersonaConversation(
   let activePhase = currentPhase
 
   if (detectPhaseAdvanceSignal(leadMessage, currentPhase)) {
-    // In simulation, we just fake the transition using the JOURNEY_PHASES array
-    const { JOURNEY_PHASES } = await import('./types')
     const currentIndex = JOURNEY_PHASES.indexOf(currentPhase)
     if (currentIndex !== -1 && currentIndex < JOURNEY_PHASES.length - 1) {
       phaseAdvanced = true
