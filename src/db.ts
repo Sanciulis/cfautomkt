@@ -1,4 +1,16 @@
-import type { Bindings, UserRecord, InteractionPayload, CampaignCreateInput } from './types'
+import type {
+  Bindings,
+  UserRecord,
+  InteractionPayload,
+  CampaignCreateInput,
+  JourneyRecord,
+  JourneyEnrollment,
+  JourneyCreateInput,
+  JourneyEnrollInput,
+  JourneyPhase,
+  JourneyConversationMessage,
+} from './types'
+import { JOURNEY_PHASES } from './types'
 import { EVENT_WEIGHTS } from './constants'
 import { toNumber, safeString, toBoolean, buildReferralCode, resolveConsentSource } from './utils'
 
@@ -176,3 +188,195 @@ export async function getOverviewMetrics(env: Bindings): Promise<{
     topReferrers: topReferrersResult.results ?? [],
   }
 }
+
+// ── Journey CRUD ────────────────────────────────────────────────
+
+export async function createJourneyRecord(env: Bindings, input: JourneyCreateInput): Promise<string> {
+  const journeyId = safeString(input.id) ?? crypto.randomUUID()
+  await env.DB.prepare(
+    `INSERT INTO journeys (id, name, objective, system_prompt)
+     VALUES (?, ?, ?, ?)`
+  )
+    .bind(journeyId, input.name, input.objective, input.systemPrompt)
+    .run()
+  return journeyId
+}
+
+export async function getJourneyById(env: Bindings, id: string): Promise<JourneyRecord | null> {
+  const journey = await env.DB.prepare('SELECT * FROM journeys WHERE id = ?')
+    .bind(id)
+    .first<JourneyRecord>()
+  return journey ?? null
+}
+
+export async function listJourneys(env: Bindings): Promise<JourneyRecord[]> {
+  const result = await env.DB.prepare(
+    'SELECT * FROM journeys ORDER BY created_at DESC LIMIT 50'
+  ).all<JourneyRecord>()
+  return result.results ?? []
+}
+
+export async function updateJourneyStatus(
+  env: Bindings,
+  journeyId: string,
+  status: 'active' | 'paused'
+): Promise<boolean> {
+  const existing = await getJourneyById(env, journeyId)
+  if (!existing) return false
+  await env.DB.prepare('UPDATE journeys SET status = ? WHERE id = ?')
+    .bind(status, journeyId)
+    .run()
+  return true
+}
+
+export async function updateJourneyRecord(
+  env: Bindings,
+  journeyId: string,
+  input: Partial<JourneyCreateInput>
+): Promise<boolean> {
+  const existing = await getJourneyById(env, journeyId)
+  if (!existing) return false
+
+  const name = safeString(input.name) ?? existing.name
+  const objective = safeString(input.objective) ?? existing.objective
+  const systemPrompt = safeString(input.systemPrompt) ?? existing.system_prompt
+
+  await env.DB.prepare(
+    'UPDATE journeys SET name = ?, objective = ?, system_prompt = ? WHERE id = ?'
+  )
+    .bind(name, objective, systemPrompt, journeyId)
+    .run()
+  return true
+}
+
+// ── Journey Enrollments ─────────────────────────────────────────
+
+export async function enrollUserInJourney(
+  env: Bindings,
+  input: JourneyEnrollInput
+): Promise<JourneyEnrollment> {
+  const phase: JourneyPhase = input.phase ?? 'discovery'
+  await env.DB.prepare(
+    `INSERT INTO journey_enrollments (user_id, journey_id, current_phase, conversation_history)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(user_id, journey_id) DO UPDATE SET
+       current_phase = excluded.current_phase,
+       last_interaction_at = CURRENT_TIMESTAMP`
+  )
+    .bind(input.userId, input.journeyId, phase, '[]')
+    .run()
+  return {
+    user_id: input.userId,
+    journey_id: input.journeyId,
+    current_phase: phase,
+    conversation_history: '[]',
+  }
+}
+
+export async function getEnrollment(
+  env: Bindings,
+  userId: string,
+  journeyId: string
+): Promise<JourneyEnrollment | null> {
+  const enrollment = await env.DB.prepare(
+    'SELECT * FROM journey_enrollments WHERE user_id = ? AND journey_id = ?'
+  )
+    .bind(userId, journeyId)
+    .first<JourneyEnrollment>()
+  return enrollment ?? null
+}
+
+export async function listJourneyEnrollments(
+  env: Bindings,
+  journeyId: string
+): Promise<JourneyEnrollment[]> {
+  const result = await env.DB.prepare(
+    'SELECT * FROM journey_enrollments WHERE journey_id = ? ORDER BY last_interaction_at DESC LIMIT 100'
+  ).bind(journeyId).all<JourneyEnrollment>()
+  return result.results ?? []
+}
+
+export async function listUserEnrollments(
+  env: Bindings,
+  userId: string
+): Promise<(JourneyEnrollment & { journey_name?: string; journey_status?: string })[]> {
+  const result = await env.DB.prepare(
+    `SELECT je.*, j.name AS journey_name, j.status AS journey_status
+     FROM journey_enrollments je
+     JOIN journeys j ON j.id = je.journey_id
+     WHERE je.user_id = ?
+     ORDER BY je.last_interaction_at DESC`
+  ).bind(userId).all<JourneyEnrollment & { journey_name?: string; journey_status?: string }>()
+  return result.results ?? []
+}
+
+export async function advanceJourneyPhase(
+  env: Bindings,
+  userId: string,
+  journeyId: string
+): Promise<{ advanced: boolean; newPhase: JourneyPhase | null; completed: boolean }> {
+  const enrollment = await getEnrollment(env, userId, journeyId)
+  if (!enrollment) return { advanced: false, newPhase: null, completed: false }
+
+  const currentIndex = JOURNEY_PHASES.indexOf(enrollment.current_phase)
+  if (currentIndex === -1 || currentIndex >= JOURNEY_PHASES.length - 1) {
+    return { advanced: false, newPhase: enrollment.current_phase, completed: true }
+  }
+
+  const newPhase = JOURNEY_PHASES[currentIndex + 1]
+  await env.DB.prepare(
+    `UPDATE journey_enrollments
+     SET current_phase = ?, last_interaction_at = CURRENT_TIMESTAMP
+     WHERE user_id = ? AND journey_id = ?`
+  )
+    .bind(newPhase, userId, journeyId)
+    .run()
+
+  await logAgentDecision(env, 'journey_phase_advance', userId, `Phase advanced to ${newPhase}`, {
+    journeyId,
+    from: enrollment.current_phase,
+    to: newPhase,
+  })
+
+  return { advanced: true, newPhase, completed: newPhase === 'retained' }
+}
+
+// ── Conversation History ────────────────────────────────────────
+
+export function parseConversationHistory(raw: string | null | undefined): JourneyConversationMessage[] {
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+export async function appendConversationMessage(
+  env: Bindings,
+  userId: string,
+  journeyId: string,
+  message: JourneyConversationMessage
+): Promise<JourneyConversationMessage[]> {
+  const enrollment = await getEnrollment(env, userId, journeyId)
+  if (!enrollment) return []
+
+  const history = parseConversationHistory(enrollment.conversation_history)
+  const stamped = { ...message, timestamp: message.timestamp ?? new Date().toISOString() }
+  history.push(stamped)
+
+  // Keep last 30 messages to avoid D1 row size limits
+  const trimmed = history.slice(-30)
+
+  await env.DB.prepare(
+    `UPDATE journey_enrollments
+     SET conversation_history = ?, last_interaction_at = CURRENT_TIMESTAMP
+     WHERE user_id = ? AND journey_id = ?`
+  )
+    .bind(JSON.stringify(trimmed), userId, journeyId)
+    .run()
+
+  return trimmed
+}
+

@@ -1,12 +1,29 @@
 import { Hono } from 'hono'
-import type { Bindings, InteractionPayload, CampaignRecord, DispatchRequestBody } from '../types'
+import type { Bindings, InteractionPayload, CampaignRecord, DispatchRequestBody, JourneyPhase } from '../types'
 import { DEFAULT_AI_MODEL } from '../constants'
 import { safeString, toNumber, toBoolean, isInteractionEvent, resolveConsentSource } from '../utils'
 import { ensureAdminAccess } from '../auth'
-import { getUserById, logInteraction, createUserRecord, createCampaignRecord, getOverviewMetrics } from '../db'
+import {
+  getUserById,
+  logInteraction,
+  createUserRecord,
+  createCampaignRecord,
+  getOverviewMetrics,
+  createJourneyRecord,
+  getJourneyById,
+  listJourneys,
+  updateJourneyStatus,
+  updateJourneyRecord,
+  enrollUserInJourney,
+  getEnrollment,
+  listJourneyEnrollments,
+  advanceJourneyPhase,
+  parseConversationHistory,
+} from '../db'
 import { setUserMarketingConsent } from '../consent'
 import { generatePersonalizedMessage } from '../ai'
 import { executeCampaignDispatch } from '../dispatch'
+import { runPersonaConversation, generateJourneyOpeningMessage } from '../persona'
 
 const api = new Hono<{ Bindings: Bindings }>()
 
@@ -244,3 +261,183 @@ api.get('/test-fetch-ip', async (c) => {
 })
 
 export { api }
+
+// ── Journey API Routes ──────────────────────────────────────────
+
+// Create Journey
+api.post('/journey', async (c) => {
+  const unauthorized = ensureAdminAccess(c)
+  if (unauthorized) return unauthorized
+
+  const body = (await c.req.json().catch(() => null)) as Partial<{
+    id: string
+    name: string
+    objective: string
+    systemPrompt: string
+  }> | null
+
+  if (!body) return c.json({ error: 'Invalid JSON body' }, 400)
+  if (!safeString(body.name) || !safeString(body.objective) || !safeString(body.systemPrompt)) {
+    return c.json({ error: 'name, objective, and systemPrompt are required' }, 400)
+  }
+
+  const journeyId = await createJourneyRecord(c.env, {
+    id: body.id,
+    name: safeString(body.name)!,
+    objective: safeString(body.objective)!,
+    systemPrompt: safeString(body.systemPrompt)!,
+  })
+
+  return c.json({ status: 'success', journeyId }, 201)
+})
+
+// List Journeys
+api.get('/journeys', async (c) => {
+  const unauthorized = ensureAdminAccess(c)
+  if (unauthorized) return unauthorized
+  const journeys = await listJourneys(c.env)
+  return c.json({ journeys })
+})
+
+// Get Journey by ID
+api.get('/journey/:id', async (c) => {
+  const unauthorized = ensureAdminAccess(c)
+  if (unauthorized) return unauthorized
+  const journey = await getJourneyById(c.env, c.req.param('id'))
+  if (!journey) return c.json({ error: 'Journey not found' }, 404)
+  return c.json(journey)
+})
+
+// Update Journey
+api.put('/journey/:id', async (c) => {
+  const unauthorized = ensureAdminAccess(c)
+  if (unauthorized) return unauthorized
+
+  const body = (await c.req.json().catch(() => null)) as Partial<{
+    name: string
+    objective: string
+    systemPrompt: string
+  }> | null
+  if (!body) return c.json({ error: 'Invalid JSON body' }, 400)
+
+  const updated = await updateJourneyRecord(c.env, c.req.param('id'), body)
+  if (!updated) return c.json({ error: 'Journey not found' }, 404)
+  return c.json({ status: 'success' })
+})
+
+// Toggle Journey Status
+api.post('/journey/:id/toggle', async (c) => {
+  const unauthorized = ensureAdminAccess(c)
+  if (unauthorized) return unauthorized
+
+  const journey = await getJourneyById(c.env, c.req.param('id'))
+  if (!journey) return c.json({ error: 'Journey not found' }, 404)
+
+  const newStatus = journey.status === 'active' ? 'paused' : 'active'
+  await updateJourneyStatus(c.env, journey.id, newStatus)
+  return c.json({ status: 'success', newStatus })
+})
+
+// Enroll User in Journey
+api.post('/journey/:id/enroll', async (c) => {
+  const unauthorized = ensureAdminAccess(c)
+  if (unauthorized) return unauthorized
+
+  const body = (await c.req.json().catch(() => null)) as Partial<{
+    userId: string
+    phase: JourneyPhase
+  }> | null
+  if (!body) return c.json({ error: 'Invalid JSON body' }, 400)
+
+  const userId = safeString(body.userId)
+  if (!userId) return c.json({ error: 'userId is required' }, 400)
+
+  const user = await getUserById(c.env, userId)
+  if (!user) return c.json({ error: 'User not found' }, 404)
+
+  const journey = await getJourneyById(c.env, c.req.param('id'))
+  if (!journey) return c.json({ error: 'Journey not found' }, 404)
+
+  const enrollment = await enrollUserInJourney(c.env, {
+    userId,
+    journeyId: journey.id,
+    phase: body.phase,
+  })
+
+  return c.json({ status: 'success', enrollment }, 201)
+})
+
+// List Journey Enrollments
+api.get('/journey/:id/enrollments', async (c) => {
+  const unauthorized = ensureAdminAccess(c)
+  if (unauthorized) return unauthorized
+
+  const enrollments = await listJourneyEnrollments(c.env, c.req.param('id'))
+  return c.json({ enrollments })
+})
+
+// Advance Journey Phase
+api.post('/journey/:journeyId/user/:userId/advance', async (c) => {
+  const unauthorized = ensureAdminAccess(c)
+  if (unauthorized) return unauthorized
+
+  const result = await advanceJourneyPhase(c.env, c.req.param('userId'), c.req.param('journeyId'))
+  if (!result.advanced && !result.completed) {
+    return c.json({ error: 'Enrollment not found' }, 404)
+  }
+  return c.json({ status: 'success', ...result })
+})
+
+// Persona Conversation — send a message within a journey context
+api.post('/journey/:journeyId/user/:userId/chat', async (c) => {
+  const unauthorized = ensureAdminAccess(c)
+  if (unauthorized) return unauthorized
+
+  const body = (await c.req.json().catch(() => null)) as Partial<{ message: string }> | null
+  if (!body) return c.json({ error: 'Invalid JSON body' }, 400)
+
+  const message = safeString(body.message)
+  if (!message) return c.json({ error: 'message is required' }, 400)
+
+  const journeyId = c.req.param('journeyId')
+  const userId = c.req.param('userId')
+
+  const [journey, user, enrollment] = await Promise.all([
+    getJourneyById(c.env, journeyId),
+    getUserById(c.env, userId),
+    getEnrollment(c.env, userId, journeyId),
+  ])
+
+  if (!journey) return c.json({ error: 'Journey not found' }, 404)
+  if (!user) return c.json({ error: 'User not found' }, 404)
+  if (!enrollment) return c.json({ error: 'User is not enrolled in this journey' }, 404)
+
+  const result = await runPersonaConversation(c.env, journey, user, enrollment, message)
+
+  return c.json({
+    status: 'success',
+    response: result.response,
+    phaseAdvanced: result.phaseAdvanced,
+    currentPhase: result.newPhase,
+  })
+})
+
+// Generate opening message for a journey
+api.post('/journey/:journeyId/user/:userId/open', async (c) => {
+  const unauthorized = ensureAdminAccess(c)
+  if (unauthorized) return unauthorized
+
+  const journeyId = c.req.param('journeyId')
+  const userId = c.req.param('userId')
+
+  const [journey, user] = await Promise.all([
+    getJourneyById(c.env, journeyId),
+    getUserById(c.env, userId),
+  ])
+
+  if (!journey) return c.json({ error: 'Journey not found' }, 404)
+  if (!user) return c.json({ error: 'User not found' }, 404)
+
+  const message = await generateJourneyOpeningMessage(c.env, journey, user)
+  return c.json({ status: 'success', message })
+})

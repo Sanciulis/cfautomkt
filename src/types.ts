@@ -63,6 +63,47 @@ export type CampaignRecord = {
   status: 'active' | 'paused'
 }
 
+export type JourneyPhase = 'discovery' | 'interest' | 'desire' | 'action' | 'retained'
+
+export const JOURNEY_PHASES: JourneyPhase[] = ['discovery', 'interest', 'desire', 'action', 'retained']
+
+export type JourneyRecord = {
+  id: string
+  name: string
+  objective: string
+  system_prompt: string
+  status: 'active' | 'paused'
+  created_at?: string
+}
+
+export type JourneyEnrollment = {
+  user_id: string
+  journey_id: string
+  current_phase: JourneyPhase
+  last_interaction_at?: string
+  conversation_history?: string | null
+  metadata?: string | null
+}
+
+export type JourneyConversationMessage = {
+  role: 'system' | 'user' | 'assistant'
+  content: string
+  timestamp?: string
+}
+
+export type JourneyCreateInput = {
+  id?: string | null
+  name: string
+  objective: string
+  systemPrompt: string
+}
+
+export type JourneyEnrollInput = {
+  userId: string
+  journeyId: string
+  phase?: JourneyPhase
+}
+
 export type InteractionPayload = {
   userId: string
   eventType: InteractionEvent

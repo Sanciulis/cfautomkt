@@ -38,6 +38,8 @@ class MockD1Database {
     this.users = seed.users ?? []
     this.interactions = seed.interactions ?? []
     this.agentDecisions = seed.agentDecisions ?? []
+    this.journeys = seed.journeys ?? []
+    this.journeyEnrollments = seed.journeyEnrollments ?? []
   }
 
   prepare(sql) {
@@ -184,6 +186,22 @@ class MockD1Database {
         .filter((user) => user.preferred_channel === channel)
         .sort((a, b) => b.engagement_score - a.engagement_score)
         .slice(0, limit)
+    }
+
+    if (
+      normalized ===
+      'select * from journeys order by created_at desc limit 50'
+    ) {
+      return [...this.journeys]
+        .sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')))
+        .slice(0, 50)
+    }
+
+    if (
+      normalized.startsWith('select * from journey_enrollments where journey_id = ?')
+    ) {
+      const [journeyId] = params
+      return this.journeyEnrollments.filter((e) => e.journey_id === journeyId)
     }
 
     throw new Error(`Unhandled all() query in test mock: ${sql}`)

@@ -40,6 +40,7 @@ export function renderAdminDashboardPage(data: {
   users: Array<{ id: string; name: string | null; email: string | null; phone: string | null; preferred_channel: string; created_at: string }>
   campaigns: Array<{ id: string; name: string; channel: string; status: string; updated_at: string }>
   decisions: Array<{ decision_type: string; target_id: string | null; reason: string; created_at: string }>
+  journeys: Array<{ id: string; name: string; objective: string; system_prompt: string; status: string; created_at?: string; enrollmentCount: number }>
 }): string {
   const noticeHtml =
     data.notice && data.noticeKind
@@ -89,6 +90,24 @@ export function renderAdminDashboardPage(data: {
             ${decision.target_id ? `<div class="mt-2 text-[10px] opacity-30 font-mono">TARGET: ${escapeHtml(decision.target_id)}</div>` : ''}
           </div>
         </div>`
+    )
+    .join('')
+
+  const journeysHtml = data.journeys
+    .map(
+      (journey) =>
+        `<tr>
+          <td><code class="compact-code">${escapeHtml(journey.id.slice(0, 8))}\u2026</code></td>
+          <td><span class="font-bold">${escapeHtml(journey.name)}</span><br/><span class="text-xs opacity-60">${escapeHtml(journey.objective.slice(0, 60))}${journey.objective.length > 60 ? '\u2026' : ''}</span></td>
+          <td><span class="badge badge-outline">${journey.enrollmentCount} leads</span></td>
+          <td><span class="badge ${journey.status === 'active' ? 'badge-success' : 'badge-warn'}">${escapeHtml(journey.status)}</span></td>
+          <td>
+            <form method="post" action="/admin/actions/journey/toggle" style="display:inline">
+              <input type="hidden" name="journeyId" value="${escapeHtml(journey.id)}" />
+              <button type="submit" class="btn btn-glass" style="padding:6px 12px;width:auto;font-size:0.7rem;">${journey.status === 'active' ? 'Pausar' : 'Ativar'}</button>
+            </form>
+          </td>
+        </tr>`
     )
     .join('')
 
@@ -534,6 +553,12 @@ export function renderAdminDashboardPage(data: {
         <span>Integrações</span>
       </a>
 
+      <div class="nav-label">Engajamento Inteligente</div>
+      <a class="nav-item" data-view="journeys">
+        <svg fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 0l-2 2a1 1 0 101.414 1.414L8 10.414l1.293 1.293a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
+        <span>Jornadas AI</span>
+      </a>
+
       <div class="nav-label">Configuração</div>
       <a class="nav-item" data-view="ai-agent">
         <svg fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path></svg>
@@ -852,6 +877,100 @@ export function renderAdminDashboardPage(data: {
       </div>
     </div>
 
+    <!-- VIEW: Journeys -->
+    <div id="view-journeys" class="view-content">
+      <div class="panel-grid" style="grid-template-columns: 1fr;">
+        <section class="panel">
+          <h3 class="panel-title">Pipeline de Jornadas (AIDA)</h3>
+          <p class="text-sm opacity-60 mb-6">Defina jornadas conversacionais com persona AI. O sistema guia leads pelo funil: <strong>Discovery → Interest → Desire → Action → Retained</strong></p>
+          
+          <div style="display:flex;gap:8px;margin-bottom:32px;flex-wrap:wrap;">
+            <div style="flex:1;min-width:120px;padding:16px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.2);border-radius:16px;text-align:center;">
+              <div style="font-size:1.5rem;">🔍</div>
+              <div class="text-xs font-bold" style="color:var(--primary);margin-top:4px;">Discovery</div>
+              <div class="text-xs opacity-40">Atenção</div>
+            </div>
+            <div style="flex:1;min-width:120px;padding:16px;background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.2);border-radius:16px;text-align:center;">
+              <div style="font-size:1.5rem;">💡</div>
+              <div class="text-xs font-bold" style="color:var(--secondary);margin-top:4px;">Interest</div>
+              <div class="text-xs opacity-40">Interesse</div>
+            </div>
+            <div style="flex:1;min-width:120px;padding:16px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:16px;text-align:center;">
+              <div style="font-size:1.5rem;">🔥</div>
+              <div class="text-xs font-bold" style="color:#f59e0b;margin-top:4px;">Desire</div>
+              <div class="text-xs opacity-40">Desejo</div>
+            </div>
+            <div style="flex:1;min-width:120px;padding:16px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:16px;text-align:center;">
+              <div style="font-size:1.5rem;">🎯</div>
+              <div class="text-xs font-bold" style="color:#ef4444;margin-top:4px;">Action</div>
+              <div class="text-xs opacity-40">Conversão</div>
+            </div>
+            <div style="flex:1;min-width:120px;padding:16px;background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.3);border-radius:16px;text-align:center;">
+              <div style="font-size:1.5rem;">💎</div>
+              <div class="text-xs font-bold" style="color:var(--primary);margin-top:4px;">Retained</div>
+              <div class="text-xs opacity-40">Advocacy</div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="panel-grid" style="margin-top:24px;">
+        <section class="panel">
+          <h3 class="panel-title">Criar Nova Jornada</h3>
+          <form method="post" action="/admin/actions/journey/create" style="margin-top:24px">
+            <div class="form-group"><label class="input-label">Nome da Jornada</label><input class="input-control" name="name" placeholder="Ex: Onboarding Premium Q4" required /></div>
+            <div class="form-group"><label class="input-label">Objetivo (O que a jornada quer alcançar)</label><input class="input-control" name="objective" placeholder="Ex: Converter leads frios em clientes pagantes" required /></div>
+            <div class="form-group">
+              <label class="input-label">Persona AI (System Prompt)</label>
+              <textarea class="input-control" name="systemPrompt" rows="6" placeholder="Você é a Ana, consultora de marketing digital com 5 anos de experiência. Fale de forma casual e amigável, como uma amiga que quer ajudar..." required></textarea>
+              <p class="text-xs opacity-40" style="margin-top:8px;">Define a personalidade da IA. Seja específico sobre tom, vocabulário, e estilo de comunicação.</p>
+            </div>
+            <div class="form-group"><label class="input-label">ID Customizado (Opcional)</label><input class="input-control" name="id" placeholder="onboarding-premium-q4" /></div>
+            <button type="submit" class="btn btn-primary">Publicar Jornada</button>
+          </form>
+        </section>
+
+        <section class="panel">
+          <h3 class="panel-title">Inscrever Lead em Jornada</h3>
+          <form method="post" action="/admin/actions/journey/enroll" style="margin-top:24px">
+            <div class="form-group"><label class="input-label">Lead ID</label><input class="input-control" name="userId" placeholder="UUID do lead" required /></div>
+            <div class="form-group"><label class="input-label">Journey ID</label><input class="input-control" name="journeyId" placeholder="UUID da jornada" required /></div>
+            <button type="submit" class="btn btn-primary">Inscrever Lead</button>
+          </form>
+
+          <div style="margin-top:32px;padding-top:24px;border-top:1px solid var(--border);">
+            <h4 style="font-size:0.9rem;font-weight:700;margin-bottom:12px;">Como Funciona</h4>
+            <div class="text-sm opacity-60" style="line-height:1.8;">
+              <p>1. <strong>Crie uma jornada</strong> com persona AI personalizada</p>
+              <p>2. <strong>Inscreva leads</strong> — eles começam na fase Discovery</p>
+              <p>3. <strong>A IA conversa</strong> no tom da persona definida</p>
+              <p>4. <strong>Avanço automático</strong> de fase baseado nas respostas do lead</p>
+              <p>5. <strong>Conversão e retenção</strong> — leads viram clientes e indicadores</p>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="panel-grid" style="margin-top:24px; grid-template-columns: 1fr;">
+        <section class="panel">
+          <div class="panel-header">
+            <h3 class="panel-title">Jornadas Ativas</h3>
+            <span class="badge badge-glass text-xs">${data.journeys.length} jornadas</span>
+          </div>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr><th>ID</th><th>Jornada</th><th>Leads</th><th>Status</th><th>Ação</th></tr>
+              </thead>
+              <tbody>
+                ${journeysHtml || '<tr><td colspan="5" class="opacity-40 text-center py-8">Nenhuma jornada criada ainda. Crie a primeira acima!</td></tr>'}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+
     <!-- VIEW: AI Agent -->
     <div id="view-ai-agent" class="view-content">
        <div class="panel-grid" style="grid-template-columns: 1.5fr 1fr;">
@@ -933,6 +1052,7 @@ export function renderAdminDashboardPage(data: {
       'users': { title: 'Base de Leads', subtitle: 'Gestão de perfis e conformidade LGPD.' },
       'wa-groups': { title: 'Explorador de Grupos', subtitle: 'Extração e captura de audiência via grupos de WhatsApp.' },
       'integrations': { title: 'Integrações de Canais', subtitle: 'Configure webhooks e gateways de entrega multicanal.' },
+      'journeys': { title: 'Jornadas AI', subtitle: 'Crie e gerencie jornadas conversacionais com persona AI inteligente.' },
       'ai-agent': { title: 'Agente Autônomo', subtitle: 'Supervisão das decisões tomadas pela IA na Edge.' }
     };
 

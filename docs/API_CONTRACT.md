@@ -330,9 +330,117 @@ Response:
 }
 ```
 
+## Jornadas (Journey Management)
+
+### POST /journey
+Cria uma jornada conversacional com persona AI.
+
+Request:
+```json
+{
+  "id": "onboarding-premium",
+  "name": "Onboarding Premium Q4",
+  "objective": "Converter leads frios em clientes pagantes",
+  "systemPrompt": "Você é a Ana, consultora de marketing digital..."
+}
+```
+
+Response `201`:
+```json
+{
+  "status": "success",
+  "journeyId": "onboarding-premium"
+}
+```
+
+### GET /journeys
+Lista todas as jornadas.
+
+### GET /journey/:id
+Retorna detalhes de uma jornada específica.
+
+### PUT /journey/:id
+Atualiza nome, objetivo ou system prompt de uma jornada.
+
+### POST /journey/:id/toggle
+Alterna status da jornada entre `active` e `paused`.
+
+### POST /journey/:id/enroll
+Inscreve um lead em uma jornada.
+
+Request:
+```json
+{
+  "userId": "u-001",
+  "phase": "discovery"
+}
+```
+
+### GET /journey/:id/enrollments
+Lista inscricoes de uma jornada.
+
+### POST /journey/:journeyId/user/:userId/advance
+Avanca o lead para a proxima fase da jornada (AIDA).
+
+Fases: `discovery` → `interest` → `desire` → `action` → `retained`
+
+Response:
+```json
+{
+  "status": "success",
+  "advanced": true,
+  "newPhase": "interest",
+  "completed": false
+}
+```
+
+### POST /journey/:journeyId/user/:userId/chat
+Endpoint de conversacao com persona AI. Envia mensagem do lead e recebe resposta inteligente.
+
+Request:
+```json
+{
+  "message": "Me conta mais sobre isso?"
+}
+```
+
+Response:
+```json
+{
+  "status": "success",
+  "response": "Olha, vou te falar uma coisa...",
+  "phaseAdvanced": true,
+  "currentPhase": "interest"
+}
+```
+
+Comportamento:
+- A IA responde no tom da persona definida no `systemPrompt` da jornada
+- Historico de conversacao e mantido (ultimas 30 mensagens)
+- A fase do lead pode avancar automaticamente com base nas respostas
+- Maximo de 400 caracteres por resposta
+
+### POST /journey/:journeyId/user/:userId/open
+Gera mensagem de abertura para primeiro contato com lead em uma jornada.
+
+Response:
+```json
+{
+  "status": "success",
+  "message": "E aí Ana! Tudo bem? Vi que você..."
+}
+```
+
+## Admin Panel - Jornadas
+
+Rotas do painel:
+- `POST /admin/actions/journey/create` (cria jornada via formulario)
+- `POST /admin/actions/journey/toggle` (alterna status da jornada)
+- `POST /admin/actions/journey/enroll` (inscreve lead em jornada)
+
 ## Erros comuns
 - `400`: payload invalido
-- `404`: usuario/campanha nao encontrado
+- `404`: usuario/campanha/jornada nao encontrado
 - `409`: campanha pausada sem `force=true`
 - `429`: muitas tentativas de login admin
 - `500`: webhook nao configurado para canal

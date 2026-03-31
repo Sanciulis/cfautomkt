@@ -15,7 +15,7 @@ import {
   recordAdminLoginFailure,
   clearAdminLoginThrottle,
 } from '../auth'
-import { createUserRecord, createCampaignRecord, getOverviewMetrics } from '../db'
+import { createUserRecord, createCampaignRecord, getOverviewMetrics, createJourneyRecord, listJourneys, getJourneyById, updateJourneyStatus, enrollUserInJourney, listJourneyEnrollments } from '../db'
 import { setUserMarketingConsent } from '../consent'
 import {
   validateAdminIntegrationWebhookUrl,
@@ -85,7 +85,7 @@ admin.get('/', async (c) => {
   const unauthorized = await ensureAdminSession(c)
   if (unauthorized) return c.redirect('/admin/login', 302)
 
-  const [overview, campaigns, decisions, users, whatsappIntegration, emailIntegration, telegramIntegration] = await Promise.all([
+  const [overview, campaigns, decisions, users, whatsappIntegration, emailIntegration, telegramIntegration, journeys] = await Promise.all([
     getOverviewMetrics(c.env),
     c.env.DB.prepare(
       'SELECT id, name, channel, status, updated_at FROM campaigns ORDER BY updated_at DESC LIMIT 30'
@@ -99,7 +99,16 @@ admin.get('/', async (c) => {
     getAdminWhatsAppIntegrationConfig(c.env),
     getAdminEmailIntegrationConfig(c.env),
     getAdminTelegramIntegrationConfig(c.env),
+    listJourneys(c.env),
   ])
+
+  // Fetch enrollment counts for each journey
+  const journeysWithCounts = await Promise.all(
+    journeys.map(async (j) => {
+      const enrollments = await listJourneyEnrollments(c.env, j.id)
+      return { ...j, enrollmentCount: enrollments.length }
+    })
+  )
 
   const notice = safeString(c.req.query('notice'))
   const noticeKind = safeString(c.req.query('kind'))
@@ -134,6 +143,7 @@ admin.get('/', async (c) => {
       users: users.results ?? [],
       campaigns: campaigns.results ?? [],
       decisions: decisions.results ?? [],
+      journeys: journeysWithCounts,
     })
   )
 })
@@ -638,6 +648,77 @@ admin.get('/api/gateway/groups/:groupId/participants', async (c) => {
     return c.json(data, response.status as 200)
   } catch (error) {
     return c.json({ error: `Gateway inacessível: ${String(error)}` }, 502)
+  }
+})
+
+// -- Journey Admin Actions --
+
+// Action - Create Journey
+admin.post('/actions/journey/create', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    const form = await c.req.parseBody()
+    const name = safeString(typeof form.name === 'string' ? form.name : null)
+    const objective = safeString(typeof form.objective === 'string' ? form.objective : null)
+    const systemPrompt = safeString(typeof form.systemPrompt === 'string' ? form.systemPrompt : null)
+
+    if (!name || !objective || !systemPrompt) {
+      return c.redirect(buildAdminRedirect('Nome, objetivo e system prompt são obrigatórios.', 'error'), 302)
+    }
+
+    const journeyId = await createJourneyRecord(c.env, {
+      id: typeof form.id === 'string' ? form.id : undefined,
+      name,
+      objective,
+      systemPrompt,
+    })
+    return c.redirect(buildAdminRedirect(`Jornada criada: ${journeyId}`), 302)
+  } catch (error) {
+    return c.redirect(buildAdminRedirect(`Falha ao criar jornada: ${String(error)}`, 'error'), 302)
+  }
+})
+
+// Action - Toggle Journey Status
+admin.post('/actions/journey/toggle', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    const form = await c.req.parseBody()
+    const journeyId = safeString(typeof form.journeyId === 'string' ? form.journeyId : null)
+    if (!journeyId) return c.redirect(buildAdminRedirect('journeyId é obrigatório.', 'error'), 302)
+
+    const journey = await getJourneyById(c.env, journeyId)
+    if (!journey) return c.redirect(buildAdminRedirect('Jornada não encontrada.', 'error'), 302)
+
+    const newStatus = journey.status === 'active' ? 'paused' : 'active'
+    await updateJourneyStatus(c.env, journeyId, newStatus)
+    return c.redirect(buildAdminRedirect(`Jornada ${journeyId} alterada para ${newStatus}.`), 302)
+  } catch (error) {
+    return c.redirect(buildAdminRedirect(`Falha ao alterar status: ${String(error)}`, 'error'), 302)
+  }
+})
+
+// Action - Enroll User in Journey
+admin.post('/actions/journey/enroll', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    const form = await c.req.parseBody()
+    const userId = safeString(typeof form.userId === 'string' ? form.userId : null)
+    const journeyId = safeString(typeof form.journeyId === 'string' ? form.journeyId : null)
+
+    if (!userId || !journeyId) {
+      return c.redirect(buildAdminRedirect('userId e journeyId são obrigatórios.', 'error'), 302)
+    }
+
+    await enrollUserInJourney(c.env, { userId, journeyId })
+    return c.redirect(buildAdminRedirect(`Lead ${userId} inscrito na jornada ${journeyId}.`), 302)
+  } catch (error) {
+    return c.redirect(buildAdminRedirect(`Falha ao inscrever lead: ${String(error)}`, 'error'), 302)
   }
 })
 
