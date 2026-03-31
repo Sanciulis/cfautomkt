@@ -37,7 +37,7 @@ export async function executeCampaignDispatch(
   let dispatchUrl: string | null = null
 
   if (!isDirectEmail && !isDirectTelegram) {
-    const baseDispatchUrl = resolveDispatchUrl(channel, env)
+    const baseDispatchUrl = await resolveDispatchUrl(channel, env)
     dispatchUrl = baseDispatchUrl
 
     const overrideUrl = safeString(body.webhookUrlOverride)

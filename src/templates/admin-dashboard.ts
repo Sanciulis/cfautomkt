@@ -1,4 +1,4 @@
-import { DEFAULT_WHATSAPP_TEST_MESSAGE, DEFAULT_AI_MODEL } from '../constants'
+import { DEFAULT_WHATSAPP_TEST_MESSAGE, DEFAULT_EMAIL_TEST_MESSAGE, DEFAULT_TELEGRAM_TEST_MESSAGE, DEFAULT_AI_MODEL } from '../constants'
 import { escapeHtml } from '../utils'
 
 export function renderAdminDashboardPage(data: {
@@ -22,7 +22,22 @@ export function renderAdminDashboardPage(data: {
     testMessage: string | null
     updatedAt: string | null
     dispatchTokenConfigured: boolean
+    gatewayToken: string | null
   }
+  emailIntegration: {
+    webhookUrl: string | null
+    testEmail: string | null
+    testSubject: string | null
+    testMessage: string | null
+    updatedAt: string | null
+  }
+  telegramIntegration: {
+    webhookUrl: string | null
+    testChatId: string | null
+    testMessage: string | null
+    updatedAt: string | null
+  }
+  users: Array<{ id: string; name: string | null; email: string | null; phone: string | null; preferred_channel: string; created_at: string }>
   campaigns: Array<{ id: string; name: string; channel: string; status: string; updated_at: string }>
   decisions: Array<{ decision_type: string; target_id: string | null; reason: string; created_at: string }>
 }): string {
@@ -43,6 +58,19 @@ export function renderAdminDashboardPage(data: {
           <td><span class="badge badge-outline">${escapeHtml(campaign.channel)}</span></td>
           <td><span class="badge ${campaign.status === 'active' ? 'badge-success' : 'badge-warn'}">${escapeHtml(campaign.status)}</span></td>
           <td><span class="text-xs opacity-60">${escapeHtml(campaign.updated_at ? new Date(campaign.updated_at).toLocaleString('pt-BR') : '-')}</span></td>
+        </tr>`
+    )
+    .join('')
+
+  const usersHtml = data.users
+    .map(
+      (user) =>
+        `<tr>
+          <td><code class="compact-code">${escapeHtml(user.id.slice(0, 8))}…</code></td>
+          <td><span class="font-bold">${escapeHtml(user.name || '-')}</span></td>
+          <td><span class="text-xs opacity-60">${escapeHtml(user.email || user.phone || '-')}</span></td>
+          <td><span class="badge badge-outline">${escapeHtml(user.preferred_channel)}</span></td>
+          <td><span class="text-xs opacity-60">${escapeHtml(user.created_at ? new Date(user.created_at).toLocaleString('pt-BR') : '-')}</span></td>
         </tr>`
     )
     .join('')
@@ -74,6 +102,21 @@ export function renderAdminDashboardPage(data: {
   const dispatchTokenStatus = data.whatsappIntegration.dispatchTokenConfigured
     ? '<span class="status-indicator status-ready">API Gateway Ativa</span>'
     : '<span class="status-indicator status-pending">API Gateway Offline</span>'
+
+  const emailWebhookUrl = escapeHtml(data.emailIntegration.webhookUrl ?? '')
+  const emailTestEmail = escapeHtml(data.emailIntegration.testEmail ?? '')
+  const emailTestSubject = escapeHtml(data.emailIntegration.testSubject ?? '')
+  const emailTestMessage = escapeHtml(data.emailIntegration.testMessage ?? DEFAULT_EMAIL_TEST_MESSAGE)
+  const emailUpdatedAtLabel = data.emailIntegration.updatedAt
+    ? `Atualizado: ${new Date(data.emailIntegration.updatedAt).toLocaleString('pt-BR')}`
+    : 'Aguardando configuração'
+
+  const telegramWebhookUrl = escapeHtml(data.telegramIntegration.webhookUrl ?? '')
+  const telegramTestChatId = escapeHtml(data.telegramIntegration.testChatId ?? '')
+  const telegramTestMessage = escapeHtml(data.telegramIntegration.testMessage ?? DEFAULT_TELEGRAM_TEST_MESSAGE)
+  const telegramUpdatedAtLabel = data.telegramIntegration.updatedAt
+    ? `Atualizado: ${new Date(data.telegramIntegration.updatedAt).toLocaleString('pt-BR')}`
+    : 'Aguardando configuração'
 
   return `<!doctype html>
 <html lang="pt-BR">
@@ -413,7 +456,11 @@ export function renderAdminDashboardPage(data: {
         <span>Laboratório Envios</span>
       </a>
 
-      <div class="nav-label">Crescimento</div>
+      <div class="nav-label">Crescimento & Audiência</div>
+      <a class="nav-item" data-view="wa-groups">
+        <svg fill="currentColor" viewBox="0 0 20 20"><path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z"></path></svg>
+        <span>Grupos e Extração</span>
+      </a>
       <a class="nav-item" data-view="users">
         <svg fill="currentColor" viewBox="0 0 20 20"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a7 7 0 017 7v1H1v-1a7 7 0 017-7z"></path></svg>
         <span>Base de Leads</span>
@@ -607,6 +654,76 @@ export function renderAdminDashboardPage(data: {
             <button type="submit" class="btn btn-glass" style="color:#ef4444">Revogar Consentimento</button>
           </form>
         </section>
+
+        <section class="panel">
+          <h3 class="panel-title">Injeção em Massa (CSV)</h3>
+          <p class="text-sm opacity-60 mb-6">Importe lotes de leads via CSV. Colunas Suportadas: <code>name</code>, <code>email</code>, <code>phone</code>, <code>channel</code>.</p>
+          <form method="post" action="/admin/actions/user/upload" enctype="multipart/form-data">
+            <div class="form-group">
+              <input class="input-control" type="file" name="csvFile" accept=".csv" required style="padding: 10px; background: rgba(0,0,0,0.1);" />
+            </div>
+            <button type="submit" class="btn btn-glass">Processar Ingestão</button>
+          </form>
+        </section>
+      </div>
+      
+      <div class="panel-grid" style="margin-top:24px; grid-template-columns: 1fr;">
+        <section class="panel">
+          <div class="panel-header">
+            <h3 class="panel-title">Últimos Leads Registrados</h3>
+          </div>
+          <div class="table-container">
+            <table>
+              <thead>
+                <tr><th>ID</th><th>Nome</th><th>Contato</th><th>Canal</th><th>Data</th></tr>
+              </thead>
+              <tbody>
+                ${usersHtml || '<tr><td colspan="5" class="opacity-40 text-center py-8">Nenhum lead encontrado</td></tr>'}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- VIEW: WA Groups -->
+    <div id="view-wa-groups" class="view-content">
+      <div class="panel-grid" style="grid-template-columns: 1fr 1.5fr;">
+        <section class="panel">
+          <div class="panel-header">
+            <h3 class="panel-title">Comunidades e Grupos</h3>
+            <button id="btn-fetch-groups" class="btn btn-primary" style="padding: 6px 12px; font-size: 0.75rem; width: auto;">Buscar Grupos</button>
+          </div>
+          <p class="text-sm opacity-60 mb-4">Selecione um grupo do WhatsApp conectado para mapear seus participantes.</p>
+          <div id="groups-list-container" class="space-y-4 max-h-[400px] overflow-y-auto pr-2">
+            <div class="opacity-40 text-sm text-center py-8">Clique em Buscar Grupos para iniciar a sincronização com seu Gateway.</div>
+          </div>
+        </section>
+
+        <section class="panel" style="display:flex; flex-direction:column;">
+          <h3 class="panel-title">Participantes Identificados</h3>
+          <p id="selected-group-name" class="text-sm opacity-60 mb-6">Nenhum grupo selecionado.</p>
+          
+          <div class="table-container" style="flex:1;">
+            <table>
+              <thead>
+                <tr><th>Número Identificado</th><th>Status</th></tr>
+              </thead>
+              <tbody id="participants-list-container">
+                <tr><td colspan="2" class="opacity-40 text-center py-8">-</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <form method="post" action="/admin/actions/groups/import" id="form-import-participants" style="display:none; margin-top:16px;">
+            <input type="hidden" name="groupId" id="import-group-id" />
+            <input type="hidden" name="groupName" id="import-group-name" />
+            <input type="hidden" name="participants" id="import-payload" />
+            <div class="flex items-center gap-4">
+               <button type="submit" class="btn btn-primary" style="flex:1;">Salvar <span id="import-count">0</span> Leads na Base Mestra</button>
+            </div>
+          </form>
+        </section>
       </div>
     </div>
 
@@ -623,7 +740,35 @@ export function renderAdminDashboardPage(data: {
               <div class="form-group"><label class="input-label">Status Link</label><input class="input-control" value="${escapeHtml(whatsappUpdatedAtLabel)}" readonly /></div>
             </div>
             <div class="form-group"><label class="input-label">Payload de Boas-vindas (Teste)</label><textarea class="input-control" name="testMessage">${whatsappTestMessage}</textarea></div>
+            <div class="form-group"><label class="input-label">Administrative Gateway Token (Para extração de grupos)</label><input class="input-control" name="gatewayToken" type="password" value="${escapeHtml(data.whatsappIntegration.gatewayToken || '')}" placeholder="Insira o Token de Admin do Gateway" /></div>
             <button type="submit" class="btn btn-primary">Atualizar Infraestrutura</button>
+          </form>
+        </section>
+
+        <section class="panel">
+          <h3 class="panel-title">Configurador Resend API (Email)</h3>
+          <form method="post" action="/admin/actions/integration/email/save" style="margin-top:24px">
+            <div class="form-group"><label class="input-label">Endpoint de Entrega (JSON Webhook)</label><input class="input-control" name="webhookUrl" value="${emailWebhookUrl}" placeholder="https://gw.dominio.com/send/email" required /></div>
+            <div class="panel-grid" style="grid-template-columns: 1fr 1fr; gap:16px;">
+              <div class="form-group"><label class="input-label">E-mail de Teste</label><input class="input-control" type="email" name="testEmail" value="${emailTestEmail}" /></div>
+              <div class="form-group"><label class="input-label">Status Link</label><input class="input-control" value="${escapeHtml(emailUpdatedAtLabel)}" readonly /></div>
+            </div>
+            <div class="form-group"><label class="input-label">Assunto de Boas-vindas (Teste)</label><input class="input-control" name="testSubject" value="${emailTestSubject}" /></div>
+            <div class="form-group"><label class="input-label">Corpo do E-mail (Teste)</label><textarea class="input-control" name="testMessage">${emailTestMessage}</textarea></div>
+            <button type="submit" class="btn btn-primary">Salvar Configuração de E-mail</button>
+          </form>
+        </section>
+
+        <section class="panel">
+          <h3 class="panel-title">Configurador Telegram Bot</h3>
+          <form method="post" action="/admin/actions/integration/telegram/save" style="margin-top:24px">
+            <div class="form-group"><label class="input-label">Endpoint de Entrega (JSON Webhook)</label><input class="input-control" name="webhookUrl" value="${telegramWebhookUrl}" placeholder="https://gw.dominio.com/send/telegram" required /></div>
+            <div class="panel-grid" style="grid-template-columns: 1fr 1fr; gap:16px;">
+              <div class="form-group"><label class="input-label">Chat ID de Teste</label><input class="input-control" name="testChatId" value="${telegramTestChatId}" /></div>
+              <div class="form-group"><label class="input-label">Status Link</label><input class="input-control" value="${escapeHtml(telegramUpdatedAtLabel)}" readonly /></div>
+            </div>
+            <div class="form-group"><label class="input-label">Mensagem de Boas-vindas (Teste)</label><textarea class="input-control" name="testMessage">${telegramTestMessage}</textarea></div>
+            <button type="submit" class="btn btn-primary">Salvar Configuração do Telegram</button>
           </form>
         </section>
 
@@ -634,14 +779,6 @@ export function renderAdminDashboardPage(data: {
             <div class="form-group"><label class="input-label">Webhook Override</label><input class="input-control" name="webhookUrl" placeholder="https://..." /></div>
             <button type="submit" class="btn btn-glass">Executar Stress Test</button>
           </form>
-          
-          <div class="mt-8 pt-8 border-t border-border">
-            <h4 class="text-xs uppercase tracking-widest font-bold opacity-40 mb-4">Outros Canais</h4>
-            <div class="flex gap-2">
-              <span class="badge badge-outline">Resend API: Active</span>
-              <span class="badge badge-outline">Telegram: Enabled</span>
-            </div>
-          </div>
         </section>
       </div>
     </div>
@@ -710,6 +847,7 @@ export function renderAdminDashboardPage(data: {
       'campaigns': { title: 'Gestão de Campanhas', subtitle: 'Crie e gerencie motores de crescimento.' },
       'dispatch': { title: 'Laboratório de Envios', subtitle: 'Orquestração massiva com inteligência artificial.' },
       'users': { title: 'Base de Leads', subtitle: 'Gestão de perfis e conformidade LGPD.' },
+      'wa-groups': { title: 'Explorador de Grupos', subtitle: 'Extração e captura de audiência via grupos de WhatsApp.' },
       'integrations': { title: 'Integrações de Canais', subtitle: 'Configure webhooks e gateways de entrega multicanal.' },
       'ai-agent': { title: 'Agente Autônomo', subtitle: 'Supervisão das decisões tomadas pela IA na Edge.' }
     };
@@ -739,6 +877,90 @@ export function renderAdminDashboardPage(data: {
     const initialView = window.location.hash.substring(1);
     if(initialView && document.querySelector('[data-view="' + initialView + '"]')) {
       document.querySelector('[data-view="' + initialView + '"]').click();
+    }
+
+    // WA Groups — calls same-origin Worker proxy (no CORS, token stays server-side)
+    const btnFetchGroups = document.getElementById('btn-fetch-groups');
+    const groupsContainer = document.getElementById('groups-list-container');
+    const participantsContainer = document.getElementById('participants-list-container');
+    const formImport = document.getElementById('form-import-participants');
+    const btnImportCount = document.getElementById('import-count');
+
+    if(btnFetchGroups) {
+      btnFetchGroups.addEventListener('click', async () => {
+         btnFetchGroups.disabled = true;
+         btnFetchGroups.innerText = 'Consultando...';
+         groupsContainer.innerHTML = '<div class="opacity-40 text-sm text-center py-4">Sincronizando com gateway...</div>';
+         
+         try {
+            const response = await fetch('/admin/api/gateway/groups');
+            const data = await response.json();
+            
+            if (data.status === 'success' && Array.isArray(data.groups)) {
+                groupsContainer.innerHTML = '';
+                data.groups.forEach(g => {
+                   const div = document.createElement('div');
+                   div.className = 'group-item';
+                   div.style.padding = '12px';
+                   div.style.background = 'rgba(255,255,255,0.03)';
+                   div.style.borderRadius = '12px';
+                   div.style.border = '1px solid var(--border)';
+                   div.style.cursor = 'pointer';
+                   div.style.display = 'flex';
+                   div.style.justifyContent = 'space-between';
+                   div.style.alignItems = 'center';
+                   div.style.marginBottom = '8px';
+                   div.onclick = () => loadGroup(g);
+                   div.innerHTML = '<span class="font-bold text-sm">' + (g.name || 'Sem Nome') + '</span><span class="badge badge-outline">' + g.count + ' membros</span>';
+                   groupsContainer.appendChild(div);
+                });
+            } else {
+                groupsContainer.innerHTML = '<div class="text-error text-sm text-center py-4">' + (data.error || 'Erro ao listar grupos.') + '</div>';
+            }
+         } catch (e) {
+            groupsContainer.innerHTML = '<div class="text-error text-sm text-center py-4">Falha na rede ou gateway offline.</div>';
+         } finally {
+            btnFetchGroups.disabled = false;
+            btnFetchGroups.innerText = 'Sincronizar Novamente';
+         }
+      });
+    }
+
+    async function loadGroup(g) {
+       document.getElementById('selected-group-name').innerText = 'Extraindo contatos de: ' + g.name;
+       participantsContainer.innerHTML = '<tr><td colspan="2" class="opacity-40 text-center py-8">Consultando API de protocolo...</td></tr>';
+       formImport.style.display = 'none';
+       
+       try {
+           const response = await fetch('/admin/api/gateway/groups/' + encodeURIComponent(g.id) + '/participants');
+           const data = await response.json();
+           
+           if (data.status === 'success' && Array.isArray(data.participants)) {
+               const phones = data.participants.map(p => p.id.split('@')[0]);
+               
+               participantsContainer.innerHTML = '';
+               phones.slice(0, 50).forEach(phone => {
+                  const tr = document.createElement('tr');
+                  tr.innerHTML = '<td><code class="compact-code">+' + phone + '</code></td><td><span class="badge badge-success">Sincronizado</span></td>';
+                  participantsContainer.appendChild(tr);
+               });
+               
+               if(phones.length > 50) {
+                  const tr = document.createElement('tr');
+                  tr.innerHTML = '<td colspan="2" class="opacity-40 text-center py-4">+ ' + (phones.length - 50) + ' adicionais carregados</td>';
+                  participantsContainer.appendChild(tr);
+               }
+
+               document.getElementById('import-group-id').value = g.id;
+               document.getElementById('import-group-name').value = g.name;
+               document.getElementById('import-payload').value = JSON.stringify(phones);
+               
+               btnImportCount.innerText = phones.length;
+               formImport.style.display = 'block';
+           }
+       } catch (e) {
+           participantsContainer.innerHTML = '<tr><td colspan="2" class="text-error text-center py-8">Erro ao extrair participantes.</td></tr>';
+       }
     }
   </script>
 </body>

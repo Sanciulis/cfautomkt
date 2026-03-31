@@ -116,4 +116,20 @@ export type AdminWhatsAppIntegrationConfig = {
   testPhone: string | null
   testMessage: string | null
   updatedAt: string | null
+  gatewayToken: string | null
+}
+
+export type AdminEmailIntegrationConfig = {
+  webhookUrl: string | null
+  testEmail: string | null
+  testSubject: string | null
+  testMessage: string | null
+  updatedAt: string | null
+}
+
+export type AdminTelegramIntegrationConfig = {
+  webhookUrl: string | null
+  testChatId: string | null
+  testMessage: string | null
+  updatedAt: string | null
 }

@@ -20,5 +20,14 @@ export const ADMIN_LOGIN_WINDOW_SECONDS = 60 * 10
 export const ADMIN_LOGIN_MAX_FAILURES = 5
 export const ADMIN_LOGIN_BLOCK_SECONDS = 60 * 15
 export const ADMIN_WHATSAPP_INTEGRATION_CONFIG_KEY = 'admin_config:integration:whatsapp'
+export const ADMIN_EMAIL_INTEGRATION_CONFIG_KEY = 'admin_config:integration:email'
+export const ADMIN_TELEGRAM_INTEGRATION_CONFIG_KEY = 'admin_config:integration:telegram'
+
 export const DEFAULT_WHATSAPP_TEST_MESSAGE =
   'Mensagem de teste do painel admin. Se voce recebeu isso, a integracao esta funcionando.'
+
+export const DEFAULT_EMAIL_TEST_MESSAGE =
+  'Esta é uma mensagem de teste do painel admin Martech Cloud.'
+
+export const DEFAULT_TELEGRAM_TEST_MESSAGE =
+  'Esta é uma mensagem de teste do painel admin Martech Cloud via Telegram.'

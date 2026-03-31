@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { Bindings } from '../types'
-import { DEFAULT_WHATSAPP_TEST_MESSAGE } from '../constants'
-import { safeString, toNumber, toBoolean, resolveConsentSource, buildAdminRedirect, constantTimeEqual } from '../utils'
+import { DEFAULT_WHATSAPP_TEST_MESSAGE, DEFAULT_EMAIL_TEST_MESSAGE, DEFAULT_TELEGRAM_TEST_MESSAGE } from '../constants'
+import { safeString, toNumber, toBoolean, resolveConsentSource, buildAdminRedirect, constantTimeEqual, applyWorkerSubrequestBypass } from '../utils'
 import {
   hasValidAdminSession,
   ensureAdminSession,
@@ -21,6 +21,10 @@ import {
   validateAdminIntegrationWebhookUrl,
   getAdminWhatsAppIntegrationConfig,
   saveAdminWhatsAppIntegrationConfig,
+  getAdminEmailIntegrationConfig,
+  saveAdminEmailIntegrationConfig,
+  getAdminTelegramIntegrationConfig,
+  saveAdminTelegramIntegrationConfig
 } from '../integration'
 import { executeCampaignDispatch } from '../dispatch'
 import { renderAdminLoginPage, renderAdminDashboardPage } from '../templates'
@@ -81,7 +85,7 @@ admin.get('/', async (c) => {
   const unauthorized = await ensureAdminSession(c)
   if (unauthorized) return c.redirect('/admin/login', 302)
 
-  const [overview, campaigns, decisions, whatsappIntegration] = await Promise.all([
+  const [overview, campaigns, decisions, users, whatsappIntegration, emailIntegration, telegramIntegration] = await Promise.all([
     getOverviewMetrics(c.env),
     c.env.DB.prepare(
       'SELECT id, name, channel, status, updated_at FROM campaigns ORDER BY updated_at DESC LIMIT 30'
@@ -89,7 +93,12 @@ admin.get('/', async (c) => {
     c.env.DB.prepare(
       'SELECT decision_type, target_id, reason, created_at FROM agent_decisions ORDER BY created_at DESC LIMIT 20'
     ).all<{ decision_type: string; target_id: string | null; reason: string; created_at: string }>(),
+    c.env.DB.prepare(
+      'SELECT id, name, email, phone, preferred_channel, created_at FROM users ORDER BY created_at DESC LIMIT 50'
+    ).all<{ id: string; name: string | null; email: string | null; phone: string | null; preferred_channel: string; created_at: string }>(),
     getAdminWhatsAppIntegrationConfig(c.env),
+    getAdminEmailIntegrationConfig(c.env),
+    getAdminTelegramIntegrationConfig(c.env),
   ])
 
   const notice = safeString(c.req.query('notice'))
@@ -107,7 +116,22 @@ admin.get('/', async (c) => {
         testMessage: whatsappIntegration.testMessage,
         updatedAt: whatsappIntegration.updatedAt,
         dispatchTokenConfigured: Boolean(safeString(c.env.DISPATCH_BEARER_TOKEN)),
+        gatewayToken: whatsappIntegration.gatewayToken,
       },
+      emailIntegration: {
+        webhookUrl: emailIntegration.webhookUrl,
+        testEmail: emailIntegration.testEmail,
+        testSubject: emailIntegration.testSubject,
+        testMessage: emailIntegration.testMessage,
+        updatedAt: emailIntegration.updatedAt,
+      },
+      telegramIntegration: {
+        webhookUrl: telegramIntegration.webhookUrl,
+        testChatId: telegramIntegration.testChatId,
+        testMessage: telegramIntegration.testMessage,
+        updatedAt: telegramIntegration.updatedAt,
+      },
+      users: users.results ?? [],
       campaigns: campaigns.results ?? [],
       decisions: decisions.results ?? [],
     })
@@ -136,6 +160,108 @@ admin.post('/actions/user/create', async (c) => {
     return c.redirect(buildAdminRedirect(`Usuario criado: ${result.userId}`), 302)
   } catch (error) {
     return c.redirect(buildAdminRedirect(`Falha ao criar usuario: ${String(error)}`, 'error'), 302)
+  }
+})
+
+// Action - Bulk User Upload CSV
+admin.post('/actions/user/upload', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    const body = await c.req.parseBody()
+    const file = body['csvFile']
+    
+    // Hono yields standard Web API File 
+    if (!(file instanceof File)) {
+      return c.redirect(buildAdminRedirect('Arquivo invalido ou ausente.', 'error'), 302)
+    }
+
+    const text = await file.text()
+    const lines = text.split('\n')
+    if (lines.length < 2) {
+      return c.redirect(buildAdminRedirect('O arquivo CSV parece estar vazio ou sem leads válidos.', 'error'), 302)
+    }
+
+    const headers = lines[0].split(',').map(h => h.trim().toLowerCase())
+    let imported = 0
+    let failed = 0
+
+    // Process sequentially to honor connection flow and simplicity scaling
+    for (let i = 1; i < lines.length; i++) {
+       const line = lines[i].trim()
+       if (!line) continue
+       
+       const parts = line.split(',')
+       const record: Record<string, string> = {}
+       headers.forEach((h, idx) => {
+           record[h] = parts[idx]?.trim()
+       })
+
+       if (!record.email && !record.phone) {
+           failed++
+           continue
+       }
+
+       try {
+           await createUserRecord(c.env, {
+               name: record.name,
+               email: record.email || undefined,
+               phone: record.phone || undefined,
+               preferredChannel: record.channel || record.preferred_channel || 'whatsapp',
+               consentSource: 'bulk_csv_upload',
+               marketingOptIn: 'true'
+           })
+           imported++
+       } catch (e) {
+           failed++
+       }
+    }
+
+    const m = failed > 0 ? `Injetados: ${imported}, Falhas: ${failed} (Já existem ou formato incorreto).` : `Todos os ${imported} leads foram injetados com sucesso!`
+    return c.redirect(buildAdminRedirect(m), 302)
+  } catch (error) {
+    return c.redirect(buildAdminRedirect(`Erro no processamento CSV: ${String(error)}`, 'error'), 302)
+  }
+})
+
+// Action - Import Extracted Group Participants
+admin.post('/actions/groups/import', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    const form = await c.req.parseBody()
+    const groupName = safeString(typeof form.groupName === 'string' ? form.groupName : 'Desconhecido')
+    const participantsRaw = typeof form.participants === 'string' ? form.participants : '[]'
+    
+    const phones: string[] = JSON.parse(participantsRaw)
+    if (!Array.isArray(phones) || phones.length === 0) {
+      return c.redirect(buildAdminRedirect('Nenhum participante recebido para importação.', 'error'), 302)
+    }
+
+    let imported = 0
+    let failed = 0
+
+    for (const phone of phones) {
+       try {
+           await createUserRecord(c.env, {
+               name: `Lead via ${groupName}`,
+               phone: phone,
+               preferredChannel: 'whatsapp',
+               consentSource: `group_extraction`,
+               marketingOptIn: 'true'
+           })
+           imported++
+       } catch (e) {
+           failed++
+       }
+    }
+
+    const m = failed > 0 ? `Contatos do grupo extraídos e salvos: ${imported}, Falhas (ou duplos): ${failed}.` : `Sucesso absoluto! ${imported} contatos extraídos salvos.`
+    return c.redirect(buildAdminRedirect(m), 302)
+  } catch (error) {
+    return c.redirect(buildAdminRedirect(`Erro na extração: ${String(error)}`, 'error'), 302)
   }
 })
 
@@ -255,6 +381,7 @@ admin.post('/actions/integration/save', async (c) => {
       testPhone,
       testMessage,
       updatedAt: new Date().toISOString(),
+      gatewayToken: safeString(typeof form.gatewayToken === 'string' ? form.gatewayToken : null) ?? currentConfig.gatewayToken,
     }
     await saveAdminWhatsAppIntegrationConfig(c.env, config)
 
@@ -262,6 +389,93 @@ admin.post('/actions/integration/save', async (c) => {
   } catch (error) {
     return c.redirect(
       buildAdminRedirect(`Falha ao salvar configuracao da integracao: ${String(error)}`, 'error'),
+      302
+    )
+  }
+})
+
+// Action - Save Email integration config
+admin.post('/actions/integration/email/save', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    const currentConfig = await getAdminEmailIntegrationConfig(c.env)
+    const form = await c.req.parseBody()
+    const rawWebhookUrl =
+      safeString(typeof form.webhookUrl === 'string' ? form.webhookUrl : null) ??
+      currentConfig.webhookUrl
+    if (!rawWebhookUrl) {
+      return c.redirect(buildAdminRedirect('Webhook URL e obrigatoria.', 'error'), 302)
+    }
+
+    const validation = validateAdminIntegrationWebhookUrl(rawWebhookUrl, c.env)
+    if (!validation.ok) return c.redirect(buildAdminRedirect(validation.error, 'error'), 302)
+
+    const testEmail =
+      safeString(typeof form.testEmail === 'string' ? form.testEmail : null) ?? currentConfig.testEmail
+    const testSubject =
+      safeString(typeof form.testSubject === 'string' ? form.testSubject : null) ?? currentConfig.testSubject ?? 'Test Message from Martech Cloud'
+    const testMessage =
+      safeString(typeof form.testMessage === 'string' ? form.testMessage : null) ??
+      currentConfig.testMessage ??
+      DEFAULT_EMAIL_TEST_MESSAGE
+
+    const config = {
+      webhookUrl: validation.normalizedUrl,
+      testEmail,
+      testSubject,
+      testMessage,
+      updatedAt: new Date().toISOString(),
+    }
+    await saveAdminEmailIntegrationConfig(c.env, config)
+
+    return c.redirect(buildAdminRedirect('Configuracao da integracao de Email salva.'), 302)
+  } catch (error) {
+    return c.redirect(
+      buildAdminRedirect(`Falha ao salvar configuracao de email: ${String(error)}`, 'error'),
+      302
+    )
+  }
+})
+
+// Action - Save Telegram integration config
+admin.post('/actions/integration/telegram/save', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    const currentConfig = await getAdminTelegramIntegrationConfig(c.env)
+    const form = await c.req.parseBody()
+    const rawWebhookUrl =
+      safeString(typeof form.webhookUrl === 'string' ? form.webhookUrl : null) ??
+      currentConfig.webhookUrl
+    if (!rawWebhookUrl) {
+      return c.redirect(buildAdminRedirect('Webhook URL e obrigatoria.', 'error'), 302)
+    }
+
+    const validation = validateAdminIntegrationWebhookUrl(rawWebhookUrl, c.env)
+    if (!validation.ok) return c.redirect(buildAdminRedirect(validation.error, 'error'), 302)
+
+    const testChatId =
+      safeString(typeof form.testChatId === 'string' ? form.testChatId : null) ?? currentConfig.testChatId
+    const testMessage =
+      safeString(typeof form.testMessage === 'string' ? form.testMessage : null) ??
+      currentConfig.testMessage ??
+      DEFAULT_TELEGRAM_TEST_MESSAGE
+
+    const config = {
+      webhookUrl: validation.normalizedUrl,
+      testChatId,
+      testMessage,
+      updatedAt: new Date().toISOString(),
+    }
+    await saveAdminTelegramIntegrationConfig(c.env, config)
+
+    return c.redirect(buildAdminRedirect('Configuracao da integracao do Telegram salva.'), 302)
+  } catch (error) {
+    return c.redirect(
+      buildAdminRedirect(`Falha ao salvar configuracao do telegram: ${String(error)}`, 'error'),
       302
     )
   }
@@ -310,6 +524,7 @@ admin.post('/actions/integration/test', async (c) => {
       testPhone,
       testMessage,
       updatedAt: new Date().toISOString(),
+      gatewayToken: safeString(typeof form.gatewayToken === 'string' ? form.gatewayToken : null) ?? currentConfig.gatewayToken,
     }
     await saveAdminWhatsAppIntegrationConfig(c.env, config)
 
@@ -336,7 +551,8 @@ admin.post('/actions/integration/test', async (c) => {
       },
     }
 
-    const response = await fetch(validation.normalizedUrl, {
+    const finalUrl = applyWorkerSubrequestBypass(validation.normalizedUrl)
+    const response = await fetch(finalUrl!, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${dispatchToken}`,
@@ -364,6 +580,67 @@ admin.post('/actions/integration/test', async (c) => {
       buildAdminRedirect(`Falha ao executar teste da integracao: ${String(error)}`, 'error'),
       302
     )
+  }
+})
+
+// --- Gateway Proxy (same-origin, no CORS) ---
+
+function deriveGatewayBaseUrl(webhookUrl: string | null): string | null {
+  if (!webhookUrl) return null
+  const bypassedUrl = applyWorkerSubrequestBypass(webhookUrl)
+  if (!bypassedUrl) return null
+  try {
+    const parsed = new URL(bypassedUrl)
+    return `${parsed.protocol}//${parsed.host}`
+  } catch {
+    return null
+  }
+}
+
+admin.get('/api/gateway/groups', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.json({ error: 'Unauthorized' }, 401)
+
+  const config = await getAdminWhatsAppIntegrationConfig(c.env)
+  const baseUrl = deriveGatewayBaseUrl(config.webhookUrl)
+  const token = safeString(config.gatewayToken)
+
+  if (!baseUrl || !token) {
+    return c.json({ error: 'Gateway não configurado. Salve Webhook URL e Gateway Token nas Integrações.' }, 400)
+  }
+
+  try {
+    const response = await fetch(`${baseUrl}/webhooks/gateway/groups`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const data = await response.json()
+    return c.json(data, response.status as 200)
+  } catch (error) {
+    return c.json({ error: `Gateway inacessível: ${String(error)}` }, 502)
+  }
+})
+
+admin.get('/api/gateway/groups/:groupId/participants', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.json({ error: 'Unauthorized' }, 401)
+
+  const config = await getAdminWhatsAppIntegrationConfig(c.env)
+  const baseUrl = deriveGatewayBaseUrl(config.webhookUrl)
+  const token = safeString(config.gatewayToken)
+
+  if (!baseUrl || !token) {
+    return c.json({ error: 'Gateway não configurado.' }, 400)
+  }
+
+  const groupId = c.req.param('groupId')
+  try {
+    const response = await fetch(`${baseUrl}/webhooks/gateway/groups/${encodeURIComponent(groupId)}/participants`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const data = await response.json()
+    return c.json(data, response.status as 200)
+  } catch (error) {
+    return c.json({ error: `Gateway inacessível: ${String(error)}` }, 502)
   }
 })
 

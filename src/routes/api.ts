@@ -223,4 +223,24 @@ api.get('/metrics/overview', async (c) => {
   return c.json(overview)
 })
 
+api.get('/test-fetch', async (c) => {
+  try {
+    const res = await fetch('https://wainews.com.br/health')
+    const text = await res.text()
+    return c.json({ status: res.status, text })
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+})
+
+api.get('/test-fetch-ip', async (c) => {
+  try {
+    const res = await fetch('http://168.231.94.189/health')
+    const text = await res.text()
+    return c.json({ status: res.status, text })
+  } catch (e) {
+    return c.json({ error: String(e) }, 500)
+  }
+})
+
 export { api }

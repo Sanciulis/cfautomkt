@@ -140,6 +140,23 @@ class MockD1Database {
         .map((user) => ({ id: user.id, viral_points: user.viral_points }))
     }
 
+    if (
+      normalized ===
+      'select id, name, email, phone, preferred_channel, created_at from users order by created_at desc limit 50'
+    ) {
+      return [...this.users]
+        .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
+        .slice(0, 50)
+        .map((user) => ({
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          phone: user.phone,
+          preferred_channel: user.preferred_channel,
+          created_at: user.created_at,
+        }))
+    }
+
     if (normalized.includes('select * from users where id in (') && normalized.endsWith('limit ?')) {
       const limit = Number(params[params.length - 1]) || 0
       const ids = params.slice(0, Math.max(0, params.length - 1))

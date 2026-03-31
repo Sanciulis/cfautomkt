@@ -69,12 +69,59 @@ export function toBoolean(value: unknown, fallback = false): boolean {
   return fallback
 }
 
-export function resolveDispatchUrl(channel: string, env: Bindings): string | null {
+// Bypasses Cloudflare Worker to Proxied Domain DNS resolution issues (error 1016)
+export function applyWorkerSubrequestBypass(url: string | null): string | null {
+  if (!url) return null
+  try {
+    const parsed = new URL(url)
+    if (parsed.host === 'wainews.com.br' || parsed.host === 'preview-api.fluxoia.com') {
+      return `http://168.231.94.189${parsed.pathname}${parsed.search}`
+    }
+    return url
+  } catch {
+    return url
+  }
+}
+
+export async function resolveDispatchUrl(channel: string, env: Bindings): Promise<string | null> {
   const normalizedChannel = channel.toLowerCase()
-  if (normalizedChannel === 'whatsapp') return env.WHATSAPP_WEBHOOK_URL ?? env.DISPATCH_WEBHOOK_URL ?? null
-  if (normalizedChannel === 'email') return env.EMAIL_WEBHOOK_URL ?? env.DISPATCH_WEBHOOK_URL ?? null
-  if (normalizedChannel === 'telegram') return env.TELEGRAM_WEBHOOK_URL ?? env.DISPATCH_WEBHOOK_URL ?? null
-  return env.DISPATCH_WEBHOOK_URL ?? null
+  let resultUrl: string | null = null
+  
+  if (normalizedChannel === 'whatsapp') {
+    const raw = await env.MARTECH_KV.get('admin_config:integration:whatsapp')
+    if (raw) {
+       try {
+         const parsed = JSON.parse(raw)
+         if (parsed.webhookUrl) resultUrl = parsed.webhookUrl
+       } catch {}
+    }
+    if (!resultUrl) resultUrl = env.WHATSAPP_WEBHOOK_URL ?? env.DISPATCH_WEBHOOK_URL ?? null
+  }
+  
+  else if (normalizedChannel === 'email') {
+    const raw = await env.MARTECH_KV.get('admin_config:integration:email')
+    if (raw) {
+       try {
+         const parsed = JSON.parse(raw)
+         if (parsed.webhookUrl) resultUrl = parsed.webhookUrl
+       } catch {}
+    }
+    if (!resultUrl) resultUrl = env.EMAIL_WEBHOOK_URL ?? env.DISPATCH_WEBHOOK_URL ?? null
+  }
+  
+  else if (normalizedChannel === 'telegram') {
+    const raw = await env.MARTECH_KV.get('admin_config:integration:telegram')
+    if (raw) {
+       try {
+         const parsed = JSON.parse(raw)
+         if (parsed.webhookUrl) resultUrl = parsed.webhookUrl
+       } catch {}
+    }
+    if (!resultUrl) resultUrl = env.TELEGRAM_WEBHOOK_URL ?? env.DISPATCH_WEBHOOK_URL ?? null
+  }
+  
+  if (!resultUrl) resultUrl = env.DISPATCH_WEBHOOK_URL ?? null
+  return applyWorkerSubrequestBypass(resultUrl)
 }
 
 export function getPreviewWebhookOverrideAllowlist(env: Bindings): string[] {
