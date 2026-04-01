@@ -558,6 +558,10 @@ export function renderAdminDashboardPage(data: {
         <svg fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 0l-2 2a1 1 0 101.414 1.414L8 10.414l1.293 1.293a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
         <span>Jornadas AI</span>
       </a>
+      <a class="nav-item" data-view="ai-prompts">
+        <svg fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd"></path></svg>
+        <span>Engenharia de Prompt</span>
+      </a>
       <a class="nav-item" data-view="playground">
         <svg fill="currentColor" viewBox="0 0 20 20"><path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z"></path><path d="M15 7v2a4 4 0 01-4 4H9.828l-1.766 1.767c.28.149.599.233.938.233h2l3 3v-3h2a2 2 0 002-2V9a2 2 0 00-2-2h-1z"></path></svg>
         <span>Playground AI</span>
@@ -1092,6 +1096,74 @@ export function renderAdminDashboardPage(data: {
       </div>
     </div>
 
+    <!-- VIEW: AI Prompts (Engineering) -->
+    <div id="view-ai-prompts" class="view-content">
+       <div class="panel-grid" style="grid-template-columns: 1fr 1fr;">
+         <!-- Left Pane: Target Selection and Active State -->
+         <section class="panel">
+           <h3 class="panel-title mb-4">Gerenciamento de Prompts Centrais</h3>
+           <p class="text-sm opacity-60 mb-6">Selecione um fluxo ou target para inspecionar, editar e publicá-lo para todos os usuários.</p>
+           
+           <div class="mb-6">
+             <label class="text-xs opacity-60 uppercase tracking-widest font-bold">Target ID (Fluxo ou Persona)</label>
+             <div class="flex gap-2 mt-2">
+                 <select id="prompt-target-select" class="input-control" style="flex:1;">
+                    <option value="flow:generate_personalized_message" selected>flow:generate_personalized_message</option>
+                    <option value="flow:simulate_persona">flow:simulate_persona</option>
+                    <option value="flow:journey_opening">flow:journey_opening</option>
+                 </select>
+                 <button id="btn-prompt-load" class="btn btn-outline" style="width: auto;">Carregar</button>
+             </div>
+           </div>
+
+           <div id="prompt-editor-area" style="opacity:0.3; pointer-events:none; transition: all 0.2s ease;">
+               <div>
+                  <label class="text-xs opacity-60 uppercase tracking-widest font-bold">Texto Base do Prompt (System)</label>
+                  <textarea id="prompt-editor-text" class="input-control font-mono mt-2" rows="10" placeholder="Carregue um target primeiro..."></textarea>
+               </div>
+
+               <div class="grid grid-cols-2 gap-4 mt-4">
+                  <div>
+                    <label class="text-xs opacity-60">LLM Model (Opcional)</label>
+                    <input id="prompt-editor-model" class="input-control mt-2" type="text" value="@cf/meta/llama-3-8b-instruct" />
+                  </div>
+                  <div>
+                    <label class="text-xs opacity-60">Motivo da Nova Versão (Rollout)</label>
+                    <input id="prompt-editor-reason" class="input-control mt-2" type="text" placeholder="Ex: Ajuste fino para CTA mais agressivo" />
+                  </div>
+               </div>
+
+               <div class="flex justify-end mt-6">
+                 <button id="btn-prompt-publish" class="btn btn-primary">Publicar Nova Versão (Ir para Prod)</button>
+               </div>
+           </div>
+         </section>
+
+         <!-- Right Pane: History & Rollback -->
+         <section class="panel">
+           <h3 class="panel-title mb-4">Auditoria e Versionamento <span id="prompt-history-badge" class="badge badge-outline ml-2">Histórico Vazio</span></h3>
+           <p class="text-sm opacity-60 mb-6">Consulte o histórico de alterações. O sistema usará em Produção sempre o <b>ID Mais Recente</b> no topo da pilha.</p>
+           
+           <div id="prompt-history-loading" class="text-center opacity-40 text-sm hidden py-8">Buscando histórico...</div>
+           
+           <div class="table-container" style="max-height: 480px; overflow-y: auto;">
+             <table>
+               <thead>
+                 <tr>
+                   <th>Data / ID</th>
+                   <th>Reason & Model</th>
+                   <th>Ação</th>
+                 </tr>
+               </thead>
+               <tbody id="prompt-history-rows">
+                 <tr><td colspan="3" class="opacity-40 text-center py-8">Pressione 'Carregar' para visualizar o histórico.</td></tr>
+               </tbody>
+             </table>
+           </div>
+         </section>
+       </div>
+    </div>
+
     <!-- VIEW: AI Agent -->
     <div id="view-ai-agent" class="view-content">
        <div class="panel-grid" style="grid-template-columns: 1.5fr 1fr;">
@@ -1310,6 +1382,7 @@ export function renderAdminDashboardPage(data: {
       'wa-groups': { title: 'Explorador de Grupos', subtitle: 'Extração e captura de audiência via grupos de WhatsApp.' },
       'integrations': { title: 'Integrações de Canais', subtitle: 'Configure webhooks e gateways de entrega multicanal.' },
       'journeys': { title: 'Jornadas AI', subtitle: 'Crie e gerencie jornadas conversacionais com persona AI inteligente.' },
+      'ai-prompts': { title: 'Engenharia de Prompt', subtitle: 'Versionamento, Rollback e Auditoria Oficial.' },
       'playground': { title: 'Playground AI', subtitle: 'Ambiente seguro para simular e calibrar o funil de IA.' },
       'ai-agent': { title: 'Agente Autônomo', subtitle: 'Supervisão das decisões tomadas pela IA na Edge.' }
     };
@@ -1560,6 +1633,120 @@ export function renderAdminDashboardPage(data: {
         window.open('/admin/api/ai/eval-dataset/export?format=json&limit=' + encodeURIComponent(limit), '_blank');
       });
     }
+
+    // AI Prompt Manager / Versioning Logic
+    const btnPromptLoad = document.getElementById('btn-prompt-load');
+    const btnPromptPublish = document.getElementById('btn-prompt-publish');
+    const promptTargetSelect = document.getElementById('prompt-target-select');
+    const promptEditorArea = document.getElementById('prompt-editor-area');
+    const promptHistoryRows = document.getElementById('prompt-history-rows');
+
+    async function loadPromptData() {
+      const targetId = promptTargetSelect.value;
+      if (!targetId) return;
+      
+      btnPromptLoad.disabled = true;
+      btnPromptLoad.innerText = '...';
+      promptEditorArea.style.opacity = '0.3';
+      promptEditorArea.style.pointerEvents = 'none';
+
+      try {
+        const res = await fetch('/admin/api/ai/prompts/' + encodeURIComponent(targetId));
+        const data = await res.json();
+        
+        if (data.error) throw new Error(data.error);
+
+        // Preencher editor (Ativo)
+        document.getElementById('prompt-editor-text').value = data.active.text || '';
+        document.getElementById('prompt-editor-model').value = data.active.model || '@cf/meta/llama-3-8b-instruct';
+        document.getElementById('prompt-editor-reason').value = '';
+
+        // Habilitar área
+        promptEditorArea.style.opacity = '1';
+        promptEditorArea.style.pointerEvents = 'auto';
+
+        // Preencher Histórico
+        const history = data.history || [];
+        document.getElementById('prompt-history-badge').innerText = history.length + ' deploys';
+        if (history.length === 0) {
+          promptHistoryRows.innerHTML = '<tr><td colspan="3" class="opacity-40 text-center py-8">Nenhum deploy para este target ainda.</td></tr>';
+        } else {
+          promptHistoryRows.innerHTML = history.map((v, i) => {
+            const isCurrent = i === 0;
+            const date = new Date(v.created_at).toLocaleString('pt-BR', { dateStyle:'short', timeStyle:'short' });
+            return '<tr>' +
+              '<td>' +
+                 '<span class="font-bold">v' + v.id + '</span> ' + (isCurrent ? '<span class="badge badge-success text-[0.6rem] py-0 px-1 ml-1">Prod</span>' : '') + '<br/>' +
+                 '<span class="text-xs opacity-60">' + date + '</span>' +
+              '</td>' +
+              '<td>' +
+                 '<span class="text-sm opacity-80 block truncate max-w-[200px]" title="' + v.change_reason + '">' + v.change_reason + '</span>' +
+                 '<span class="text-xs opacity-60 block truncate max-w-[150px]">' + v.model + '</span>' +
+              '</td>' +
+              '<td>' +
+                (!isCurrent ? '<button class="btn btn-outline" style="font-size:0.7rem; padding: 4px 8px;" onclick="rollbackPrompt(' + v.id + ')">Rever / Rollback</button>' : '<span class="opacity-40 text-xs">Atual</span>') + 
+              '</td>' +
+            '</tr>';
+          }).join('');
+
+          // Bind cache pro rollback
+          window.__promptHistoryCache = history;
+        }
+
+      } catch(e) {
+        alert('Erro ao carregar prompts: ' + e.message);
+      } finally {
+        btnPromptLoad.disabled = false;
+        btnPromptLoad.innerText = 'Carregar';
+      }
+    }
+
+    if (btnPromptLoad) {
+      btnPromptLoad.addEventListener('click', loadPromptData);
+    }
+
+    if (btnPromptPublish) {
+      btnPromptPublish.addEventListener('click', async () => {
+         const targetId = promptTargetSelect.value;
+         const promptText = document.getElementById('prompt-editor-text').value;
+         const model = document.getElementById('prompt-editor-model').value;
+         const changeReason = document.getElementById('prompt-editor-reason').value || 'Ajustes via Painel Admin';
+
+         if(!promptText) return alert('Prompt base é obrigatório.');
+         if(confirm('Isso atualizará o comportamento AI de TODOS os usuários deste Target em Produção. Tem certeza?')) {
+            btnPromptPublish.disabled = true;
+            btnPromptPublish.innerText = 'Publicando...';
+
+            try {
+               const res = await fetch('/admin/api/ai/prompts', {
+                  method: 'POST',
+                  headers: {'Content-Type': 'application/json'},
+                  body: JSON.stringify({ targetId, promptText, model, changeReason })
+               });
+               const data = await res.json();
+               if(data.error) throw new Error(data.error);
+
+               alert('Publicado com sucesso!');
+               await loadPromptData(); // refresh UI
+            } catch (e) {
+               alert('Falha ao publicar: ' + e.message);
+            } finally {
+               btnPromptPublish.disabled = false;
+               btnPromptPublish.innerText = 'Publicar Nova Versão (Ir para Prod)';
+            }
+         }
+      });
+    }
+
+    window.rollbackPrompt = function(id) {
+       const v = window.__promptHistoryCache?.find(x => x.id === id);
+       if(v) {
+         document.getElementById('prompt-editor-text').value = v.prompt_text;
+         document.getElementById('prompt-editor-model').value = v.model;
+         document.getElementById('prompt-editor-reason').value = 'Rollback (Restaurado da v' + v.id + ') - ' + v.change_reason;
+         alert('Prompt V' + id + ' foi carregado no Editor! Revise o texto à esquerda e clique em "Publicar Nova Versão" se desejar jogar para Produção.');
+       }
+    };
 
     // A/B Test Runner Logic
     const btnRunEval = document.getElementById('btn-run-eval');

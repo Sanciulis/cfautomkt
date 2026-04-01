@@ -21,65 +21,48 @@ Motor de marketing autonomo na Cloudflare Edge com foco em:
 - Gateway Node.js (Baileys) para envio WhatsApp
 - GitHub Actions (CI/CD)
 
-## Arquitetura (MVP executavel)
-1. API recebe eventos e atualiza score do usuario.
-2. Worker gera copy personalizada com Workers AI.
-3. Links `/ref/:code` rastreiam clique, incrementam viral_points e redirecionam para landing com `?ref=`.
-4. Agente `scheduled` roda a cada 6h para:
-   - migrar usuarios frios para SMS
-   - pausar campanhas com baixa conversao
-   - registrar decisoes em `agent_decisions`
-5. Endpoint de metricas agrega conversao e K-factor.
-6. Para canal WhatsApp, o Worker entrega em webhook externo (ex.: gateway Baileys).
+### Arquitetura de "Legos" (Fase 2)
+O sistema agora desacopla a inteligência da oferta:
+1. **Personas:** Avatares de IA com prompts de sistema e tons de voz específicos.
+2. **Produtos:** Descrições de ofertas, preços e links de conversão.
+3. **Jornadas:** Orquestração que une uma Persona a um Produto para guiar o lead pelo funil AIDA.
+
+## Agente Autônomo & AI Learning Loop
+O agente `scheduled` (cron) evoluiu para um sistema de melhoria contínua:
+- **Monitoramento de Funil:** Identifica jornadas com leads "travados" em fases específicas (ex: Discovery -> Interest).
+- **AI Review:** O LLaMa 3 analisa amostras de conversas reais e gera "insights" de melhoria para os prompts.
+- **Sementes de Social Engineering:** Repositório de prompts de alta conversão (`docs/SOCIAL_ENGINEERING_SEEDS.md`).
 
 ## Estrutura modular (`src/`)
 ```
 src/
 ├── index.ts              # Entry point — monta rotas e exporta handlers
-├── types.ts              # Tipos compartilhados (Bindings, UserRecord, etc.)
-├── constants.ts          # Constantes (pesos, TTLs, modelos AI)
-├── utils.ts              # Helpers puros (parsing, escapeHtml, validação)
-├── auth.ts               # Sessão admin, API key, throttle de login
-├── ai.ts                 # Personalização via Workers AI (Llama 3)
-├── db.ts                 # Operações D1 (users, campaigns, interactions)
-├── consent.ts            # Lógica LGPD (opt-in/opt-out)
-├── dispatch.ts           # Orquestração de disparo multicanal
-├── integration.ts        # Config WhatsApp (KV-based)
-├── scheduled.ts          # Agente autônomo (cron)
+├── types.ts              # Tipos (PersonaRecord, ProductRecord, JourneyRecord, etc.)
+├── constants.ts          # Constantes (modelos AI, pesos de score)
+├── db.ts                 # Operações D1 (CRUD modular para Legos)
+├── persona.ts            # Motor de conversação e simulador de Playground
+├── scheduled.ts          # Agente autônomo e AI Learning Loop
 ├── routes/
-│   ├── admin.ts          # Rotas /admin/* (painel, CRUD, dispatch)
-│   ├── api.ts            # API REST (/user, /campaign, /interaction, etc.)
-│   └── public.ts         # Rotas públicas (/, /ref/:code, /unsubscribe/:code)
-└── templates/
-    ├── index.ts           # Barrel export
-    ├── admin-login.ts     # Página de login admin
-    ├── admin-dashboard.ts # Dashboard operacional
-    └── unsubscribe.ts     # Página de descadastro LGPD
+│   ├── admin.ts          # Painel, Playground AI (/api/playground/chat)
+│   ├── api.ts            # API REST (publica e protegida)
 ```
 
 ## Modelagem de dados (D1)
-Arquivos: `schema.sql`
-
 Tabelas:
-- `users`
-- `campaigns`
-- `interactions`
-- `agent_decisions`
+- `users`, `campaigns`, `interactions`
+- `personas` (Prompts e comportamento)
+- `products` (Ofertas e metas)
+- `journeys` (Relacionamento Persona <> Produto)
+- `ai_learning_loops` (Sugestões de melhoria geradas pela IA)
 
 ## Endpoints principais
-- `GET /` status do sistema
-- `GET /admin/login` tela de autenticacao do painel admin
-- `POST /admin/login` cria sessao admin (cookie HttpOnly)
-- `POST /admin/logout` encerra sessao admin
-- `GET /admin` dashboard operacional (protegido por sessao)
-- `POST /user` cria usuario
-- `GET /user/:id` retorna perfil
-- `POST /user/:id/consent` atualiza consentimento (`marketingOptIn`) para opt-in/opt-out
-- `POST /campaign` cria campanha
-- `POST /interaction` registra evento (`sent`, `opened`, `clicked`, `shared`, `converted`, `referral_click`, `personalized`, `send_failed`)
-- `POST /personalize/:id` gera copy personalizada com IA
-- `POST /campaign/:id/send` dispara campanha para lote de usuarios via webhook (whatsapp/email/telegram)
-- `GET /ref/:code` tracking viral + redirect para landing
+- `GET /admin` dashboard operacional
+- `POST /admin/api/playground/chat` ambiente de simulação de IA
+- `GET /journeys` lista jornadas ativas com métricas de funil
+- `POST /user` criação de leads e início de tracking viral
+- `GET /ref/:code` tracking de indicação + viralidade
+- `GET /metrics/overview` visão 360º de conversão e K-factor
+ redirect para landing
 - `GET /unsubscribe/:code` descadastro publico (opt-out LGPD)
 - `GET /metrics/overview` metricas consolidadas do funil
 

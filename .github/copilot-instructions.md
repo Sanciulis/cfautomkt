@@ -90,3 +90,32 @@ Martech is a viral marketing platform built on Cloudflare Workers, Hono, D1 (SQL
 
 ## Compatibility with Antigravity Skills
 For Antigravity agents, refer to the skill located at `.agents/skills/martech-project-info/SKILL.md` for additional workflow guidance and best practices specific to this project.
+
+## Development and Evolution Governance
+
+### Mandatory linkage between Skill and Instructions
+- Use `.agents/skills/martech-project-info/SKILL.md` as the project-level guidance source.
+- Use `.github/instructions/typescript.instructions.md` as implementation-level rules for TypeScript/JavaScript files.
+- Keep both artifacts synchronized whenever project scope, architecture, integrations, or operating model changes.
+
+### Mandatory delivery flow
+1. Plan:
+- Define business objective, technical scope, and affected modules.
+2. Build:
+- Follow modular architecture and coding conventions.
+3. Verify:
+- Run technical checks applicable to the change.
+ - Validate GitHub Actions status for the branch/PR (`validate`, `security scan`, and other required checks).
+ - Do not consider delivery complete if required workflows are failing.
+4. Document:
+- Update `docs/` files impacted by the change.
+- For AI changes, update `docs/AI_ROADMAP.md` and `docs/AI_SYSTEM.md`.
+5. Evolve:
+- Register what changed, why it changed, impact, and next step in roadmap cadence.
+
+### Done criteria for each relevant change
+- Code updated and validated.
+- Required GitHub Actions checks passing (or formally waived with justification).
+- Documentation updated.
+- Skill/instructions alignment preserved.
+- AI roadmap updated when applicable.

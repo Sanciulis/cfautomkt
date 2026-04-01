@@ -32,6 +32,7 @@ import { renderAdminLoginPage, renderAdminDashboardPage } from '../templates'
 import { createSegment, listSegments, getSegmentById, updateSegment, deleteSegment, getUsersInSegment, refreshUserSegments } from '../segmentation'
 import { createFreezingRule, getFreezingRules, getFreezingRuleById, updateFreezingRule, deleteFreezingRule, createDefaultFreezingRules } from '../freezing-rules'
 import { runPromptEvaluation } from '../ai-eval'
+import { getPromptHistory, publishPromptVersion, getActivePrompt } from '../prompt-manager'
 
 const admin = new Hono<{ Bindings: Bindings }>()
 
@@ -1363,6 +1364,48 @@ admin.post('/api/ai/eval/run', async (c) => {
       resultA: evalA,
       resultB: evalB
     })
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
+// API - Get Prompt Info & History
+admin.get('/api/ai/prompts/:targetId', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.json({ error: 'Unauthorized' }, 401)
+
+  try {
+    const targetId = c.req.param('targetId')
+    
+    // We get the active prompt (from DB, or if none, fallback defaults)
+    // For the UI, we don't have the literal fallback from the code available dynamically,
+    // so we'll just query the active model and history to show its state.
+    const history = await getPromptHistory(c.env, targetId, 15)
+    const active = history.length > 0 
+      ? { text: history[0].prompt_text, model: history[0].model } 
+      : { text: '', model: '@cf/meta/llama-3-8b-instruct' } // Default empty state for new targets
+
+    return c.json({ active, history })
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
+// API - Publish New Prompt Version
+admin.post('/api/ai/prompts', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.json({ error: 'Unauthorized' }, 401)
+
+  try {
+    const body = await c.req.json()
+    const { targetId, promptText, model, changeReason } = body
+
+    if (!targetId || !promptText) return c.json({ error: 'Missing targetId or prompt text' }, 400)
+
+    // The user's identity could be fetched from the session, but we use 'admin' by default right now.
+    await publishPromptVersion(c.env, targetId, promptText, model || '@cf/meta/llama-3-8b-instruct', 'admin', changeReason)
+
+    return c.json({ success: true })
   } catch (error) {
     return c.json({ error: String(error) }, 500)
   }

@@ -68,3 +68,30 @@ O Martech é uma plataforma de marketing viral baseada em Cloudflare Workers, Ho
 - Leia e siga as orientações acima ao iniciar tarefas no projeto Martech
 - Use como referência para onboarding, troubleshooting e planejamento
 - Consulte sempre que houver dúvidas sobre estrutura, deploy ou integrações
+
+## Vinculação com o fluxo de desenvolvimento e evolução
+- Este skill deve ser aplicado em todo ciclo de desenvolvimento que envolva novas features, refatorações relevantes, integrações, mudanças de IA ou mudanças de operação.
+- Para implementação técnica em TypeScript/JavaScript, aplicar em conjunto com `.github/instructions/typescript.instructions.md`.
+- Para evolução de IA, usar `docs/AI_ROADMAP.md` como cronograma oficial e `docs/AI_SYSTEM.md` como referência técnica de capacidades.
+
+### Gate obrigatório por entrega
+1. Planejamento:
+- Confirmar objetivo da entrega e impacto em arquitetura, integrações, segurança e documentação.
+2. Implementação:
+- Seguir convenções de código e modularidade definidas nas instructions.
+3. Validação:
+- Executar checagens técnicas (build/test/lint aplicáveis) e validar impacto operacional.
+- Confirmar status dos workflows do GitHub Actions para o PR/branch (CI/CD e segurança).
+- Não avançar para merge com checks obrigatórios falhando.
+4. Documentação:
+- Atualizar documentação técnica relevante em `docs/`.
+- Se houver impacto em IA, atualizar `docs/AI_ROADMAP.md` usando o modelo de atualização.
+5. Governança:
+- Garantir consistência entre `SKILL.md`, `.github/instructions/*.instructions.md` e documentação operacional.
+
+### Definição de pronto para evolução contínua
+- Código entregue e validado.
+- Workflows obrigatórios do GitHub Actions aprovados.
+- Documentação atualizada.
+- Cronograma de IA atualizado quando aplicável.
+- Riscos e próximos passos registrados.
