@@ -215,7 +215,7 @@ Lembre: máximo 400 caracteres, tom de conversa de WhatsApp entre amigos.`
     // Fallback
   }
 
-  return `E aí${user.name ? ` ${user.name}` : ''}! Tudo bem? 😊 Vi que você tem interesse em ${journey.objective.toLowerCase()}. Posso te contar uma coisa rápida sobre isso?`
+  return `E aí${user.name ? ` ${user.name}` : ''}! Tudo bem? 😊 Vi que você tem interesse em ${(journey.objective || 'nossos produtos').toLowerCase()}. Posso te contar uma coisa rápida sobre isso?`
 }
 
 /**

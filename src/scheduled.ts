@@ -126,4 +126,53 @@ export async function runScheduledAgent(env: Bindings): Promise<void> {
       { journeyId: lead.journey_id }
     )
   }
+
+  // ── 6. AI Learning Loop: Systematic Review ─────────────────
+  // Find journeys with more than 5 stale leads to generate insights
+  const problematicJourneys = await env.DB.prepare(
+    `SELECT je.journey_id, j.name, COUNT(*) as stale_count
+     FROM journey_enrollments je
+     JOIN journeys j ON j.id = je.journey_id
+     WHERE j.status = 'active'
+       AND je.current_phase NOT IN ('action', 'retained')
+       AND je.last_interaction_at < datetime('now', '-3 days')
+     GROUP BY je.journey_id
+     HAVING stale_count >= 3
+     LIMIT 3`
+  ).all<{ journey_id: string; name: string; stale_count: number }>()
+
+  for (const p of problematicJourneys.results) {
+    const samples = await env.DB.prepare(
+      "SELECT conversation_history FROM journey_enrollments WHERE journey_id = ? AND last_interaction_at < datetime('now', '-3 days') LIMIT 2"
+    ).bind(p.journey_id).all<{ conversation_history: string }>()
+
+    const chatContext = samples.results
+      .map(s => s.conversation_history)
+      .filter(Boolean)
+      .join('\n---\n')
+
+    if (!chatContext) continue
+
+    try {
+      const prompt = `Analise estes diálogos de chat marketing que pararam de responder. Identifique por que o lead perdeu o interesse e sugira UM PEQUENO AJUSTE no System Prompt da persona para melhorar a conversão. Mantenha o tom profissional. 
+      Conversas:
+      ${chatContext}`
+
+      const aiResponse: any = await env.AI.run('@cf/meta/llama-3-8b-instruct', {
+        messages: [{ role: 'user', content: prompt }]
+      })
+
+      const insight = aiResponse.response || "Sem insight gerado pela IA."
+
+      await env.DB.prepare(
+        "INSERT INTO ai_learning_loops (id, journey_id, ai_insight, status) VALUES (?, ?, ?, ?)"
+      )
+      .bind(crypto.randomUUID(), p.journey_id, insight, 'pending_review')
+      .run()
+
+      console.log(`AI Insight generated for journey ${p.name}`)
+    } catch (e) {
+      console.error(`AI Learning Loop error for ${p.journey_id}:`, e)
+    }
+  }
 }

@@ -40,7 +40,7 @@ export function renderAdminDashboardPage(data: {
   users: Array<{ id: string; name: string | null; email: string | null; phone: string | null; preferred_channel: string; created_at: string }>
   campaigns: Array<{ id: string; name: string; channel: string; status: string; updated_at: string }>
   decisions: Array<{ decision_type: string; target_id: string | null; reason: string; created_at: string }>
-  journeys: Array<{ id: string; name: string; objective: string; system_prompt: string; status: string; created_at?: string; enrollmentCount: number }>
+  journeys: Array<{ id: string; name: string; objective?: string; system_prompt?: string; persona_name?: string; product_name?: string; status: string; created_at?: string; enrollmentCount: number }>
 }): string {
   const noticeHtml =
     data.notice && data.noticeKind
@@ -98,7 +98,7 @@ export function renderAdminDashboardPage(data: {
       (journey) =>
         `<tr>
           <td><code class="compact-code">${escapeHtml(journey.id.slice(0, 8))}\u2026</code></td>
-          <td><span class="font-bold">${escapeHtml(journey.name)}</span><br/><span class="text-xs opacity-60">${escapeHtml(journey.objective.slice(0, 60))}${journey.objective.length > 60 ? '\u2026' : ''}</span></td>
+          <td><span class="font-bold">${escapeHtml(journey.name)}</span><br/><span class="text-xs opacity-60">${escapeHtml((journey.product_name || journey.objective || 'Em Construção').slice(0, 60))}${(journey.product_name || journey.objective || '').length > 60 ? '…' : ''}</span></td>
           <td><span class="badge badge-outline">${journey.enrollmentCount} leads</span></td>
           <td><span class="badge ${journey.status === 'active' ? 'badge-success' : 'badge-warn'}">${escapeHtml(journey.status)}</span></td>
           <td>

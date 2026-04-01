@@ -49,13 +49,40 @@ CREATE TABLE IF NOT EXISTS agent_decisions (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- FASE 2: Entidades Desacopladas (Lego)
+
+CREATE TABLE IF NOT EXISTS personas (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  base_tone TEXT NOT NULL,
+  system_prompt TEXT NOT NULL,
+  interaction_constraints TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS products (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL,
+  pricing_details TEXT,
+  conversion_url TEXT,
+  metadata TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Recriando tabelas relacionadas a Journeys (Requer migração destrutiva/limpeza se já houver dados no dev)
+DROP TABLE IF EXISTS journey_enrollments;
+DROP TABLE IF EXISTS journeys;
+
 CREATE TABLE IF NOT EXISTS journeys (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  objective TEXT NOT NULL,
-  system_prompt TEXT NOT NULL,
+  persona_id TEXT NOT NULL,
+  product_id TEXT NOT NULL,
   status TEXT DEFAULT 'active' CHECK (status IN ('active', 'paused')),
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (persona_id) REFERENCES personas(id),
+  FOREIGN KEY (product_id) REFERENCES products(id)
 );
 
 CREATE TABLE IF NOT EXISTS journey_enrollments (
@@ -70,6 +97,17 @@ CREATE TABLE IF NOT EXISTS journey_enrollments (
   FOREIGN KEY (journey_id) REFERENCES journeys(id)
 );
 
+CREATE TABLE IF NOT EXISTS ai_learning_loops (
+  id TEXT PRIMARY KEY,
+  journey_id TEXT NOT NULL,
+  phase_transitions TEXT, -- JSON structure of funnel drops
+  conversion_rate REAL,
+  ai_insight TEXT,
+  status TEXT DEFAULT 'pending_review' CHECK (status IN ('pending_review', 'applied', 'rejected')),
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (journey_id) REFERENCES journeys(id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_users_referral_code ON users(referral_code);
 CREATE INDEX IF NOT EXISTS idx_users_last_active ON users(last_active);
 CREATE INDEX IF NOT EXISTS idx_users_marketing_opt_in ON users(marketing_opt_in);
@@ -77,3 +115,4 @@ CREATE INDEX IF NOT EXISTS idx_interactions_user_event ON interactions(user_id, 
 CREATE INDEX IF NOT EXISTS idx_interactions_campaign_event ON interactions(campaign_id, event_type);
 CREATE INDEX IF NOT EXISTS idx_journeys_status ON journeys(status);
 CREATE INDEX IF NOT EXISTS idx_journey_enrollments_phase ON journey_enrollments(journey_id, current_phase);
+CREATE INDEX IF NOT EXISTS idx_learning_loops_status ON ai_learning_loops(status);

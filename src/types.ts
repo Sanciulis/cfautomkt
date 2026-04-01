@@ -67,13 +67,48 @@ export type JourneyPhase = 'discovery' | 'interest' | 'desire' | 'action' | 'ret
 
 export const JOURNEY_PHASES: JourneyPhase[] = ['discovery', 'interest', 'desire', 'action', 'retained']
 
+export type PersonaRecord = {
+  id: string
+  name: string
+  base_tone: string
+  system_prompt: string
+  interaction_constraints: string | null
+  created_at?: string
+}
+
+export type ProductRecord = {
+  id: string
+  name: string
+  description: string
+  pricing_details: string | null
+  conversion_url: string | null
+  metadata: string | null
+  created_at?: string
+}
+
+export type AILearningLoopRecord = {
+  id: string
+  journey_id: string
+  phase_transitions: string | null
+  conversion_rate: number | null
+  ai_insight: string | null
+  status: 'pending_review' | 'applied' | 'rejected'
+  created_at?: string
+}
+
 export type JourneyRecord = {
   id: string
   name: string
-  objective: string
-  system_prompt: string
+  persona_id: string
+  product_id: string
   status: 'active' | 'paused'
   created_at?: string
+  
+  // Campos virtuais populados pelos JOINs em tempo de consulta
+  persona_name?: string
+  system_prompt?: string
+  product_name?: string
+  objective?: string
 }
 
 export type JourneyEnrollment = {
@@ -94,8 +129,25 @@ export type JourneyConversationMessage = {
 export type JourneyCreateInput = {
   id?: string | null
   name: string
-  objective: string
+  personaId: string
+  productId: string
+}
+
+export type PersonaCreateInput = {
+  id?: string | null
+  name: string
+  baseTone: string
   systemPrompt: string
+  interactionConstraints?: string | null
+}
+
+export type ProductCreateInput = {
+  id?: string | null
+  name: string
+  description: string
+  pricingDetails?: string | null
+  conversionUrl?: string | null
+  metadata?: string | null
 }
 
 export type JourneyEnrollInput = {

@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import type { Bindings, JourneyPhase, JourneyConversationMessage } from '../types'
+import type { Bindings, JourneyPhase, JourneyConversationMessage, JourneyRecord } from '../types'
 import { DEFAULT_WHATSAPP_TEST_MESSAGE, DEFAULT_EMAIL_TEST_MESSAGE, DEFAULT_TELEGRAM_TEST_MESSAGE } from '../constants'
 import { safeString, toNumber, toBoolean, resolveConsentSource, buildAdminRedirect, constantTimeEqual } from '../utils'
 import {
@@ -15,7 +15,7 @@ import {
   recordAdminLoginFailure,
   clearAdminLoginThrottle,
 } from '../auth'
-import { createUserRecord, createCampaignRecord, getOverviewMetrics, createJourneyRecord, listJourneys, getJourneyById, updateJourneyStatus, enrollUserInJourney, listJourneyEnrollments } from '../db'
+import { createUserRecord, createCampaignRecord, getOverviewMetrics, createJourneyRecord, listJourneys, getJourneyById, updateJourneyStatus, enrollUserInJourney, listJourneyEnrollments, createPersonaRecord, createProductRecord } from '../db'
 import { setUserMarketingConsent } from '../consent'
 import { simulatePersonaConversation } from '../persona'
 import {
@@ -669,11 +669,22 @@ admin.post('/actions/journey/create', async (c) => {
       return c.redirect(buildAdminRedirect('Nome, objetivo e system prompt são obrigatórios.', 'error'), 302)
     }
 
+    const personaId = await createPersonaRecord(c.env, {
+      name: `Auto Persona (${name})`,
+      baseTone: 'amigável',
+      systemPrompt: systemPrompt
+    })
+
+    const productId = await createProductRecord(c.env, {
+      name: `Auto Produto (${name})`,
+      description: objective
+    })
+
     const journeyId = await createJourneyRecord(c.env, {
       id: typeof form.id === 'string' ? form.id : undefined,
       name,
-      objective,
-      systemPrompt,
+      personaId,
+      productId,
     })
     return c.redirect(buildAdminRedirect(`Jornada criada: ${journeyId}`), 302)
   } catch (error) {
@@ -745,11 +756,13 @@ admin.post('/api/playground/chat', async (c) => {
   const phase = body.currentPhase ?? 'discovery'
   const history = Array.isArray(body.chatHistory) ? body.chatHistory : []
 
-  const mockedJourney = {
+  const mockedJourney: JourneyRecord = {
     id: 'simulated-journey',
     name: 'Playground Simulation',
     objective: safeString(body.objective) || 'Converter em vendas',
     system_prompt: safeString(body.systemPrompt) || 'Você é um assistente amigável.',
+    persona_id: 'simulated-persona',
+    product_id: 'simulated-product',
     status: 'active' as const,
   }
 

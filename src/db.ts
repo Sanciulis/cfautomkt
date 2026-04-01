@@ -4,6 +4,10 @@ import type {
   InteractionPayload,
   CampaignCreateInput,
   JourneyRecord,
+  PersonaRecord,
+  ProductRecord,
+  PersonaCreateInput,
+  ProductCreateInput,
   JourneyEnrollment,
   JourneyCreateInput,
   JourneyEnrollInput,
@@ -194,16 +198,24 @@ export async function getOverviewMetrics(env: Bindings): Promise<{
 export async function createJourneyRecord(env: Bindings, input: JourneyCreateInput): Promise<string> {
   const journeyId = safeString(input.id) ?? crypto.randomUUID()
   await env.DB.prepare(
-    `INSERT INTO journeys (id, name, objective, system_prompt)
+    `INSERT INTO journeys (id, name, persona_id, product_id)
      VALUES (?, ?, ?, ?)`
   )
-    .bind(journeyId, input.name, input.objective, input.systemPrompt)
+    .bind(journeyId, input.name, input.personaId, input.productId)
     .run()
   return journeyId
 }
 
 export async function getJourneyById(env: Bindings, id: string): Promise<JourneyRecord | null> {
-  const journey = await env.DB.prepare('SELECT * FROM journeys WHERE id = ?')
+  const journey = await env.DB.prepare(
+    `SELECT j.*, 
+            pe.name as persona_name, pe.system_prompt, pe.base_tone,
+            pr.name as product_name, pr.description as objective, pr.conversion_url
+     FROM journeys j 
+     LEFT JOIN personas pe ON j.persona_id = pe.id
+     LEFT JOIN products pr ON j.product_id = pr.id
+     WHERE j.id = ?`
+  )
     .bind(id)
     .first<JourneyRecord>()
   return journey ?? null
@@ -211,7 +223,13 @@ export async function getJourneyById(env: Bindings, id: string): Promise<Journey
 
 export async function listJourneys(env: Bindings): Promise<JourneyRecord[]> {
   const result = await env.DB.prepare(
-    'SELECT * FROM journeys ORDER BY created_at DESC LIMIT 50'
+    `SELECT j.*, 
+            pe.name as persona_name, pe.system_prompt, pe.base_tone,
+            pr.name as product_name, pr.description as objective, pr.conversion_url
+     FROM journeys j 
+     LEFT JOIN personas pe ON j.persona_id = pe.id
+     LEFT JOIN products pr ON j.product_id = pr.id
+     ORDER BY j.created_at DESC LIMIT 50`
   ).all<JourneyRecord>()
   return result.results ?? []
 }
@@ -238,15 +256,49 @@ export async function updateJourneyRecord(
   if (!existing) return false
 
   const name = safeString(input.name) ?? existing.name
-  const objective = safeString(input.objective) ?? existing.objective
-  const systemPrompt = safeString(input.systemPrompt) ?? existing.system_prompt
+  const personaId = safeString(input.personaId) ?? existing.persona_id
+  const productId = safeString(input.productId) ?? existing.product_id
 
   await env.DB.prepare(
-    'UPDATE journeys SET name = ?, objective = ?, system_prompt = ? WHERE id = ?'
+    'UPDATE journeys SET name = ?, persona_id = ?, product_id = ? WHERE id = ?'
   )
-    .bind(name, objective, systemPrompt, journeyId)
+    .bind(name, personaId, productId, journeyId)
     .run()
   return true
+}
+
+// ── Personas & Products ────────────────────────────────────────────────
+
+export async function createPersonaRecord(env: Bindings, input: PersonaCreateInput): Promise<string> {
+  const personaId = safeString(input.id) ?? crypto.randomUUID()
+  await env.DB.prepare(
+    `INSERT INTO personas (id, name, base_tone, system_prompt, interaction_constraints)
+     VALUES (?, ?, ?, ?, ?)`
+  )
+    .bind(personaId, input.name, input.baseTone, input.systemPrompt, input.interactionConstraints ?? null)
+    .run()
+  return personaId
+}
+
+export async function listPersonas(env: Bindings): Promise<PersonaRecord[]> {
+  const result = await env.DB.prepare('SELECT * FROM personas ORDER BY created_at DESC LIMIT 100').all<PersonaRecord>()
+  return result.results ?? []
+}
+
+export async function createProductRecord(env: Bindings, input: ProductCreateInput): Promise<string> {
+  const productId = safeString(input.id) ?? crypto.randomUUID()
+  await env.DB.prepare(
+    `INSERT INTO products (id, name, description, pricing_details, conversion_url, metadata)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  )
+    .bind(productId, input.name, input.description, input.pricingDetails ?? null, input.conversionUrl ?? null, input.metadata ?? null)
+    .run()
+  return productId
+}
+
+export async function listProducts(env: Bindings): Promise<ProductRecord[]> {
+  const result = await env.DB.prepare('SELECT * FROM products ORDER BY created_at DESC LIMIT 100').all<ProductRecord>()
+  return result.results ?? []
 }
 
 // ── Journey Enrollments ─────────────────────────────────────────
