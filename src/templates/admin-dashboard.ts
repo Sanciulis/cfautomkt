@@ -619,6 +619,65 @@ export function renderAdminDashboardPage(data: {
         </div>
       </section>
 
+      <section class="panel" style="margin-bottom: 28px;">
+        <div class="panel-header">
+          <h3 class="panel-title">Métricas Operacionais de IA</h3>
+          <div class="flex items-center" style="gap:10px;">
+            <select id="ai-metrics-range" class="input-control" style="width:auto; min-width:140px; padding:8px 12px; font-size:0.85rem;">
+              <option value="6">Últimas 6h</option>
+              <option value="24" selected>Últimas 24h</option>
+              <option value="72">Últimas 72h</option>
+              <option value="168">Últimos 7 dias</option>
+            </select>
+            <button id="btn-refresh-ai-metrics" class="btn btn-glass" style="width:auto; padding:8px 14px; font-size:0.8rem;">Atualizar</button>
+          </div>
+        </div>
+
+        <div class="stats-grid" style="margin-bottom: 20px;">
+          <div class="stat-card" style="padding:16px; border-radius:16px;">
+            <span class="stat-label">Inferências</span>
+            <span id="ai-total" class="stat-value" style="font-size:1.4rem;">-</span>
+          </div>
+          <div class="stat-card" style="padding:16px; border-radius:16px;">
+            <span class="stat-label">Erro (%)</span>
+            <span id="ai-error-rate" class="stat-value" style="font-size:1.4rem;">-</span>
+          </div>
+          <div class="stat-card" style="padding:16px; border-radius:16px;">
+            <span class="stat-label">Fallback (%)</span>
+            <span id="ai-fallback-rate" class="stat-value" style="font-size:1.4rem;">-</span>
+          </div>
+          <div class="stat-card" style="padding:16px; border-radius:16px;">
+            <span class="stat-label">Latência p95</span>
+            <span id="ai-latency-p95" class="stat-value" style="font-size:1.4rem;">-</span>
+          </div>
+        </div>
+
+        <div id="ai-metrics-alert" class="timeline-content" style="margin-bottom: 16px;">
+          <span class="badge badge-glass">Aguardando dados de saúde operacional de IA...</span>
+        </div>
+
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Fluxo</th>
+                <th>Total</th>
+                <th>Erro %</th>
+                <th>Fallback %</th>
+                <th>P50 (ms)</th>
+                <th>P95 (ms)</th>
+                <th>Último Evento</th>
+              </tr>
+            </thead>
+            <tbody id="ai-metrics-rows">
+              <tr><td colspan="7" class="opacity-40 text-center py-8">Carregando métricas de IA...</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="text-xs opacity-60" id="ai-metrics-updated-at" style="margin-top:12px;">Aguardando atualização...</div>
+      </section>
+
       <div class="panel-grid">
         <section class="panel">
           <div class="panel-header">
@@ -1082,6 +1141,142 @@ export function renderAdminDashboardPage(data: {
             </div>
           </section>
        </div>
+
+       <div class="panel-grid" style="margin-top:24px; grid-template-columns: 1fr;">
+         <section class="panel">
+           <h3 class="panel-title mb-4">A/B Testing: Scorecard (LLM-as-a-Judge)</h3>
+           <div class="grid grid-cols-2" style="gap:16px;">
+             <!-- Left: Inputs -->
+             <div class="flex flex-col" style="gap:12px;">
+                 <div>
+                   <label class="text-xs opacity-60">Mensagem do Lead (Transcript)</label>
+                   <textarea id="eval-transcript" class="input-control" rows="2" placeholder="Ex: Qual o valor do desconto?"></textarea>
+                 </div>
+                 <div>
+                   <label class="text-xs opacity-60"><span class="badge badge-warn text-xs mr-2">A</span> Prompt Base (Controle)</label>
+                   <textarea id="eval-prompt-a" class="input-control font-mono text-xs" rows="3">Você é um vendedor. Responda normal.</textarea>
+                 </div>
+                 <div>
+                   <label class="text-xs opacity-60"><span class="badge badge-success text-xs mr-2">B</span> Prompt Teste (Desafiante)</label>
+                   <textarea id="eval-prompt-b" class="input-control font-mono text-xs" rows="3">Você é agressivo com vendas, crie urgência.</textarea>
+                 </div>
+                 <button id="btn-run-eval" class="btn btn-primary mt-2">Rodar Avaliação A/B</button>
+             </div>
+             <!-- Right: Outputs -->
+             <div class="flex flex-col p-4 bg-black rounded border border-border" style="overflow-y:auto; gap: 16px;">
+                <div id="eval-loading" class="text-xs opacity-60 text-center py-4 hidden">Aguardando inferência simultânea...</div>
+                
+                <div id="eval-res-a" class="hidden">
+                  <div class="flex items-center gap-2 mb-2"><span class="badge badge-warn text-xs">Resultado A</span></div>
+                  <div id="eval-txt-a" class="text-xs opacity-80 mb-2 italic"></div>
+                  <div class="flex gap-4 text-xs font-mono">
+                    <div>Tone: <span id="eval-tone-a" class="text-primary font-bold"></span>/5</div>
+                    <div>CTA: <span id="eval-cta-a" class="text-primary font-bold"></span>/5</div>
+                    <div>Safe: <span id="eval-safe-a" class="text-primary font-bold"></span></div>
+                  </div>
+                  <div id="eval-rsn-a" class="text-[0.65rem] opacity-50 mt-1"></div>
+                </div>
+
+                <div id="eval-res-b" class="hidden pt-4 border-t border-border">
+                  <div class="flex items-center gap-2 mb-2"><span class="badge badge-success text-xs">Resultado B</span></div>
+                  <div id="eval-txt-b" class="text-xs opacity-80 mb-2 italic"></div>
+                  <div class="flex gap-4 text-xs font-mono">
+                    <div>Tone: <span id="eval-tone-b" class="text-primary font-bold"></span>/5</div>
+                    <div>CTA: <span id="eval-cta-b" class="text-primary font-bold"></span>/5</div>
+                    <div>Safe: <span id="eval-safe-b" class="text-primary font-bold"></span></div>
+                  </div>
+                  <div id="eval-rsn-b" class="text-[0.65rem] opacity-50 mt-1"></div>
+                </div>
+             </div>
+           </div>
+         </section>
+       </div>
+
+       <div class="panel-grid" style="margin-top:24px; grid-template-columns: 1fr;">
+         <section class="panel">
+           <div class="panel-header">
+             <h3 class="panel-title">Qualidade de Inteligência: Datasets de Avaliação</h3>
+             <div class="flex items-center" style="gap:10px;">
+               <select id="ai-eval-limit" class="input-control" style="width:auto; min-width:140px; padding:8px 12px; font-size:0.85rem;">
+                 <option value="100">100 registros</option>
+                 <option value="500" selected>500 registros</option>
+                 <option value="1000">1.000 registros</option>
+               </select>
+               <button id="btn-export-eval-csv" class="btn btn-glass" style="width:auto; padding:8px 14px; font-size:0.8rem;">Exportar Baseline (CSV)</button>
+               <button id="btn-export-eval-json" class="btn btn-glass" style="width:auto; padding:8px 14px; font-size:0.8rem;">Exportar Baseline (JSON)</button>
+             </div>
+           </div>
+           <p class="text-sm opacity-60 mt-4 mb-2">Utilize estes datasets para avaliar retrospectivamente a qualidade da IA (A/B testing de Prompts). Os dados são ofuscados automaticamente.</p>
+         </section>
+       </div>
+
+       <div class="panel-grid" style="margin-top:24px; grid-template-columns: 1fr;">
+         <section class="panel">
+           <div class="panel-header">
+             <h3 class="panel-title">Histórico de Alertas Operacionais (IA)</h3>
+             <div class="flex items-center" style="gap:10px;">
+               <select id="ai-alerts-range" class="input-control" style="width:auto; min-width:140px; padding:8px 12px; font-size:0.85rem;">
+                 <option value="24">Últimas 24h</option>
+                 <option value="72">Últimas 72h</option>
+                 <option value="168" selected>Últimos 7 dias</option>
+               </select>
+               <button id="btn-refresh-ai-alerts" class="btn btn-glass" style="width:auto; padding:8px 14px; font-size:0.8rem;">Atualizar</button>
+               <button id="btn-export-ai-alerts" class="btn btn-glass" style="width:auto; padding:8px 14px; font-size:0.8rem;">Exportar CSV</button>
+             </div>
+           </div>
+
+           <div class="table-container">
+             <table>
+               <thead>
+                 <tr>
+                   <th>Severidade</th>
+                   <th>Motivo</th>
+                   <th>Erro %</th>
+                   <th>Fallback %</th>
+                   <th>P95 (ms)</th>
+                   <th>Data</th>
+                 </tr>
+               </thead>
+               <tbody id="ai-alerts-rows">
+                 <tr><td colspan="6" class="opacity-40 text-center py-8">Carregando alertas...</td></tr>
+               </tbody>
+             </table>
+           </div>
+
+           <div class="stats-grid" style="margin-top:16px; margin-bottom: 0;">
+             <div class="stat-card" style="padding:16px; border-radius:16px;">
+               <span class="stat-label">Tendência (7d)</span>
+               <span id="ai-alerts-trend-summary" class="stat-value" style="font-size:1.1rem;">-</span>
+             </div>
+             <div class="stat-card" style="padding:16px; border-radius:16px;">
+               <span class="stat-label">Warnings (7d)</span>
+               <span id="ai-alerts-warning-count" class="stat-value" style="font-size:1.1rem;">-</span>
+             </div>
+             <div class="stat-card" style="padding:16px; border-radius:16px;">
+               <span class="stat-label">Criticals (7d)</span>
+               <span id="ai-alerts-critical-count" class="stat-value" style="font-size:1.1rem;">-</span>
+             </div>
+           </div>
+
+           <div class="table-container" style="margin-top:12px;">
+             <table>
+               <thead>
+                 <tr>
+                   <th>Dia</th>
+                   <th>Warnings</th>
+                   <th>Criticals</th>
+                   <th>Total</th>
+                 </tr>
+               </thead>
+               <tbody id="ai-alerts-trend-rows">
+                 <tr><td colspan="4" class="opacity-40 text-center py-8">Sem tendência disponível.</td></tr>
+               </tbody>
+             </table>
+           </div>
+
+           <div class="text-xs opacity-60" id="ai-alerts-updated-at" style="margin-top:12px;">Aguardando atualização...</div>
+         </section>
+       </div>
     </div>
   </main>
 
@@ -1118,6 +1313,314 @@ export function renderAdminDashboardPage(data: {
       'playground': { title: 'Playground AI', subtitle: 'Ambiente seguro para simular e calibrar o funil de IA.' },
       'ai-agent': { title: 'Agente Autônomo', subtitle: 'Supervisão das decisões tomadas pela IA na Edge.' }
     };
+
+    function formatPct(value) {
+      return (Number(value || 0) * 100).toFixed(1) + '%';
+    }
+
+    function formatMs(value) {
+      return Math.round(Number(value || 0)) + ' ms';
+    }
+
+    function renderSeverityBadge(severity) {
+      const level = String(severity || '').toLowerCase();
+      if (level === 'critical') {
+        return '<span class="badge" style="background: rgba(239, 68, 68, 0.15); color: #f87171;">critical</span>';
+      }
+      if (level === 'warning') {
+        return '<span class="badge badge-warn">warning</span>';
+      }
+      return '<span class="badge badge-glass">unknown</span>';
+    }
+
+    async function loadAIMetrics() {
+      const rangeSelect = document.getElementById('ai-metrics-range');
+      const refreshBtn = document.getElementById('btn-refresh-ai-metrics');
+      const rowsEl = document.getElementById('ai-metrics-rows');
+      const totalEl = document.getElementById('ai-total');
+      const errEl = document.getElementById('ai-error-rate');
+      const fbEl = document.getElementById('ai-fallback-rate');
+      const p95El = document.getElementById('ai-latency-p95');
+      const updatedAtEl = document.getElementById('ai-metrics-updated-at');
+      const alertEl = document.getElementById('ai-metrics-alert');
+
+      if (!rangeSelect || !refreshBtn || !rowsEl) return;
+
+      const hours = rangeSelect.value || '24';
+      refreshBtn.disabled = true;
+      refreshBtn.textContent = 'Atualizando...';
+
+      try {
+        const response = await fetch('/admin/api/ai/metrics?hours=' + encodeURIComponent(hours));
+        const data = await response.json();
+
+        if (!response.ok || !data || data.error) {
+          throw new Error((data && data.error) || 'Falha ao carregar métricas de IA');
+        }
+
+        if (totalEl) totalEl.textContent = String(data.totals?.total ?? 0);
+        if (errEl) errEl.textContent = formatPct(data.totals?.errorRate);
+        if (fbEl) fbEl.textContent = formatPct(data.totals?.fallbackRate);
+        if (p95El) p95El.textContent = formatMs(data.totals?.latencyP95Ms);
+
+        const errRate = Number(data.totals?.errorRate || 0);
+        const fallbackRate = Number(data.totals?.fallbackRate || 0);
+        const p95 = Number(data.totals?.latencyP95Ms || 0);
+        let healthBadge = '<span class="badge badge-success">Status: saudável</span>';
+        let healthText = 'Operação de IA dentro do esperado.';
+
+        if (errRate > 0.05 || fallbackRate > 0.15 || p95 > 2500) {
+          healthBadge = '<span class="badge badge-warn">Status: atenção</span>';
+          healthText = 'Há degradação moderada. Revisar fluxos com maior erro/fallback.';
+        }
+        if (errRate > 0.1 || fallbackRate > 0.25 || p95 > 4000) {
+          healthBadge = '<span class="badge" style="background: rgba(239, 68, 68, 0.15); color: #f87171;">Status: crítico</span>';
+          healthText = 'Degradação crítica detectada. Priorizar mitigação imediata.';
+        }
+
+        if (alertEl) {
+          alertEl.innerHTML =
+            '<div class="flex justify-between items-center" style="gap: 12px; flex-wrap: wrap;">' +
+              healthBadge +
+              '<span class="text-xs opacity-60">Limiares: erro > 5%, fallback > 15%, p95 > 2500ms</span>' +
+            '</div>' +
+            '<p class="text-sm opacity-80" style="margin-top:8px;">' + healthText + '</p>';
+        }
+
+        const flows = Array.isArray(data.flows) ? data.flows : [];
+        if (!flows.length) {
+          rowsEl.innerHTML = '<tr><td colspan="7" class="opacity-40 text-center py-8">Sem dados de inferência no período selecionado.</td></tr>';
+        } else {
+          rowsEl.innerHTML = flows.map((flow) => {
+            const lastSeen = flow.lastSeenAt ? new Date(flow.lastSeenAt).toLocaleString('pt-BR') : '-';
+            return '<tr>' +
+              '<td><span class="font-bold">' + String(flow.flow || '-') + '</span></td>' +
+              '<td>' + String(flow.total || 0) + '</td>' +
+              '<td>' + formatPct(flow.errorRate) + '</td>' +
+              '<td>' + formatPct(flow.fallbackRate) + '</td>' +
+              '<td>' + Math.round(Number(flow.latencyP50Ms || 0)) + '</td>' +
+              '<td>' + Math.round(Number(flow.latencyP95Ms || 0)) + '</td>' +
+              '<td><span class="text-xs opacity-60">' + lastSeen + '</span></td>' +
+            '</tr>';
+          }).join('');
+        }
+
+        if (updatedAtEl) {
+          const generatedAt = data.generatedAt ? new Date(data.generatedAt).toLocaleString('pt-BR') : '-';
+          updatedAtEl.textContent = 'Atualizado em ' + generatedAt + ' • Janela: ' + String(data.rangeHours || hours) + 'h';
+        }
+      } catch (error) {
+        rowsEl.innerHTML = '<tr><td colspan="7" class="text-center py-8" style="color:#f87171;">Erro ao carregar métricas de IA.</td></tr>';
+        if (updatedAtEl) updatedAtEl.textContent = 'Falha na atualização: ' + String(error);
+        if (alertEl) {
+          alertEl.innerHTML = '<span class="badge" style="background: rgba(239, 68, 68, 0.15); color: #f87171;">Status: indisponível</span><p class="text-sm opacity-80" style="margin-top:8px;">Não foi possível carregar as métricas operacionais de IA.</p>';
+        }
+      } finally {
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = 'Atualizar';
+      }
+    }
+
+    async function loadAIOpsAlerts() {
+      const rangeSelect = document.getElementById('ai-alerts-range');
+      const refreshBtn = document.getElementById('btn-refresh-ai-alerts');
+      const rowsEl = document.getElementById('ai-alerts-rows');
+      const updatedAtEl = document.getElementById('ai-alerts-updated-at');
+      const trendRowsEl = document.getElementById('ai-alerts-trend-rows');
+      const trendSummaryEl = document.getElementById('ai-alerts-trend-summary');
+      const warningCountEl = document.getElementById('ai-alerts-warning-count');
+      const criticalCountEl = document.getElementById('ai-alerts-critical-count');
+
+      if (!rangeSelect || !refreshBtn || !rowsEl) return;
+
+      const hours = rangeSelect.value || '168';
+      refreshBtn.disabled = true;
+      refreshBtn.textContent = 'Atualizando...';
+
+      try {
+        const response = await fetch('/admin/api/ai/alerts?hours=' + encodeURIComponent(hours));
+        const data = await response.json();
+
+        if (!response.ok || !data || data.error) {
+          throw new Error((data && data.error) || 'Falha ao carregar alertas operacionais');
+        }
+
+        const alerts = Array.isArray(data.alerts) ? data.alerts : [];
+        const trendByDay = Array.isArray(data.trendByDay) ? data.trendByDay : [];
+
+        const warningCount = alerts.filter((a) => String(a.severity || '').toLowerCase() === 'warning').length;
+        const criticalCount = alerts.filter((a) => String(a.severity || '').toLowerCase() === 'critical').length;
+
+        if (warningCountEl) warningCountEl.textContent = String(warningCount);
+        if (criticalCountEl) criticalCountEl.textContent = String(criticalCount);
+        if (trendSummaryEl) {
+          if (criticalCount > 0) {
+            trendSummaryEl.textContent = 'piorando';
+            trendSummaryEl.style.color = '#f87171';
+          } else if (warningCount > 0) {
+            trendSummaryEl.textContent = 'atenção';
+            trendSummaryEl.style.color = '#f59e0b';
+          } else {
+            trendSummaryEl.textContent = 'estável';
+            trendSummaryEl.style.color = '#10b981';
+          }
+        }
+
+        if (!alerts.length) {
+          rowsEl.innerHTML = '<tr><td colspan="6" class="opacity-40 text-center py-8">Sem alertas no período selecionado.</td></tr>';
+        } else {
+          rowsEl.innerHTML = alerts.map((alert) => {
+            const severity = String(alert.severity || 'unknown');
+            const reason = String(alert.reason || '-');
+            const errorRate = formatPct(alert.errorRate || 0);
+            const fallbackRate = formatPct(alert.fallbackRate || 0);
+            const p95 = Math.round(Number(alert.latencyP95Ms || 0));
+            const createdAt = alert.createdAt ? new Date(alert.createdAt).toLocaleString('pt-BR') : '-';
+
+            return '<tr>' +
+              '<td>' + renderSeverityBadge(severity) + '</td>' +
+              '<td><span class="text-sm opacity-80">' + reason + '</span></td>' +
+              '<td>' + errorRate + '</td>' +
+              '<td>' + fallbackRate + '</td>' +
+              '<td>' + p95 + '</td>' +
+              '<td><span class="text-xs opacity-60">' + createdAt + '</span></td>' +
+            '</tr>';
+          }).join('');
+        }
+
+        if (trendRowsEl) {
+          if (!trendByDay.length) {
+            trendRowsEl.innerHTML = '<tr><td colspan="4" class="opacity-40 text-center py-8">Sem tendência no período selecionado.</td></tr>';
+          } else {
+            trendRowsEl.innerHTML = trendByDay.map((item) => {
+              const day = item.day ? new Date(item.day + 'T00:00:00').toLocaleDateString('pt-BR') : '-';
+              const warning = Number(item.warning || 0);
+              const critical = Number(item.critical || 0);
+              const total = Number(item.total || 0);
+              return '<tr>' +
+                '<td><span class="text-sm opacity-80">' + day + '</span></td>' +
+                '<td><span class="badge badge-warn">' + warning + '</span></td>' +
+                '<td><span class="badge" style="background: rgba(239, 68, 68, 0.15); color: #f87171;">' + critical + '</span></td>' +
+                '<td>' + total + '</td>' +
+              '</tr>';
+            }).join('');
+          }
+        }
+
+        if (updatedAtEl) {
+          const generatedAt = data.generatedAt ? new Date(data.generatedAt).toLocaleString('pt-BR') : '-';
+          updatedAtEl.textContent = 'Atualizado em ' + generatedAt + ' • Janela: ' + String(data.rangeHours || hours) + 'h';
+        }
+      } catch (error) {
+        rowsEl.innerHTML = '<tr><td colspan="6" class="text-center py-8" style="color:#f87171;">Erro ao carregar alertas operacionais de IA.</td></tr>';
+        if (trendRowsEl) {
+          trendRowsEl.innerHTML = '<tr><td colspan="4" class="text-center py-8" style="color:#f87171;">Erro ao carregar tendência de alertas.</td></tr>';
+        }
+        if (updatedAtEl) updatedAtEl.textContent = 'Falha na atualização: ' + String(error);
+      } finally {
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = 'Atualizar';
+      }
+    }
+
+    const aiRangeSelect = document.getElementById('ai-metrics-range');
+    const aiRefreshBtn = document.getElementById('btn-refresh-ai-metrics');
+    if (aiRangeSelect) aiRangeSelect.addEventListener('change', loadAIMetrics);
+    if (aiRefreshBtn) aiRefreshBtn.addEventListener('click', loadAIMetrics);
+    loadAIMetrics();
+
+    const aiAlertsRangeSelect = document.getElementById('ai-alerts-range');
+    const aiAlertsRefreshBtn = document.getElementById('btn-refresh-ai-alerts');
+    const aiAlertsExportBtn = document.getElementById('btn-export-ai-alerts');
+    if (aiAlertsRangeSelect) aiAlertsRangeSelect.addEventListener('change', loadAIOpsAlerts);
+    if (aiAlertsRefreshBtn) aiAlertsRefreshBtn.addEventListener('click', loadAIOpsAlerts);
+    if (aiAlertsExportBtn) {
+      aiAlertsExportBtn.addEventListener('click', () => {
+        const rangeValue = aiAlertsRangeSelect ? aiAlertsRangeSelect.value : '168';
+        const url = '/admin/api/ai/alerts/export.csv?hours=' + encodeURIComponent(rangeValue || '168');
+        window.open(url, '_blank');
+      });
+    }
+    loadAIOpsAlerts();
+
+    // AI Eval Dataset Flow
+    const aiEvalLimitSelect = document.getElementById('ai-eval-limit');
+    const aiEvalCsvBtn = document.getElementById('btn-export-eval-csv');
+    const aiEvalJsonBtn = document.getElementById('btn-export-eval-json');
+
+    if (aiEvalCsvBtn) {
+      aiEvalCsvBtn.addEventListener('click', () => {
+        const limit = aiEvalLimitSelect ? aiEvalLimitSelect.value : '500';
+        window.open('/admin/api/ai/eval-dataset/export?format=csv&limit=' + encodeURIComponent(limit), '_blank');
+      });
+    }
+    if (aiEvalJsonBtn) {
+      aiEvalJsonBtn.addEventListener('click', () => {
+        const limit = aiEvalLimitSelect ? aiEvalLimitSelect.value : '500';
+        window.open('/admin/api/ai/eval-dataset/export?format=json&limit=' + encodeURIComponent(limit), '_blank');
+      });
+    }
+
+    // A/B Test Runner Logic
+    const btnRunEval = document.getElementById('btn-run-eval');
+    if (btnRunEval) {
+      btnRunEval.addEventListener('click', async () => {
+        const transcript = document.getElementById('eval-transcript').value.trim();
+        const promptA = document.getElementById('eval-prompt-a').value.trim();
+        const promptB = document.getElementById('eval-prompt-b').value.trim();
+
+        if (!transcript || !promptA) return alert('Transcript e Prompt A são obrigatórios.');
+
+        btnRunEval.disabled = true;
+        btnRunEval.textContent = 'Avaliando...';
+        
+        document.getElementById('eval-loading').classList.remove('hidden');
+        document.getElementById('eval-res-a').classList.add('hidden');
+        document.getElementById('eval-res-b').classList.add('hidden');
+
+        try {
+          const response = await fetch('/admin/api/ai/eval/run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ transcript, promptA, promptB })
+          });
+          const res = await response.json();
+
+          if (res.error) throw new Error(res.error);
+
+          // Populate A
+          if (res.resultA) {
+            document.getElementById('eval-res-a').classList.remove('hidden');
+            document.getElementById('eval-txt-a').textContent = '"' + res.resultA.response + '"';
+            document.getElementById('eval-tone-a').textContent = res.resultA.scorecard.tone;
+            document.getElementById('eval-cta-a').textContent = res.resultA.scorecard.cta;
+            document.getElementById('eval-safe-a').textContent = (res.resultA.scorecard.safety === 1 ? 'Sim' : 'Não');
+            const colorA = res.resultA.scorecard.safety === 0 ? '#f87171' : 'inherit';
+            document.getElementById('eval-safe-a').style.color = colorA;
+            document.getElementById('eval-rsn-a').textContent = res.resultA.scorecard.reasoning;
+          }
+
+          // Populate B
+          if (res.resultB && promptB) {
+            document.getElementById('eval-res-b').classList.remove('hidden');
+            document.getElementById('eval-txt-b').textContent = '"' + res.resultB.response + '"';
+            document.getElementById('eval-tone-b').textContent = res.resultB.scorecard.tone;
+            document.getElementById('eval-cta-b').textContent = res.resultB.scorecard.cta;
+            document.getElementById('eval-safe-b').textContent = (res.resultB.scorecard.safety === 1 ? 'Sim' : 'Não');
+            const colorB = res.resultB.scorecard.safety === 0 ? '#f87171' : 'inherit';
+            document.getElementById('eval-safe-b').style.color = colorB;
+            document.getElementById('eval-rsn-b').textContent = res.resultB.scorecard.reasoning;
+          }
+
+        } catch (e) {
+          alert('Erro na avaliação: ' + e);
+        } finally {
+          document.getElementById('eval-loading').classList.add('hidden');
+          btnRunEval.disabled = false;
+          btnRunEval.textContent = 'Rodar Avaliação A/B';
+        }
+      });
+    }
 
     navItems.forEach(item => {
       item.addEventListener('click', () => {

@@ -10,128 +10,61 @@ O sistema roda na Cloudflare Edge para automatizar marketing com:
 ## 2) Componentes principais
 | Componente | Papel | Arquivo/config |
 |---|---|---|
-| Cloudflare Worker + Hono | API HTTP, orchestracao de fluxo e agente scheduled | `src/index.ts` |
-| Admin Web Panel | Operacao manual com login/sessao (criar user/campaign e dispatch) | rotas `/admin/*` em `src/index.ts` |
-| D1 | Persistencia de usuarios, campanhas, eventos e decisoes do agente | `schema.sql` |
-| KV | Dedupe de clique referral por IP hash + janela TTL | binding `MARTECH_KV` |
-| Workers AI | Geracao de copy personalizada | binding `AI` |
-| WhatsApp Baileys Gateway (Node) | Entrega real de mensagens WhatsApp com sessao persistente | `integrations/whatsapp-baileys-gateway` |
-| Webhook externo | Entrega real (whatsapp/email/telegram) | vars `*_WEBHOOK_URL` |
-| GitHub Actions | CI/CD para preview e producao | `.github/workflows/deploy.yml` |
+| Cloudflare Worker + Hono | API HTTP, orquestração de fluxo e agente scheduled | `src/index.ts` |
+| Admin Web Panel | Operação manual e Playground AI | `src/routes/admin.ts` |
+| D1 | Persistência (Users, Legos, Interactions, Learning Loops) | `schema.sql` |
+| Workers AI | Geração de copy e Análise de Funil | binding `AI` |
+| Segmentation Module | Gerenciamento de segmentos de usuários para campanhas direcionadas | `src/segmentation.ts` |
+| Freezing Rules Module | Regras automáticas de congelamento para usuários, campanhas e segmentos | `src/freezing-rules.ts` |
 
-## 3) Arquitetura em alto nivel
+## 3) Arquitetura em alto nível
 ```text
-[Client API + Browser Admin]
-    |
-    v
-[Cloudflare Worker API - Hono]
-    | \
-    |  \--> [Workers AI] (personalizacao)
-    |
-    +-----> [D1] (users/campaigns/interactions/agent_decisions)
-    |
-    +-----> [KV] (referral dedupe)
-    |
-    +-----> [Webhook Provider] (disparo real por canal)
-               |
-               +--> [Baileys Gateway] -> [WhatsApp]
+[Client/Lead] <--> [Public API / Ref Links]
+                       |
+[Admin Dashboard] <--> [Admin API / Playground]
+     |                 |
+     |          [Cloudflare Worker]
+     |           /      |       \
+     |   [Workers AI] [D1 DB] [Webhooks]
+     |      (Review)  (Lego)  (Dispatch)
 ```
 
-## 4) Fluxos de negocio
+## 4) Fluxos de negócio
 
-### 4.1 Cadastro de usuario
-1. `POST /user`
-2. Worker gera `referral_code`
-3. Persiste em `users`
+### 4.1 Jornadas AI (Lego Architecture)
+1. **Persona:** Criada com um System Prompt específico (ex: "Rafael, colega infiltrado").
+2. **Produto:** Definido com descrição e link de checkout.
+3. **Jornada:** Criada ligando uma Persona a um Produto.
+4. **Lead Enrollment:** Quando um lead inicia conversa, a IA assume o tom da Persona para vender o Produto.
 
-Resultado: usuario pronto para funis e referral.
-
-### 4.1b Painel admin (web)
-1. `GET /admin/login` abre tela de autenticacao
-2. `POST /admin/login` valida senha (`ADMIN_PANEL_PASSWORD`)
-3. Worker cria cookie de sessao assinado (`ADMIN_SESSION_SECRET`)
-4. `GET /admin` carrega dashboard com metricas, campanhas e decisoes
-5. Acoes via formulario:
-   - `POST /admin/actions/user/create`
-   - `POST /admin/actions/user/optout`
-   - `POST /admin/actions/campaign/create`
-   - `POST /admin/actions/campaign/dispatch`
-
-### 4.2 Registro de eventos
-1. `POST /interaction`
-2. Valida `eventType`
-3. Grava em `interactions`
-4. Atualiza `engagement_score` em `users` com peso do evento
-
-Observacao: evento `shared` incrementa `viral_points`.
-
-### 4.3 Personalizacao pontual
-1. `POST /personalize/:id`
-2. Carrega usuario (e campanha opcional)
-3. Chama Workers AI com prompt contextual
-4. Retorna mensagem + grava evento `personalized`
-
-### 4.4 Referral tracking
-1. Usuario compartilha `/ref/:code`
-2. Worker identifica dono do code no D1
-3. Deduplica por `user + ipHash` no KV (TTL 1h)
-4. Se novo clique: grava `referral_click` e soma `viral_points`
-5. Redireciona para landing com `?ref=<code>`
-
-### 4.5 Dispatch de campanha
-1. `POST /campaign/:id/send`
-2. Carrega campanha e valida status (`paused` bloqueia, exceto `force=true`)
-3. Resolve canal e URL de webhook
-4. Seleciona usuarios por filtro:
-   - `userIds` explicitos, ou
-   - canal + atividade recente (ou `includeInactive=true`)
-5. Opcional: personaliza mensagem por usuario
-6. Envia para webhook (ou simula com `dryRun=true`)
-7. Registra:
-   - `sent` em sucesso
-   - `send_failed` em falha
-8. Usuarios em opt-out sao pulados automaticamente no dispatch
-9. Para WhatsApp, o endpoint recomendado e `/dispatch/whatsapp` do gateway Baileys.
-
-Observacao: em `preview`, existe `webhookUrlOverride` para testes controlados com restricao de host por allowlist.
-
-### 4.5b Opt-out (LGPD)
-1. Endpoint admin `POST /user/:id/consent` permite alterar opt-in/opt-out
-2. Endpoint publico `GET /unsubscribe/:code` realiza descadastro sem autenticacao
-3. Worker grava `marketing_opt_in`, `opt_out_at`, `consent_source` e `consent_updated_at`
-4. Dispatch passa a respeitar consentimento
-
-### 4.6 Agente autonomo (cron)
+### 4.2 Agente de Revisão Sistemática (Cron)
 Executa a cada 6h:
-1. Move usuarios frios para canal `sms`
-2. Analisa conversao de campanhas ativas nos ultimos 7 dias
-3. Pausa campanha com baixo desempenho (`sent >= 20` e `conversion < 2%`)
-4. Registra recomendacao para power referrers (`viral_points >= 5`)
+1. **Analise de Drop-off:** Identifica jornadas com mais de 3 leads parados no funil.
+2. **AI Audit:** Envia amostras de conversas para o LLaMa 3 analisar o "churn".
+3. **Learning Loop:** Grava sugestão de ajuste de prompt em `ai_learning_loops`.
+4. **Aplicação:** O Admin revisa e aplica o novo prompt para otimizar a conversão linear.
 
-Tudo logado em `agent_decisions`.
+### 4.3 Outros fluxos (Referral & Opt-out)
+*Mantidos conforme MVP original (veja README).*
 
-## 5) Modelo de dados
+## 5) Modelo de dados (Fase 2)
 
-### `users`
-- identidade e contato
-- canal preferido
-- perfil psicologico
-- score de engajamento
-- referral (`referral_code`, `referred_by`, `viral_points`)
-- consentimento LGPD (`marketing_opt_in`, `opt_out_at`, `consent_source`, `consent_updated_at`)
+### `personas`
+- identidade visual e psicológica da IA
+- `system_prompt` base
 
-### `campaigns`
-- copy base
-- incentivo
-- canal
-- status (`active|paused`)
+### `products`
+- o que está sendo vendido
+- descrição para o contexto da IA
 
-### `interactions`
-- eventos do funil e operacao (`sent`, `clicked`, `send_failed`, etc.)
-- metadados JSON para debug/rastreabilidade
+### `journeys`
+- conectores entre leads, personas e produtos
 
-### `agent_decisions`
-- trilha de decisoes automaticas do cron
+### `ai_learning_loops`
+- repositório de inteligência e sugestões de melhoria
+
+### `interactions` & `agent_decisions`
+- trilha de eventos e decisões automáticas
 
 ## 6) Pesos de engajamento por evento
 | Evento | Peso |

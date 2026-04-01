@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import type { Bindings, JourneyPhase, JourneyConversationMessage, JourneyRecord } from '../types'
+import type { Bindings, JourneyPhase, JourneyConversationMessage, JourneyRecord, SegmentCriteria } from '../types'
 import { DEFAULT_WHATSAPP_TEST_MESSAGE, DEFAULT_EMAIL_TEST_MESSAGE, DEFAULT_TELEGRAM_TEST_MESSAGE } from '../constants'
 import { safeString, toNumber, toBoolean, resolveConsentSource, buildAdminRedirect, constantTimeEqual } from '../utils'
 import {
@@ -15,7 +15,7 @@ import {
   recordAdminLoginFailure,
   clearAdminLoginThrottle,
 } from '../auth'
-import { createUserRecord, createCampaignRecord, getOverviewMetrics, createJourneyRecord, listJourneys, getJourneyById, updateJourneyStatus, enrollUserInJourney, listJourneyEnrollments, createPersonaRecord, createProductRecord } from '../db'
+import { createUserRecord, createCampaignRecord, getOverviewMetrics, getAIInferenceOverview, createJourneyRecord, listJourneys, getJourneyById, updateJourneyStatus, enrollUserInJourney, listJourneyEnrollments, createPersonaRecord, createProductRecord } from '../db'
 import { setUserMarketingConsent } from '../consent'
 import { simulatePersonaConversation } from '../persona'
 import {
@@ -29,8 +29,17 @@ import {
 } from '../integration'
 import { executeCampaignDispatch } from '../dispatch'
 import { renderAdminLoginPage, renderAdminDashboardPage } from '../templates'
+import { createSegment, listSegments, getSegmentById, updateSegment, deleteSegment, getUsersInSegment, refreshUserSegments } from '../segmentation'
+import { createFreezingRule, getFreezingRules, getFreezingRuleById, updateFreezingRule, deleteFreezingRule, createDefaultFreezingRules } from '../freezing-rules'
+import { runPromptEvaluation } from '../ai-eval'
 
 const admin = new Hono<{ Bindings: Bindings }>()
+
+function toCsvCell(value: unknown): string {
+  const text = String(value ?? '')
+  const escaped = text.replace(/"/g, '""')
+  return `"${escaped}"`
+}
 
 // Login Page
 admin.get('/login', async (c) => {
@@ -801,6 +810,562 @@ admin.post('/api/playground/chat', async (c) => {
     currentPhase: result.newPhase,
     updatedHistory: result.updatedHistory,
   })
+})
+
+// --- Segmentation Actions ---
+
+// Action - Create Segment
+admin.post('/actions/segment/create', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    const form = await c.req.parseBody()
+    const name = safeString(typeof form.name === 'string' ? form.name : null)
+    const description = safeString(typeof form.description === 'string' ? form.description : null)
+    const criteriaRaw = safeString(typeof form.criteria === 'string' ? form.criteria : null)
+
+    if (!name || !criteriaRaw) {
+      return c.redirect(buildAdminRedirect('Nome e critérios são obrigatórios.', 'error'), 302)
+    }
+
+    let criteria: SegmentCriteria[]
+    try {
+      criteria = JSON.parse(criteriaRaw)
+    } catch {
+      return c.redirect(buildAdminRedirect('Critérios devem ser um JSON válido.', 'error'), 302)
+    }
+
+    const segment = await createSegment(c.env, name, criteria, description || undefined)
+    return c.redirect(buildAdminRedirect(`Segmento criado: ${segment.id}`), 302)
+  } catch (error) {
+    return c.redirect(buildAdminRedirect(`Falha ao criar segmento: ${String(error)}`, 'error'), 302)
+  }
+})
+
+// Action - Update Segment
+admin.post('/actions/segment/update', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    const form = await c.req.parseBody()
+    const segmentId = safeString(typeof form.segmentId === 'string' ? form.segmentId : null)
+    const name = safeString(typeof form.name === 'string' ? form.name : null)
+    const description = safeString(typeof form.description === 'string' ? form.description : null)
+    const criteriaRaw = safeString(typeof form.criteria === 'string' ? form.criteria : null)
+
+    if (!segmentId) {
+      return c.redirect(buildAdminRedirect('segmentId é obrigatório.', 'error'), 302)
+    }
+
+    const updates: any = {}
+    if (name) updates.name = name
+    if (description !== undefined) updates.description = description
+    if (criteriaRaw) {
+      try {
+        updates.criteria = JSON.parse(criteriaRaw)
+      } catch {
+        return c.redirect(buildAdminRedirect('Critérios devem ser um JSON válido.', 'error'), 302)
+      }
+    }
+
+    const segment = await updateSegment(c.env, segmentId, updates)
+    if (!segment) {
+      return c.redirect(buildAdminRedirect('Segmento não encontrado.', 'error'), 302)
+    }
+
+    return c.redirect(buildAdminRedirect(`Segmento atualizado: ${segment.id}`), 302)
+  } catch (error) {
+    return c.redirect(buildAdminRedirect(`Falha ao atualizar segmento: ${String(error)}`, 'error'), 302)
+  }
+})
+
+// Action - Delete Segment
+admin.post('/actions/segment/delete', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    const form = await c.req.parseBody()
+    const segmentId = safeString(typeof form.segmentId === 'string' ? form.segmentId : null)
+    if (!segmentId) {
+      return c.redirect(buildAdminRedirect('segmentId é obrigatório.', 'error'), 302)
+    }
+
+    const deleted = await deleteSegment(c.env, segmentId)
+    if (!deleted) {
+      return c.redirect(buildAdminRedirect('Segmento não encontrado.', 'error'), 302)
+    }
+
+    return c.redirect(buildAdminRedirect(`Segmento deletado: ${segmentId}`), 302)
+  } catch (error) {
+    return c.redirect(buildAdminRedirect(`Falha ao deletar segmento: ${String(error)}`, 'error'), 302)
+  }
+})
+
+// API - List Segments
+admin.get('/api/segments', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.json({ error: 'Unauthorized' }, 401)
+
+  try {
+    const segments = await listSegments(c.env)
+    return c.json({ segments })
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
+// API - Get Segment Users
+admin.get('/api/segments/:segmentId/users', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.json({ error: 'Unauthorized' }, 401)
+
+  try {
+    const segmentId = c.req.param('segmentId')
+    const users = await getUsersInSegment(c.env, segmentId)
+    return c.json({ users })
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
+// Action - Refresh User Segments
+admin.post('/actions/segment/refresh', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    const form = await c.req.parseBody()
+    const userId = safeString(typeof form.userId === 'string' ? form.userId : null)
+    if (!userId) {
+      return c.redirect(buildAdminRedirect('userId é obrigatório.', 'error'), 302)
+    }
+
+    await refreshUserSegments(c.env, userId)
+    return c.redirect(buildAdminRedirect(`Segmentos atualizados para usuário: ${userId}`), 302)
+  } catch (error) {
+    return c.redirect(buildAdminRedirect(`Falha ao atualizar segmentos: ${String(error)}`, 'error'), 302)
+  }
+})
+
+// --- Freezing Rules Actions ---
+
+// Action - Create Freezing Rule
+admin.post('/actions/freezing-rule/create', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    const form = await c.req.parseBody()
+    const type = safeString(typeof form.type === 'string' ? form.type : null) as any
+    const name = safeString(typeof form.name === 'string' ? form.name : null)
+    const description = safeString(typeof form.description === 'string' ? form.description : null)
+    const conditionsRaw = safeString(typeof form.conditions === 'string' ? form.conditions : null)
+    const actionsRaw = safeString(typeof form.actions === 'string' ? form.actions : null)
+    const priority = toNumber(typeof form.priority === 'string' ? form.priority : null) || 0
+
+    if (!type || !name || !conditionsRaw || !actionsRaw) {
+      return c.redirect(buildAdminRedirect('Tipo, nome, condições e ações são obrigatórios.', 'error'), 302)
+    }
+
+    let conditions: any[]
+    let actions: any[]
+    try {
+      conditions = JSON.parse(conditionsRaw)
+      actions = JSON.parse(actionsRaw)
+    } catch {
+      return c.redirect(buildAdminRedirect('Condições e ações devem ser JSON válidos.', 'error'), 302)
+    }
+
+    const rule = await createFreezingRule(c.env, type, name, conditions, actions, description || undefined, priority)
+    return c.redirect(buildAdminRedirect(`Regra de congelamento criada: ${rule.id}`), 302)
+  } catch (error) {
+    return c.redirect(buildAdminRedirect(`Falha ao criar regra: ${String(error)}`, 'error'), 302)
+  }
+})
+
+// Action - Update Freezing Rule
+admin.post('/actions/freezing-rule/update', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    const form = await c.req.parseBody()
+    const ruleId = safeString(typeof form.ruleId === 'string' ? form.ruleId : null)
+    const name = safeString(typeof form.name === 'string' ? form.name : null)
+    const description = safeString(typeof form.description === 'string' ? form.description : null)
+    const conditionsRaw = safeString(typeof form.conditions === 'string' ? form.conditions : null)
+    const actionsRaw = safeString(typeof form.actions === 'string' ? form.actions : null)
+    const enabled = toBoolean(typeof form.enabled === 'string' ? form.enabled : null, true)
+    const priority = toNumber(typeof form.priority === 'string' ? form.priority : null)
+
+    if (!ruleId) {
+      return c.redirect(buildAdminRedirect('ruleId é obrigatório.', 'error'), 302)
+    }
+
+    const updates: any = {}
+    if (name) updates.name = name
+    if (description !== undefined) updates.description = description
+    if (enabled !== undefined) updates.enabled = enabled
+    if (!isNaN(priority)) updates.priority = priority
+
+    if (conditionsRaw) {
+      try {
+        updates.conditions = JSON.parse(conditionsRaw)
+      } catch {
+        return c.redirect(buildAdminRedirect('Condições devem ser JSON válido.', 'error'), 302)
+      }
+    }
+
+    if (actionsRaw) {
+      try {
+        updates.actions = JSON.parse(actionsRaw)
+      } catch {
+        return c.redirect(buildAdminRedirect('Ações devem ser JSON válido.', 'error'), 302)
+      }
+    }
+
+    const rule = await updateFreezingRule(c.env, ruleId, updates)
+    if (!rule) {
+      return c.redirect(buildAdminRedirect('Regra não encontrada.', 'error'), 302)
+    }
+
+    return c.redirect(buildAdminRedirect(`Regra atualizada: ${rule.id}`), 302)
+  } catch (error) {
+    return c.redirect(buildAdminRedirect(`Falha ao atualizar regra: ${String(error)}`, 'error'), 302)
+  }
+})
+
+// Action - Delete Freezing Rule
+admin.post('/actions/freezing-rule/delete', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    const form = await c.req.parseBody()
+    const ruleId = safeString(typeof form.ruleId === 'string' ? form.ruleId : null)
+    if (!ruleId) {
+      return c.redirect(buildAdminRedirect('ruleId é obrigatório.', 'error'), 302)
+    }
+
+    const deleted = await deleteFreezingRule(c.env, ruleId)
+    if (!deleted) {
+      return c.redirect(buildAdminRedirect('Regra não encontrada.', 'error'), 302)
+    }
+
+    return c.redirect(buildAdminRedirect(`Regra deletada: ${ruleId}`), 302)
+  } catch (error) {
+    return c.redirect(buildAdminRedirect(`Falha ao deletar regra: ${String(error)}`, 'error'), 302)
+  }
+})
+
+// Action - Create Default Freezing Rules
+admin.post('/actions/freezing-rule/create-defaults', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    await createDefaultFreezingRules(c.env)
+    return c.redirect(buildAdminRedirect('Regras padrão de congelamento criadas com sucesso.'), 302)
+  } catch (error) {
+    return c.redirect(buildAdminRedirect(`Falha ao criar regras padrão: ${String(error)}`, 'error'), 302)
+  }
+})
+
+// API - List Freezing Rules
+admin.get('/api/freezing-rules', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.json({ error: 'Unauthorized' }, 401)
+
+  try {
+    const type = c.req.query('type') as any
+    const rules = await getFreezingRules(c.env, type)
+    return c.json({ rules })
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
+// API - AI Operational Metrics
+admin.get('/api/ai/metrics', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.json({ error: 'Unauthorized' }, 401)
+
+  try {
+    const requestedHours = toNumber(c.req.query('hours'))
+    const rangeHours = Number.isFinite(requestedHours) && requestedHours > 0 ? requestedHours : 24
+    const data = await getAIInferenceOverview(c.env, rangeHours)
+    return c.json({
+      rangeHours: data.rangeHours,
+      generatedAt: data.generatedAt,
+      totals: data.totals,
+      flows: data.flows,
+    })
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
+// API - AI Operational Alerts History
+admin.get('/api/ai/alerts', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.json({ error: 'Unauthorized' }, 401)
+
+  try {
+    const requestedHours = toNumber(c.req.query('hours'))
+    const rangeHours = Number.isFinite(requestedHours) && requestedHours > 0 ? Math.min(720, requestedHours) : 168
+
+    const rows = await c.env.DB.prepare(
+      `SELECT reason, payload, created_at
+       FROM agent_decisions
+       WHERE decision_type = 'ai_ops_alert'
+         AND created_at >= datetime('now', ?)
+       ORDER BY created_at DESC
+       LIMIT 200`
+    )
+      .bind(`-${Math.floor(rangeHours)} hours`)
+      .all<{ reason: string; payload: string | null; created_at: string }>()
+
+    const alerts = (rows.results ?? []).map((row) => {
+      let payload: any = null
+      try {
+        payload = row.payload ? JSON.parse(row.payload) : null
+      } catch {
+        payload = null
+      }
+
+      return {
+        severity: safeString(payload?.severity) ?? 'unknown',
+        reason: safeString(row.reason) ?? 'AI operational alert',
+        errorRate: toNumber(payload?.totals?.errorRate),
+        fallbackRate: toNumber(payload?.totals?.fallbackRate),
+        latencyP95Ms: toNumber(payload?.totals?.latencyP95Ms),
+        total: toNumber(payload?.totals?.total),
+        createdAt: safeString(row.created_at),
+      }
+    })
+
+    const trendMap = new Map<string, { day: string; warning: number; critical: number; total: number }>()
+    for (const alert of alerts) {
+      const createdAt = safeString(alert.createdAt)
+      const day = createdAt ? createdAt.slice(0, 10) : 'unknown'
+      const entry = trendMap.get(day) ?? { day, warning: 0, critical: 0, total: 0 }
+      const severity = safeString(alert.severity) ?? 'unknown'
+
+      entry.total += 1
+      if (severity === 'warning') entry.warning += 1
+      if (severity === 'critical') entry.critical += 1
+
+      trendMap.set(day, entry)
+    }
+
+    const trendByDay = Array.from(trendMap.values()).sort((a, b) => a.day.localeCompare(b.day))
+
+    return c.json({
+      rangeHours,
+      generatedAt: new Date().toISOString(),
+      alerts,
+      trendByDay,
+    })
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
+// API - AI Operational Alerts CSV Export
+admin.get('/api/ai/alerts/export.csv', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.text('Unauthorized', 401)
+
+  try {
+    const requestedHours = toNumber(c.req.query('hours'))
+    const rangeHours = Number.isFinite(requestedHours) && requestedHours > 0 ? Math.min(720, requestedHours) : 168
+
+    const rows = await c.env.DB.prepare(
+      `SELECT reason, payload, created_at
+       FROM agent_decisions
+       WHERE decision_type = 'ai_ops_alert'
+         AND created_at >= datetime('now', ?)
+       ORDER BY created_at DESC
+       LIMIT 5000`
+    )
+      .bind(`-${Math.floor(rangeHours)} hours`)
+      .all<{ reason: string; payload: string | null; created_at: string }>()
+
+    const header = [
+      'created_at',
+      'severity',
+      'reason',
+      'error_rate',
+      'fallback_rate',
+      'latency_p95_ms',
+      'total_inferences',
+    ]
+
+    const lines = [header.map(toCsvCell).join(',')]
+
+    for (const row of rows.results ?? []) {
+      let payload: any = null
+      try {
+        payload = row.payload ? JSON.parse(row.payload) : null
+      } catch {
+        payload = null
+      }
+
+      const line = [
+        safeString(row.created_at) ?? '',
+        safeString(payload?.severity) ?? 'unknown',
+        safeString(row.reason) ?? 'AI operational alert',
+        toNumber(payload?.totals?.errorRate),
+        toNumber(payload?.totals?.fallbackRate),
+        toNumber(payload?.totals?.latencyP95Ms),
+        toNumber(payload?.totals?.total),
+      ]
+      lines.push(line.map(toCsvCell).join(','))
+    }
+
+    const csv = lines.join('\n')
+    const fileName = `ai_ops_alerts_${rangeHours}h_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`
+    c.header('Content-Type', 'text/csv; charset=utf-8')
+    c.header('Content-Disposition', `attachment; filename=${fileName}`)
+    return c.body(csv)
+  } catch (error) {
+    return c.text(`Export failed: ${String(error)}`, 500)
+  }
+})
+
+// API - GenAI Evaluation Dataset Extraction
+admin.get('/api/ai/eval-dataset/export', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.text('Unauthorized', 401)
+
+  try {
+    const format = c.req.query('format') === 'json' ? 'json' : 'csv'
+    const limitParam = parseInt(c.req.query('limit') || '500', 10)
+    const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 5000) : 500
+
+    // Fetch journey enrollments with non-empty conversation history
+    const query = `
+      SELECT 
+        je.journey_id,
+        je.user_id,
+        j.name as journey_name,
+        j.persona_id,
+        je.current_phase,
+        je.conversation_history
+      FROM journey_enrollments je
+      JOIN journeys j ON je.journey_id = j.id
+      WHERE je.conversation_history IS NOT NULL AND je.conversation_history != '[]'
+      ORDER BY je.last_interaction_at DESC
+      LIMIT ?
+    `
+    const rows = await c.env.DB.prepare(query).bind(limit).all()
+
+    // Routine to strip basic PII (Emails and common Phone/CPF numbers)
+    const stripPII = (text: string) => text
+      .replace(/[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+/g, '[EMAIL_REDACTED]')
+      .replace(/(?:\+?\d{1,3}[-.\s]?)?\(?\d{2,3}\)?[-.\s]?\d{4,5}[-.\s]?\d{4}/g, '[PHONE_REDACTED]')
+      .replace(/\d{3}\.\d{3}\.\d{3}-\d{2}/g, '[CPF_REDACTED]')
+
+    const evalData = (rows.results ?? []).map((r: any) => {
+      let rawHistory: JourneyConversationMessage[] = []
+      try {
+        rawHistory = JSON.parse(r.conversation_history || '[]')
+      } catch {}
+      
+      // Build a local text transcript (ignoring system instructions for evaluation baseline focus)
+      const transcriptBlock = rawHistory
+        .filter((m) => m.role !== 'system')
+        .map((m) => `[${m.role.toUpperCase()}]: ${stripPII(String(m.content || ''))}`)
+        .join('\n')
+
+      return {
+        journey_id: String(r.journey_id),
+        journey_name: String(r.journey_name),
+        persona_id: String(r.persona_id),
+        final_phase: String(r.current_phase),
+        is_success: String(r.current_phase).toLowerCase() === 'converted' ? 1 : 0, 
+        turn_count: rawHistory.length,
+        transcript: transcriptBlock
+      }
+    })
+
+    if (format === 'json') {
+      const fileName = `eval_dataset_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`
+      c.header('Content-Type', 'application/json; charset=utf-8')
+      c.header('Content-Disposition', `attachment; filename=${fileName}`)
+      return c.body(JSON.stringify(evalData, null, 2))
+    }
+
+    // CSV format
+    const header = ['journey_id', 'journey_name', 'persona_id', 'final_phase', 'is_success', 'turn_count', 'transcript']
+    const lines = [header.join(',')]
+
+    const toCsvCell = (val: any) => {
+      if (val === null || val === undefined) return '""'
+      const str = String(val)
+      if (str.includes(',') || str.includes('\"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`
+      }
+      return str
+    }
+
+    evalData.forEach((row) => {
+      const line = [
+        row.journey_id,
+        row.journey_name,
+        row.persona_id,
+        row.final_phase,
+        row.is_success,
+        row.turn_count,
+        row.transcript
+      ]
+      lines.push(line.map(toCsvCell).join(','))
+    })
+
+    const csvOutput = lines.join('\n')
+    const fileName = `eval_dataset_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`
+    c.header('Content-Type', 'text/csv; charset=utf-8')
+    c.header('Content-Disposition', `attachment; filename=${fileName}`)
+    return c.body(csvOutput)
+    
+  } catch (error) {
+    return c.text(`Export failed: ${String(error)}`, 500)
+  }
+})
+
+// API - GenAI Evaluator (Scorecard A/B Target)
+admin.post('/api/ai/eval/run', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.json({ error: 'Unauthorized' }, 401)
+
+  try {
+    const body = await c.req.json()
+    const { promptA, promptB, transcript } = body
+
+    if (!promptA || !transcript) {
+      return c.json({ error: 'Missing promptA or transcript' }, 400)
+    }
+
+    // Run Eval A
+    const evalA = await runPromptEvaluation(c.env, promptA, transcript)
+    
+    // Run Eval B if provided
+    let evalB = null
+    if (promptB) {
+      evalB = await runPromptEvaluation(c.env, promptB, transcript)
+    }
+
+    return c.json({
+      success: true,
+      resultA: evalA,
+      resultB: evalB
+    })
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
 })
 
 export { admin }

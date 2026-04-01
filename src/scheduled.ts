@@ -1,6 +1,129 @@
 import type { Bindings, JourneyPhase } from './types'
 import { toNumber } from './utils'
-import { logAgentDecision } from './db'
+import { getAIInferenceOverview, logAgentDecision } from './db'
+import { evaluateFreezingRules } from './freezing-rules'
+import { logAIInference } from './ai-observability'
+
+const AI_ALERT_DEDUPE_PREFIX = 'ai_ops_alert'
+const AI_WARNING_DEDUPE_SECONDS = 60 * 60
+const AI_CRITICAL_DEDUPE_SECONDS = 60 * 30
+
+async function shouldEmitAIOpsAlert(env: Bindings, severity: 'warning' | 'critical'): Promise<boolean> {
+  const key = `${AI_ALERT_DEDUPE_PREFIX}:${severity}`
+  const existing = await env.MARTECH_KV.get(key)
+  if (existing) return false
+
+  const ttl = severity === 'critical' ? AI_CRITICAL_DEDUPE_SECONDS : AI_WARNING_DEDUPE_SECONDS
+  await env.MARTECH_KV.put(key, new Date().toISOString(), { expirationTtl: ttl })
+  return true
+}
+
+async function notifyAIOpsWebhook(
+  env: Bindings,
+  payload: {
+    severity: 'warning' | 'critical'
+    reason: string
+    rangeHours: number
+    totals: {
+      total: number
+      errorRate: number
+      fallbackRate: number
+      latencyP95Ms: number
+    }
+    generatedAt: string
+  }
+): Promise<void> {
+  const webhookUrl = env.AI_ALERT_WEBHOOK_URL
+  if (!webhookUrl) return
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  }
+  if (env.AI_ALERT_WEBHOOK_TOKEN) {
+    headers.Authorization = `Bearer ${env.AI_ALERT_WEBHOOK_TOKEN}`
+  }
+
+  const response = await fetch(webhookUrl, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      source: 'martech_ai_health_check',
+      ...payload,
+    }),
+  })
+
+  if (!response.ok) {
+    console.error('AI alert webhook failed:', response.status, await response.text())
+  }
+}
+
+async function runAIOperationalHealthCheck(env: Bindings): Promise<void> {
+  const overview = await getAIInferenceOverview(env, 24)
+  const { errorRate, fallbackRate, latencyP95Ms, total } = overview.totals
+
+  const warning = errorRate > 0.05 || fallbackRate > 0.15 || latencyP95Ms > 2500
+  const critical = errorRate > 0.1 || fallbackRate > 0.25 || latencyP95Ms > 4000
+
+  if (!warning && !critical) return
+
+  const severity = critical ? 'critical' : 'warning'
+  const reason = critical
+    ? 'AI operational health degraded (critical threshold reached)'
+    : 'AI operational health degraded (warning threshold reached)'
+
+  const shouldEmit = await shouldEmitAIOpsAlert(env, severity)
+  if (!shouldEmit) {
+    console.log('[AI HEALTH CHECK] alert suppressed by dedupe window', { severity })
+    return
+  }
+
+  await logAgentDecision(env, 'ai_ops_alert', 'ai_inference_logs', reason, {
+    severity,
+    rangeHours: overview.rangeHours,
+    totals: {
+      total,
+      errorRate,
+      fallbackRate,
+      latencyP95Ms,
+    },
+    thresholds: {
+      warning: {
+        errorRate: 0.05,
+        fallbackRate: 0.15,
+        latencyP95Ms: 2500,
+      },
+      critical: {
+        errorRate: 0.1,
+        fallbackRate: 0.25,
+        latencyP95Ms: 4000,
+      },
+    },
+    generatedAt: overview.generatedAt,
+  })
+
+  if (severity === 'critical') {
+    await notifyAIOpsWebhook(env, {
+      severity,
+      reason,
+      rangeHours: overview.rangeHours,
+      totals: {
+        total,
+        errorRate,
+        fallbackRate,
+        latencyP95Ms,
+      },
+      generatedAt: overview.generatedAt,
+    })
+  }
+
+  console.warn('[AI HEALTH CHECK]', {
+    severity,
+    total,
+    errorRate,
+    fallbackRate,
+    latencyP95Ms,
+  })
+}
 
 export async function runScheduledAgent(env: Bindings): Promise<void> {
   console.log('Autonomous Agent running optimization cycle')
@@ -158,11 +281,26 @@ export async function runScheduledAgent(env: Bindings): Promise<void> {
       Conversas:
       ${chatContext}`
 
-      const aiResponse: any = await env.AI.run('@cf/meta/llama-3-8b-instruct', {
+      const startedAt = Date.now()
+      const model = '@cf/meta/llama-3-8b-instruct'
+
+      const aiResponse: any = await env.AI.run(model, {
         messages: [{ role: 'user', content: prompt }]
       })
 
       const insight = aiResponse.response || "Sem insight gerado pela IA."
+      await logAIInference(env, {
+        flow: 'scheduled_ai_learning_loop',
+        model,
+        status: 'success',
+        latencyMs: Date.now() - startedAt,
+        fallbackUsed: !aiResponse.response,
+        promptSource: prompt,
+        metadata: {
+          journeyId: p.journey_id,
+          staleCount: p.stale_count,
+        },
+      })
 
       await env.DB.prepare(
         "INSERT INTO ai_learning_loops (id, journey_id, ai_insight, status) VALUES (?, ?, ?, ?)"
@@ -172,7 +310,26 @@ export async function runScheduledAgent(env: Bindings): Promise<void> {
 
       console.log(`AI Insight generated for journey ${p.name}`)
     } catch (e) {
+      await logAIInference(env, {
+        flow: 'scheduled_ai_learning_loop',
+        model: '@cf/meta/llama-3-8b-instruct',
+        status: 'error',
+        latencyMs: 0,
+        fallbackUsed: true,
+        promptSource: chatContext,
+        errorMessage: String(e),
+        metadata: {
+          journeyId: p.journey_id,
+          staleCount: p.stale_count,
+        },
+      })
       console.error(`AI Learning Loop error for ${p.journey_id}:`, e)
     }
   }
+
+  // ── 6. Freezing Rules Evaluation ───────────────────────────
+  await evaluateFreezingRules(env)
+
+  // ── 7. AI Operational Health Check ─────────────────────────
+  await runAIOperationalHealthCheck(env)
 }

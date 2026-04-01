@@ -13,6 +13,37 @@ export type AIResponse = {
   result?: unknown
 }
 
+export type AIInferenceFlowMetrics = {
+  flow: string
+  total: number
+  success: number
+  error: number
+  errorRate: number
+  fallback: number
+  fallbackRate: number
+  latencyAvgMs: number
+  latencyP50Ms: number
+  latencyP95Ms: number
+  lastSeenAt: string | null
+}
+
+export type AIInferenceOverview = {
+  rangeHours: number
+  generatedAt: string
+  totals: {
+    total: number
+    success: number
+    error: number
+    errorRate: number
+    fallback: number
+    fallbackRate: number
+    latencyAvgMs: number
+    latencyP50Ms: number
+    latencyP95Ms: number
+  }
+  flows: AIInferenceFlowMetrics[]
+}
+
 export type Bindings = {
   DB: D1Database
   MARTECH_KV: KVNamespace
@@ -27,6 +58,8 @@ export type Bindings = {
   EMAIL_WEBHOOK_URL?: string
   TELEGRAM_WEBHOOK_URL?: string
   DISPATCH_BEARER_TOKEN?: string
+  AI_ALERT_WEBHOOK_URL?: string
+  AI_ALERT_WEBHOOK_TOKEN?: string
   ADMIN_API_KEY?: string
   ADMIN_PANEL_PASSWORD?: string
   ADMIN_SESSION_SECRET?: string
@@ -94,6 +127,57 @@ export type AILearningLoopRecord = {
   ai_insight: string | null
   status: 'pending_review' | 'applied' | 'rejected'
   created_at?: string
+}
+
+export type SegmentCriteria = {
+  field: string // e.g., 'engagement_score', 'preferred_channel'
+  operator: 'eq' | 'gt' | 'lt' | 'gte' | 'lte' | 'contains' | 'in'
+  value: string | number | boolean | string[]
+}
+
+export type SegmentRecord = {
+  id: string
+  name: string
+  description: string | null
+  criteria: SegmentCriteria[]
+  created_at: string
+  updated_at: string
+}
+
+export type UserSegmentRecord = {
+  user_id: string
+  segment_id: string
+  added_at: string
+}
+
+export type FreezingRuleType = 'user_freeze' | 'campaign_freeze' | 'segment_freeze'
+
+export type FreezingRule = {
+  id: string
+  type: FreezingRuleType
+  name: string
+  description: string | null
+  conditions: FreezingCondition[]
+  actions: FreezingAction[]
+  enabled: boolean
+  priority: number
+  created_at: string
+  updated_at: string
+}
+
+export type FreezingCondition = {
+  field: string
+  operator: 'eq' | 'gt' | 'lt' | 'gte' | 'lte' | 'contains' | 'not_contains'
+  value: string | number | boolean
+  timeframe?: string // e.g., '7 days', '30 days'
+}
+
+export type FreezingAction = {
+  type: 'update_field' | 'log_decision' | 'send_notification'
+  target_field?: string
+  target_value?: any
+  message?: string
+  notification_channel?: string
 }
 
 export type JourneyRecord = {

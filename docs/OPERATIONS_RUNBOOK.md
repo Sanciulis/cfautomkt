@@ -64,6 +64,25 @@ npx wrangler deploy --env preview --minify
 npx wrangler deploy --minify
 ```
 
+## 4.1) Fluxo de PR com GitHub Actions (obrigatório)
+
+Workflows existentes:
+- `.github/workflows/deploy.yml` (`Cloudflare CI/CD`)
+- `.github/workflows/security-scan.yml` (`Security Scan`)
+
+Checklist antes do merge:
+1. Abrir PR para `main`.
+2. Aguardar execução dos workflows obrigatórios.
+3. Confirmar status verde em:
+- `Cloudflare CI/CD` (job `validate`)
+- `Security Scan` (job `Secret Scan (Gitleaks)`)
+4. Não realizar merge com checks obrigatórios falhando.
+5. Em caso de exceção, registrar justificativa formal no PR.
+
+Observações:
+- Em PR, o workflow de CI/CD executa `validate` e `deploy-preview`.
+- Em `push` na `main`, o workflow de CI/CD executa `validate` e `deploy-production`.
+
 ## 5) Secrets obrigatorios
 ```bash
 npx wrangler secret put ADMIN_API_KEY
@@ -74,6 +93,10 @@ npx wrangler secret put ADMIN_SESSION_SECRET
 npx wrangler secret put ADMIN_SESSION_SECRET --env preview
 npx wrangler secret put DISPATCH_BEARER_TOKEN
 npx wrangler secret put DISPATCH_BEARER_TOKEN --env preview
+npx wrangler secret put AI_ALERT_WEBHOOK_URL
+npx wrangler secret put AI_ALERT_WEBHOOK_URL --env preview
+npx wrangler secret put AI_ALERT_WEBHOOK_TOKEN
+npx wrangler secret put AI_ALERT_WEBHOOK_TOKEN --env preview
 ```
 
 Gateway Baileys:

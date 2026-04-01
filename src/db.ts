@@ -1,5 +1,7 @@
 import type {
   Bindings,
+  AIInferenceOverview,
+  AIInferenceFlowMetrics,
   UserRecord,
   InteractionPayload,
   CampaignCreateInput,
@@ -17,6 +19,18 @@ import type {
 import { JOURNEY_PHASES } from './types'
 import { EVENT_WEIGHTS } from './constants'
 import { toNumber, safeString, toBoolean, buildReferralCode, resolveConsentSource } from './utils'
+
+function percentile(values: number[], q: number): number {
+  if (!values.length) return 0
+  const sorted = [...values].sort((a, b) => a - b)
+  const position = (sorted.length - 1) * q
+  const base = Math.floor(position)
+  const rest = position - base
+  if (sorted[base + 1] !== undefined) {
+    return sorted[base] + rest * (sorted[base + 1] - sorted[base])
+  }
+  return sorted[base]
+}
 
 export async function getUserById(env: Bindings, id: string): Promise<UserRecord | null> {
   const user = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(id).first<UserRecord>()
@@ -190,6 +204,116 @@ export async function getOverviewMetrics(env: Bindings): Promise<{
       kFactor,
     },
     topReferrers: topReferrersResult.results ?? [],
+  }
+}
+
+export async function getAIInferenceOverview(
+  env: Bindings,
+  rangeHours: number
+): Promise<AIInferenceOverview> {
+  const hours = Math.max(1, Math.min(168, Math.floor(rangeHours)))
+  const rows = await env.DB.prepare(
+    `SELECT flow, status, fallback_used, latency_ms, created_at
+     FROM ai_inference_logs
+     WHERE created_at >= datetime('now', ?)
+     ORDER BY created_at DESC`
+  )
+    .bind(`-${hours} hours`)
+    .all<{
+      flow: string
+      status: 'success' | 'error'
+      fallback_used: number
+      latency_ms: number
+      created_at: string
+    }>()
+
+  const records = rows.results ?? []
+  const flowMap = new Map<string, {
+    latencies: number[]
+    total: number
+    success: number
+    error: number
+    fallback: number
+    lastSeenAt: string | null
+  }>()
+
+  const globalLatencies: number[] = []
+  let globalTotal = 0
+  let globalSuccess = 0
+  let globalError = 0
+  let globalFallback = 0
+
+  for (const row of records) {
+    const flow = row.flow || 'unknown'
+    const status = row.status === 'error' ? 'error' : 'success'
+    const fallbackUsed = toNumber(row.fallback_used) === 1
+    const latencyMs = Math.max(0, toNumber(row.latency_ms))
+    const createdAt = safeString(row.created_at)
+
+    globalTotal += 1
+    if (status === 'success') globalSuccess += 1
+    if (status === 'error') globalError += 1
+    if (fallbackUsed) globalFallback += 1
+    globalLatencies.push(latencyMs)
+
+    const existing = flowMap.get(flow) ?? {
+      latencies: [],
+      total: 0,
+      success: 0,
+      error: 0,
+      fallback: 0,
+      lastSeenAt: null,
+    }
+
+    existing.total += 1
+    if (status === 'success') existing.success += 1
+    if (status === 'error') existing.error += 1
+    if (fallbackUsed) existing.fallback += 1
+    existing.latencies.push(latencyMs)
+    if (!existing.lastSeenAt || (createdAt && createdAt > existing.lastSeenAt)) {
+      existing.lastSeenAt = createdAt ?? existing.lastSeenAt
+    }
+
+    flowMap.set(flow, existing)
+  }
+
+  const flows: AIInferenceFlowMetrics[] = Array.from(flowMap.entries())
+    .map(([flow, stats]) => {
+      const total = stats.total
+      const latencySum = stats.latencies.reduce((acc, v) => acc + v, 0)
+      return {
+        flow,
+        total,
+        success: stats.success,
+        error: stats.error,
+        errorRate: total > 0 ? stats.error / total : 0,
+        fallback: stats.fallback,
+        fallbackRate: total > 0 ? stats.fallback / total : 0,
+        latencyAvgMs: total > 0 ? latencySum / total : 0,
+        latencyP50Ms: percentile(stats.latencies, 0.5),
+        latencyP95Ms: percentile(stats.latencies, 0.95),
+        lastSeenAt: stats.lastSeenAt,
+      }
+    })
+    .sort((a, b) => b.total - a.total)
+
+  const globalLatencySum = globalLatencies.reduce((acc, v) => acc + v, 0)
+
+  return {
+    rangeHours: hours,
+    generatedAt: new Date().toISOString(),
+    totals: {
+      total: globalTotal,
+      success: globalSuccess,
+      error: globalError,
+      errorRate: globalTotal > 0 ? globalError / globalTotal : 0,
+      fallback: globalFallback,
+      fallbackRate: globalTotal > 0 ? globalFallback / globalTotal : 0,
+      latencyAvgMs: globalTotal > 0 ? globalLatencySum / globalTotal : 0,
+      latencyP50Ms: percentile(globalLatencies, 0.5),
+      latencyP95Ms: percentile(globalLatencies, 0.95),
+    },
+    flows,
   }
 }
 

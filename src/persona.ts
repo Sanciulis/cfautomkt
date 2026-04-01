@@ -2,6 +2,7 @@ import { JOURNEY_PHASES, type Bindings, type UserRecord, type JourneyRecord, typ
 import { DEFAULT_AI_MODEL } from './constants'
 import { extractAIText } from './utils'
 import { parseConversationHistory, appendConversationMessage, advanceJourneyPhase, getEnrollment, logAgentDecision } from './db'
+import { logAIInference } from './ai-observability'
 
 /**
  * Phase-specific behavioral instructions for the AI persona.
@@ -158,11 +159,41 @@ export async function runPersonaConversation(
 
   // 4. Generate AI response
   let response: string
+  const runConversationPromptSource = `${systemPrompt}\n${contextWindow.map((m) => `${m.role}:${m.content}`).join('\n')}`
+  const runConversationStartedAt = Date.now()
   try {
     const aiResult = await env.AI.run(DEFAULT_AI_MODEL, { messages: aiMessages })
-    response = extractAIText(aiResult) || 'Opa, me dá um segundo que já te respondo! 😊'
-  } catch {
+    const generated = extractAIText(aiResult)
+    response = generated || 'Opa, me dá um segundo que já te respondo! 😊'
+    await logAIInference(env, {
+      flow: 'run_persona_conversation',
+      model: DEFAULT_AI_MODEL,
+      status: 'success',
+      latencyMs: Date.now() - runConversationStartedAt,
+      fallbackUsed: !generated,
+      promptSource: runConversationPromptSource,
+      metadata: {
+        userId: user.id,
+        journeyId: journey.id,
+        phase: activePhase,
+      },
+    })
+  } catch (error) {
     response = 'Opa, tive um probleminha aqui. Já já te respondo! 😊'
+    await logAIInference(env, {
+      flow: 'run_persona_conversation',
+      model: DEFAULT_AI_MODEL,
+      status: 'error',
+      latencyMs: Date.now() - runConversationStartedAt,
+      fallbackUsed: true,
+      promptSource: runConversationPromptSource,
+      errorMessage: String(error),
+      metadata: {
+        userId: user.id,
+        journeyId: journey.id,
+        phase: activePhase,
+      },
+    })
   }
 
   // 5. Truncate response to 400 chars
@@ -199,6 +230,9 @@ export async function generateJourneyOpeningMessage(
 Esta é a PRIMEIRÍSSIMA interação. Seja casual e genuíno.
 Lembre: máximo 400 caracteres, tom de conversa de WhatsApp entre amigos.`
 
+  const openingPromptSource = `${systemPrompt}\n${prompt}`
+  const openingStartedAt = Date.now()
+
   try {
     const aiResult = await env.AI.run(DEFAULT_AI_MODEL, {
       messages: [
@@ -208,10 +242,36 @@ Lembre: máximo 400 caracteres, tom de conversa de WhatsApp entre amigos.`
     })
 
     const text = extractAIText(aiResult)
+    await logAIInference(env, {
+      flow: 'generate_journey_opening_message',
+      model: DEFAULT_AI_MODEL,
+      status: 'success',
+      latencyMs: Date.now() - openingStartedAt,
+      fallbackUsed: !text,
+      promptSource: openingPromptSource,
+      metadata: {
+        userId: user.id,
+        journeyId: journey.id,
+      },
+    })
+
     if (text) {
       return text.length > 400 ? text.slice(0, 397) + '...' : text
     }
-  } catch {
+  } catch (error) {
+    await logAIInference(env, {
+      flow: 'generate_journey_opening_message',
+      model: DEFAULT_AI_MODEL,
+      status: 'error',
+      latencyMs: Date.now() - openingStartedAt,
+      fallbackUsed: true,
+      promptSource: openingPromptSource,
+      errorMessage: String(error),
+      metadata: {
+        userId: user.id,
+        journeyId: journey.id,
+      },
+    })
     // Fallback
   }
 
@@ -262,11 +322,41 @@ export async function simulatePersonaConversation(
 
   // 5. Generate Response
   let response: string
+  const simulationPromptSource = `${systemPrompt}\n${contextWindow.map((m) => `${m.role}:${m.content}`).join('\n')}`
+  const simulationStartedAt = Date.now()
   try {
     const aiResult = await env.AI.run(DEFAULT_AI_MODEL, { messages: aiMessages })
-    response = extractAIText(aiResult) || '[Simulação] Falha ao gerar resposta.'
-  } catch {
+    const generated = extractAIText(aiResult)
+    response = generated || '[Simulação] Falha ao gerar resposta.'
+    await logAIInference(env, {
+      flow: 'simulate_persona_conversation',
+      model: DEFAULT_AI_MODEL,
+      status: 'success',
+      latencyMs: Date.now() - simulationStartedAt,
+      fallbackUsed: !generated,
+      promptSource: simulationPromptSource,
+      metadata: {
+        userId: user.id,
+        journeyId: journey.id,
+        phase: activePhase,
+      },
+    })
+  } catch (error) {
     response = '[Simulação] Erro ao comunicar com Cloudflare AI.'
+    await logAIInference(env, {
+      flow: 'simulate_persona_conversation',
+      model: DEFAULT_AI_MODEL,
+      status: 'error',
+      latencyMs: Date.now() - simulationStartedAt,
+      fallbackUsed: true,
+      promptSource: simulationPromptSource,
+      errorMessage: String(error),
+      metadata: {
+        userId: user.id,
+        journeyId: journey.id,
+        phase: activePhase,
+      },
+    })
   }
 
   // 6. Truncate response

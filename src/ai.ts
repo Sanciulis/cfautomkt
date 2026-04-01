@@ -1,6 +1,8 @@
 import type { Bindings, UserRecord } from './types'
 import { DEFAULT_AI_MODEL } from './constants'
 import { extractAIText } from './utils'
+import { logAIInference } from './ai-observability'
+import { getActivePrompt } from './prompt-manager'
 
 export async function generatePersonalizedMessage(
   env: Bindings,
@@ -25,18 +27,58 @@ Rules:
 Base copy: "${baseCopy}"
   `.trim()
 
-  const aiResult = await env.AI.run(DEFAULT_AI_MODEL, {
-    messages: [
-      {
-        role: 'system',
-        content: 'You are a senior conversion copywriter specialized in multichannel campaigns.',
-      },
-      { role: 'user', content: prompt },
-    ],
-  })
+  const startedAt = Date.now()
+  const fallbackSystemPrompt = 'You are a senior conversion copywriter specialized in multichannel campaigns.'
+  const activeConfig = await getActivePrompt(env, 'flow:generate_personalized_message', fallbackSystemPrompt, DEFAULT_AI_MODEL)
+  
+  const systemContent = activeConfig.text
+  const modelToUse = activeConfig.model
 
-  return (
-    extractAIText(aiResult) ||
-    `Oferta exclusiva para voce. ${baseCopy} Clique no link e aproveite agora.`
-  )
+  let fallbackUsed = false
+
+  try {
+    const aiResult = await env.AI.run(modelToUse, {
+      messages: [
+        {
+          role: 'system',
+          content: systemContent,
+        },
+        { role: 'user', content: prompt },
+      ],
+    })
+
+    const generated = extractAIText(aiResult)
+    fallbackUsed = !generated
+
+    await logAIInference(env, {
+      flow: 'generate_personalized_message',
+      model: modelToUse,
+      status: 'success',
+      latencyMs: Date.now() - startedAt,
+      fallbackUsed,
+      promptSource: `${systemContent}\n${prompt}`,
+      metadata: {
+        userId: user.id,
+        channel,
+      },
+    })
+
+    return generated || `Oferta exclusiva para voce. ${baseCopy} Clique no link e aproveite agora.`
+  } catch (error) {
+    await logAIInference(env, {
+      flow: 'generate_personalized_message',
+      model: modelToUse,
+      status: 'error',
+      latencyMs: Date.now() - startedAt,
+      fallbackUsed: true,
+      promptSource: `${systemContent}\n${prompt}`,
+      errorMessage: String(error),
+      metadata: {
+        userId: user.id,
+        channel,
+      },
+    })
+
+    return `Oferta exclusiva para voce. ${baseCopy} Clique no link e aproveite agora.`
+  }
 }

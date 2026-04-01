@@ -108,6 +108,16 @@ CREATE TABLE IF NOT EXISTS ai_learning_loops (
   FOREIGN KEY (journey_id) REFERENCES journeys(id)
 );
 
+CREATE TABLE IF NOT EXISTS ai_prompt_versions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  target_id TEXT NOT NULL, -- Ex: 'flow:personalized_message', 'persona:uuid'
+  prompt_text TEXT NOT NULL,
+  model TEXT DEFAULT '@cf/meta/llama-3-8b-instruct',
+  updated_by TEXT DEFAULT 'admin',
+  change_reason TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_users_referral_code ON users(referral_code);
 CREATE INDEX IF NOT EXISTS idx_users_last_active ON users(last_active);
 CREATE INDEX IF NOT EXISTS idx_users_marketing_opt_in ON users(marketing_opt_in);
@@ -116,3 +126,4 @@ CREATE INDEX IF NOT EXISTS idx_interactions_campaign_event ON interactions(campa
 CREATE INDEX IF NOT EXISTS idx_journeys_status ON journeys(status);
 CREATE INDEX IF NOT EXISTS idx_journey_enrollments_phase ON journey_enrollments(journey_id, current_phase);
 CREATE INDEX IF NOT EXISTS idx_learning_loops_status ON ai_learning_loops(status);
+CREATE INDEX IF NOT EXISTS idx_ai_prompt_versions_target ON ai_prompt_versions(target_id, created_at DESC);
