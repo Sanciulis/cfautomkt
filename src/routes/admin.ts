@@ -56,6 +56,29 @@ function normalizeControlDetailLevel(value: string | null): ControlDetailLevel {
   return 'operations'
 }
 
+function normalizeWhatsAppParticipantPhone(value: unknown): string | null {
+  const raw = safeString(value)
+  if (!raw) return null
+
+  const normalized = raw.toLowerCase()
+  const atIndex = normalized.indexOf('@')
+
+  if (atIndex > 0) {
+    const localPart = normalized.slice(0, atIndex)
+    const domainPart = normalized.slice(atIndex + 1)
+    if (domainPart !== 's.whatsapp.net' && domainPart !== 'c.us') {
+      return null
+    }
+    const digits = localPart.replace(/[^0-9]/g, '')
+    if (digits.length < 10 || digits.length > 15) return null
+    return digits
+  }
+
+  const digits = normalized.replace(/[^0-9]/g, '')
+  if (digits.length < 10 || digits.length > 15) return null
+  return digits
+}
+
 function buildAdminControlRedirect(
   notice: string,
   kind: 'success' | 'error',
@@ -502,16 +525,32 @@ admin.post('/actions/groups/import', async (c) => {
     const form = await c.req.parseBody()
     const groupName = safeString(typeof form.groupName === 'string' ? form.groupName : 'Desconhecido')
     const participantsRaw = typeof form.participants === 'string' ? form.participants : '[]'
-    
-    const phones: string[] = JSON.parse(participantsRaw)
-    if (!Array.isArray(phones) || phones.length === 0) {
+
+    const parsedParticipants: unknown = JSON.parse(participantsRaw)
+    if (!Array.isArray(parsedParticipants) || parsedParticipants.length === 0) {
       return c.redirect(buildAdminRedirect('Nenhum participante recebido para importação.', 'error'), 302)
+    }
+
+    const normalizedPhones = Array.from(
+      new Set(
+        parsedParticipants
+          .map((participant) => normalizeWhatsAppParticipantPhone(participant))
+          .filter((phone): phone is string => typeof phone === 'string')
+      )
+    )
+
+    if (normalizedPhones.length === 0) {
+      return c.redirect(
+        buildAdminRedirect('Nao foi encontrado nenhum numero de telefone valido para importacao.', 'error'),
+        302
+      )
     }
 
     let imported = 0
     let failed = 0
+    const ignored = parsedParticipants.length - normalizedPhones.length
 
-    for (const phone of phones) {
+    for (const phone of normalizedPhones) {
        try {
            await createUserRecord(c.env, {
                name: `Lead via ${groupName}`,
@@ -526,7 +565,11 @@ admin.post('/actions/groups/import', async (c) => {
        }
     }
 
-    const m = failed > 0 ? `Contatos do grupo extraídos e salvos: ${imported}, Falhas (ou duplos): ${failed}.` : `Sucesso absoluto! ${imported} contatos extraídos salvos.`
+    const ignoredNotice = ignored > 0 ? ` Ignorados (nao telefonicos/duplicados): ${ignored}.` : ''
+    const m =
+      failed > 0
+        ? `Contatos do grupo extraidos e salvos: ${imported}, Falhas (ou duplos): ${failed}.${ignoredNotice}`
+        : `Sucesso absoluto! ${imported} contatos extraidos salvos.${ignoredNotice}`
     return c.redirect(buildAdminRedirect(m), 302)
   } catch (error) {
     return c.redirect(buildAdminRedirect(`Erro na extração: ${String(error)}`, 'error'), 302)
