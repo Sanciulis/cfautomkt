@@ -113,6 +113,20 @@ For Antigravity agents, refer to the skill located at `.agents/skills/martech-pr
 5. Evolve:
 - Register what changed, why it changed, impact, and next step in roadmap cadence.
 
+### Mandatory deploy flow for all agents
+- Every agent that changes code must follow the approved deployment path and environment order.
+- Preferred path (CI/CD):
+ - Pull Request to `main`: run `Cloudflare CI/CD` (`validate` + `deploy-preview`).
+ - Push/Merge to `main`: run `Cloudflare CI/CD` (`validate` + `deploy-production`).
+- Manual deploy is allowed only with explicit target environment:
+ - Preview: `npx wrangler deploy --env preview --minify`
+ - Production: `npm run deploy`
+- Never run manual production deploy when environment is not explicitly requested by the user.
+- After each deploy, run smoke check and confirm expected environment:
+ - Preview: `curl https://martech-viral-system-preview.bkpdsf.workers.dev/` must return `"env":"preview"`.
+ - Production: `curl https://fluxoia.com/` must return `"env":"production"`.
+- If smoke check fails, stop rollout and report immediately.
+
 ### Done criteria for each relevant change
 - Code updated and validated.
 - Required GitHub Actions checks passing (or formally waived with justification).

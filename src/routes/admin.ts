@@ -42,6 +42,36 @@ function toCsvCell(value: unknown): string {
   return `"${escaped}"`
 }
 
+type ControlEntityType = 'campaign' | 'journey'
+type ControlDetailLevel = 'summary' | 'operations' | 'full'
+
+function normalizeControlType(value: string | null): ControlEntityType {
+  return value === 'journey' ? 'journey' : 'campaign'
+}
+
+function normalizeControlDetailLevel(value: string | null): ControlDetailLevel {
+  if (value === 'summary' || value === 'operations' || value === 'full') {
+    return value
+  }
+  return 'operations'
+}
+
+function buildAdminControlRedirect(
+  notice: string,
+  kind: 'success' | 'error',
+  controlType: ControlEntityType,
+  controlId: string | null,
+  detailLevel: ControlDetailLevel
+): string {
+  const params = new URLSearchParams()
+  params.set('notice', notice)
+  params.set('kind', kind)
+  params.set('controlType', controlType)
+  params.set('detailLevel', detailLevel)
+  if (controlId) params.set('controlId', controlId)
+  return `/admin?${params.toString()}#control-room`
+}
+
 // Login Page
 admin.get('/login', async (c) => {
   const hasSession = await hasValidAdminSession(c)
@@ -121,6 +151,214 @@ admin.get('/', async (c) => {
     })
   )
 
+  const campaignRows = campaigns.results ?? []
+  const controlType = normalizeControlType(safeString(c.req.query('controlType')))
+  const detailLevel = normalizeControlDetailLevel(safeString(c.req.query('detailLevel')))
+  const requestedControlId = safeString(c.req.query('controlId'))
+
+  const selectedCampaignCore =
+    controlType === 'campaign'
+      ? campaignRows.find((item) => item.id === requestedControlId) ?? campaignRows[0] ?? null
+      : null
+
+  const selectedJourneyCore =
+    controlType === 'journey'
+      ? journeysWithCounts.find((item) => item.id === requestedControlId) ?? journeysWithCounts[0] ?? null
+      : null
+
+  let selectedCampaign: {
+    id: string
+    name: string
+    channel: string
+    status: string
+    base_copy: string | null
+    incentive_offer: string | null
+    updated_at: string | null
+    stats: {
+      sent: number
+      opened: number
+      clicked: number
+      converted: number
+      shared: number
+      failed: number
+      lastEventAt: string | null
+    }
+    recentEvents: Array<{
+      userId: string
+      userName: string | null
+      eventType: string
+      channel: string
+      timestamp: string
+    }>
+  } | null = null
+
+  if (selectedCampaignCore) {
+    const [campaignDetail, campaignEventCounts, campaignRecentEvents] = await Promise.all([
+      c.env.DB.prepare(
+        'SELECT id, name, channel, status, base_copy, incentive_offer, updated_at FROM campaigns WHERE id = ?'
+      )
+        .bind(selectedCampaignCore.id)
+        .first<{
+          id: string
+          name: string
+          channel: string
+          status: string
+          base_copy: string | null
+          incentive_offer: string | null
+          updated_at: string | null
+        }>(),
+      c.env.DB.prepare(
+        'SELECT event_type, COUNT(*) AS total FROM interactions WHERE campaign_id = ? GROUP BY event_type'
+      )
+        .bind(selectedCampaignCore.id)
+        .all<{ event_type: string; total: number }>(),
+      c.env.DB.prepare(
+        `SELECT i.user_id, u.name AS user_name, i.event_type, i.channel, i.timestamp
+         FROM interactions i
+         LEFT JOIN users u ON u.id = i.user_id
+         WHERE i.campaign_id = ?
+         ORDER BY i.timestamp DESC
+         LIMIT 20`
+      )
+        .bind(selectedCampaignCore.id)
+        .all<{
+          user_id: string
+          user_name: string | null
+          event_type: string
+          channel: string
+          timestamp: string
+        }>(),
+    ])
+
+    if (campaignDetail) {
+      const eventCountMap = new Map<string, number>()
+      for (const row of campaignEventCounts.results ?? []) {
+        eventCountMap.set(String(row.event_type), toNumber(row.total))
+      }
+
+      const recentEvents = (campaignRecentEvents.results ?? []).map((row) => ({
+        userId: String(row.user_id),
+        userName: row.user_name,
+        eventType: String(row.event_type),
+        channel: String(row.channel || campaignDetail.channel || 'whatsapp'),
+        timestamp: String(row.timestamp),
+      }))
+
+      selectedCampaign = {
+        ...campaignDetail,
+        stats: {
+          sent: eventCountMap.get('sent') ?? 0,
+          opened: eventCountMap.get('opened') ?? 0,
+          clicked: eventCountMap.get('clicked') ?? 0,
+          converted: eventCountMap.get('converted') ?? 0,
+          shared: (eventCountMap.get('shared') ?? 0) + (eventCountMap.get('referral_click') ?? 0),
+          failed: eventCountMap.get('send_failed') ?? 0,
+          lastEventAt: recentEvents[0]?.timestamp ?? null,
+        },
+        recentEvents,
+      }
+    }
+  }
+
+  let selectedJourney: {
+    id: string
+    name: string
+    status: string
+    objective: string | null
+    systemPrompt: string | null
+    personaName: string | null
+    phaseCounts: Array<{ phase: string; count: number }>
+    totalEnrollments: number
+    retainedEnrollments: number
+    lastInteractionAt: string | null
+    recentEnrollments: Array<{
+      userId: string
+      userName: string | null
+      currentPhase: string
+      lastInteractionAt: string | null
+      turns: number
+    }>
+  } | null = null
+
+  if (selectedJourneyCore) {
+    const [journeyDetail, phaseRows, recentEnrollmentsRows] = await Promise.all([
+      getJourneyById(c.env, selectedJourneyCore.id),
+      c.env.DB.prepare(
+        'SELECT current_phase, COUNT(*) AS total FROM journey_enrollments WHERE journey_id = ? GROUP BY current_phase'
+      )
+        .bind(selectedJourneyCore.id)
+        .all<{ current_phase: string; total: number }>(),
+      c.env.DB.prepare(
+        `SELECT je.user_id, u.name AS user_name, je.current_phase, je.last_interaction_at, je.conversation_history
+         FROM journey_enrollments je
+         LEFT JOIN users u ON u.id = je.user_id
+         WHERE je.journey_id = ?
+         ORDER BY je.last_interaction_at DESC
+         LIMIT 20`
+      )
+        .bind(selectedJourneyCore.id)
+        .all<{
+          user_id: string
+          user_name: string | null
+          current_phase: string
+          last_interaction_at: string | null
+          conversation_history: string | null
+        }>(),
+    ])
+
+    if (journeyDetail) {
+      const phaseOrder: JourneyPhase[] = ['discovery', 'interest', 'desire', 'action', 'retained']
+      const phaseCountMap = new Map<string, number>()
+      for (const row of phaseRows.results ?? []) {
+        phaseCountMap.set(String(row.current_phase), toNumber(row.total))
+      }
+
+      const phaseCounts = phaseOrder.map((phase) => ({
+        phase,
+        count: phaseCountMap.get(phase) ?? 0,
+      }))
+
+      const recentEnrollments = (recentEnrollmentsRows.results ?? []).map((row) => {
+        let turns = 0
+        if (row.conversation_history) {
+          try {
+            const parsed = JSON.parse(row.conversation_history)
+            if (Array.isArray(parsed)) turns = parsed.length
+          } catch {
+            turns = 0
+          }
+        }
+
+        return {
+          userId: String(row.user_id),
+          userName: row.user_name,
+          currentPhase: String(row.current_phase),
+          lastInteractionAt: row.last_interaction_at,
+          turns,
+        }
+      })
+
+      const totalEnrollments = phaseCounts.reduce((sum, item) => sum + item.count, 0)
+      const retainedEnrollments = phaseCountMap.get('retained') ?? 0
+
+      selectedJourney = {
+        id: journeyDetail.id,
+        name: journeyDetail.name,
+        status: journeyDetail.status,
+        objective: safeString(journeyDetail.objective),
+        systemPrompt: safeString(journeyDetail.system_prompt),
+        personaName: safeString(journeyDetail.persona_name),
+        phaseCounts,
+        totalEnrollments,
+        retainedEnrollments,
+        lastInteractionAt: recentEnrollments[0]?.lastInteractionAt ?? null,
+        recentEnrollments,
+      }
+    }
+  }
+
+  const activeControlId = selectedCampaign?.id ?? selectedJourney?.id ?? null
+
   const notice = safeString(c.req.query('notice'))
   const noticeKind = safeString(c.req.query('kind'))
 
@@ -152,9 +390,18 @@ admin.get('/', async (c) => {
         updatedAt: telegramIntegration.updatedAt,
       },
       users: users.results ?? [],
-      campaigns: campaigns.results ?? [],
+      campaigns: campaignRows,
       decisions: decisions.results ?? [],
       journeys: journeysWithCounts,
+      controlPanel: {
+        selectedType: controlType,
+        selectedId: activeControlId,
+        detailLevel,
+        campaigns: campaignRows,
+        journeys: journeysWithCounts,
+        selectedCampaign,
+        selectedJourney,
+      },
     })
   )
 })
@@ -348,6 +595,7 @@ admin.post('/actions/campaign/dispatch', async (c) => {
 
   const dispatchInput = {
     limit: toNumber(typeof form.limit === 'string' ? form.limit : null) || 100,
+    userIds: typeof form.targetUserId === 'string' && form.targetUserId.trim() ? [form.targetUserId.trim()] : undefined,
     personalize: toBoolean(typeof form.personalize === 'string' ? form.personalize : null, true),
     dryRun: toBoolean(typeof form.dryRun === 'string' ? form.dryRun : null, true),
     includeInactive: toBoolean(typeof form.includeInactive === 'string' ? form.includeInactive : null, false),
@@ -370,6 +618,239 @@ admin.post('/actions/campaign/dispatch', async (c) => {
     ),
     302
   )
+})
+
+// Action - Control Room Status (Campaign or Journey)
+admin.post('/actions/control/status', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    const form = await c.req.parseBody()
+    const controlType = normalizeControlType(
+      safeString(typeof form.controlType === 'string' ? form.controlType : null)
+    )
+    const detailLevel = normalizeControlDetailLevel(
+      safeString(typeof form.detailLevel === 'string' ? form.detailLevel : null)
+    )
+    const controlId = safeString(typeof form.controlId === 'string' ? form.controlId : null)
+    const action = safeString(typeof form.action === 'string' ? form.action : null)
+
+    if (!controlId || !action) {
+      return c.redirect(
+        buildAdminControlRedirect(
+          'Controle invalido: informe o item e a acao desejada.',
+          'error',
+          controlType,
+          controlId,
+          detailLevel
+        ),
+        302
+      )
+    }
+
+    if (action !== 'start' && action !== 'pause' && action !== 'stop') {
+      return c.redirect(
+        buildAdminControlRedirect(
+          'Acao invalida. Use iniciar, pausar ou parar.',
+          'error',
+          controlType,
+          controlId,
+          detailLevel
+        ),
+        302
+      )
+    }
+
+    const statusTarget: 'active' | 'paused' = action === 'start' ? 'active' : 'paused'
+
+    if (controlType === 'campaign') {
+      const campaign = await c.env.DB.prepare('SELECT id, name FROM campaigns WHERE id = ?')
+        .bind(controlId)
+        .first<{ id: string; name: string }>()
+
+      if (!campaign) {
+        return c.redirect(
+          buildAdminControlRedirect('Campanha nao encontrada.', 'error', controlType, controlId, detailLevel),
+          302
+        )
+      }
+
+      await c.env.DB.prepare('UPDATE campaigns SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+        .bind(statusTarget, controlId)
+        .run()
+
+      await c.env.DB.prepare(
+        'INSERT INTO agent_decisions (decision_type, target_id, reason, payload) VALUES (?, ?, ?, ?)'
+      )
+        .bind(
+          'admin_control_campaign_status',
+          controlId,
+          `Campaign ${campaign.name} changed to ${statusTarget} via ${action}`,
+          JSON.stringify({ source: 'admin_control_room', action, statusTarget })
+        )
+        .run()
+    } else {
+      const journey = await getJourneyById(c.env, controlId)
+      if (!journey) {
+        return c.redirect(
+          buildAdminControlRedirect('Jornada nao encontrada.', 'error', controlType, controlId, detailLevel),
+          302
+        )
+      }
+
+      await updateJourneyStatus(c.env, controlId, statusTarget)
+
+      await c.env.DB.prepare(
+        'INSERT INTO agent_decisions (decision_type, target_id, reason, payload) VALUES (?, ?, ?, ?)'
+      )
+        .bind(
+          'admin_control_journey_status',
+          controlId,
+          `Journey ${journey.name} changed to ${statusTarget} via ${action}`,
+          JSON.stringify({ source: 'admin_control_room', action, statusTarget })
+        )
+        .run()
+    }
+
+    const statusLabel = action === 'start' ? 'iniciado' : action === 'pause' ? 'pausado' : 'parado'
+    return c.redirect(
+      buildAdminControlRedirect(
+        `Controle aplicado com sucesso: ${controlType} ${controlId} ${statusLabel}.`,
+        'success',
+        controlType,
+        controlId,
+        detailLevel
+      ),
+      302
+    )
+  } catch (error) {
+    return c.redirect(buildAdminRedirect(`Falha ao aplicar controle: ${String(error)}`, 'error'), 302)
+  }
+})
+
+// Action - Control Room Edit (Campaign or Journey)
+admin.post('/actions/control/edit', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    const form = await c.req.parseBody()
+    const controlType = normalizeControlType(
+      safeString(typeof form.controlType === 'string' ? form.controlType : null)
+    )
+    const detailLevel = normalizeControlDetailLevel(
+      safeString(typeof form.detailLevel === 'string' ? form.detailLevel : null)
+    )
+    const controlId = safeString(typeof form.controlId === 'string' ? form.controlId : null)
+
+    if (!controlId) {
+      return c.redirect(
+        buildAdminControlRedirect(
+          'Controle invalido: item nao informado para edicao.',
+          'error',
+          controlType,
+          controlId,
+          detailLevel
+        ),
+        302
+      )
+    }
+
+    if (controlType === 'campaign') {
+      const campaign = await c.env.DB.prepare(
+        'SELECT id, name, base_copy, incentive_offer, channel FROM campaigns WHERE id = ?'
+      )
+        .bind(controlId)
+        .first<{
+          id: string
+          name: string
+          base_copy: string
+          incentive_offer: string | null
+          channel: string
+        }>()
+
+      if (!campaign) {
+        return c.redirect(
+          buildAdminControlRedirect('Campanha nao encontrada.', 'error', controlType, controlId, detailLevel),
+          302
+        )
+      }
+
+      const nextName = safeString(typeof form.name === 'string' ? form.name : null) ?? campaign.name
+      const nextBaseCopy =
+        safeString(typeof form.baseCopy === 'string' ? form.baseCopy : null) ?? campaign.base_copy
+      const providedChannel = safeString(typeof form.channel === 'string' ? form.channel : null)?.toLowerCase()
+      const nextChannel =
+        providedChannel && ['whatsapp', 'email', 'telegram', 'sms'].includes(providedChannel)
+          ? providedChannel
+          : campaign.channel
+      const nextIncentiveOffer =
+        typeof form.incentiveOffer === 'string'
+          ? safeString(form.incentiveOffer)
+          : campaign.incentive_offer
+
+      await c.env.DB.prepare(
+        'UPDATE campaigns SET name = ?, base_copy = ?, channel = ?, incentive_offer = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+      )
+        .bind(nextName, nextBaseCopy, nextChannel, nextIncentiveOffer, controlId)
+        .run()
+
+      return c.redirect(
+        buildAdminControlRedirect(
+          `Campanha ${controlId} atualizada com sucesso.`,
+          'success',
+          controlType,
+          controlId,
+          detailLevel
+        ),
+        302
+      )
+    }
+
+    const journey = await getJourneyById(c.env, controlId)
+    if (!journey) {
+      return c.redirect(
+        buildAdminControlRedirect('Jornada nao encontrada.', 'error', controlType, controlId, detailLevel),
+        302
+      )
+    }
+
+    const nextName = safeString(typeof form.name === 'string' ? form.name : null) ?? journey.name
+    const nextObjective =
+      safeString(typeof form.objective === 'string' ? form.objective : null) ??
+      safeString(journey.objective)
+    const nextSystemPrompt =
+      safeString(typeof form.systemPrompt === 'string' ? form.systemPrompt : null) ??
+      safeString(journey.system_prompt)
+
+    await c.env.DB.prepare('UPDATE journeys SET name = ? WHERE id = ?').bind(nextName, controlId).run()
+
+    if (nextObjective && journey.product_id) {
+      await c.env.DB.prepare('UPDATE products SET description = ? WHERE id = ?')
+        .bind(nextObjective, journey.product_id)
+        .run()
+    }
+
+    if (nextSystemPrompt && journey.persona_id) {
+      await c.env.DB.prepare('UPDATE personas SET system_prompt = ? WHERE id = ?')
+        .bind(nextSystemPrompt, journey.persona_id)
+        .run()
+    }
+
+    return c.redirect(
+      buildAdminControlRedirect(
+        `Jornada ${controlId} atualizada com sucesso.`,
+        'success',
+        controlType,
+        controlId,
+        detailLevel
+      ),
+      302
+    )
+  } catch (error) {
+    return c.redirect(buildAdminRedirect(`Falha ao editar controle: ${String(error)}`, 'error'), 302)
+  }
 })
 
 // Action - Save WhatsApp integration config
@@ -1377,13 +1858,66 @@ admin.get('/api/ai/prompts/:targetId', async (c) => {
   try {
     const targetId = c.req.param('targetId')
     
-    // We get the active prompt (from DB, or if none, fallback defaults)
-    // For the UI, we don't have the literal fallback from the code available dynamically,
-    // so we'll just query the active model and history to show its state.
+    const DEFAULT_PROMPTS: Record<string, string> = {
+      'flow:generate_personalized_message': `Você é um Especialista Sênior em Copywriting de Resposta Direta e Marketing Viral atuando no Brasil.
+Seu objetivo é transformar um rascunho (texto base) em uma mensagem hiper-personalizada, persuasiva e natural para o canal {{channel}}.
+
+Contexto Analítico do Lead:
+- Perfil Psicológico: {{psychological_profile}} (Mude a abordagem: pragmáticos querem dados; emocionais querem pertencimento; curiosos querem novidade).
+- Engajamento: {{engagement_score}}/100 (Score baixo = use extrema urgência e gatilhos de dor rápida).
+- Potencial Viral: {{viral_points}} (Se alto, crie um gatilho pedindo sutilmente para avisar outra pessoa que precise disso).
+
+Restrições (Siga à risca):
+1. Retorne APENAS a mensagem pronta para envio. Nunca inicie dizendo "Aqui está a reformulação...".
+2. Limite-se a cerca de 400 caracteres para manter a retenção alta.
+3. Feche com um único Call to Action (CTA) inegociável.
+4. Use o português padrão (Brasil) de forma casual, como uma mensagem natural, adicionando no máximo 2 emojis.
+
+Texto Base original a ser reescrito:
+"{{baseCopy}}"`,
+
+      'flow:simulate_persona': `Você é um formidável Consultor Digital em uma jornada de vendas e reengajamento via WhatsApp. 
+Seu comportamento é 100% humanizado, empático, consultivo e focado em fazer o usuário avançar organicamente no funil AIDA.
+
+Diretrizes de Comportamento (Sua Persona):
+- Tom de Voz: Casual, respeitoso e direto. Você escreve como digita no seu próprio WhatsApp profissional. Mensagens precisas, sem blocos gigantes. Pode usar gírias muito sutis da internet ("legal", "poxa", "focado nisso").
+- Odiamos "cara de bot": Nunca use formatações robóticas.
+- Contexto de Memória: Você lembrará do que foi dito no resumo de conversa e usará isso para criar rapport imediato.
+
+Atenção especial à FASE ATUAL DO FUNIL: "{{journey_phase}}"
+- Se DISCOVERY: Não venda absolutamente nada. Apenas faça o lead responder à sua pergunta e expor a dor dele.
+- Se INTEREST: Faça uma ponte leve entre o problema que ele narrou e mostre que existe um atalho (solução).
+- Se DESIRE: Mude de marcha: mostre a prova do valor e faça-o sentir que precisa resolver isso logo validando com o seu projeto.
+- Se ACTION: Envie a instrução final, o próximo passo imediato criando escassez ou urgência temporal.
+
+Baseado no histórico do lead:
+{{conversation_history}}
+
+A mensagem enviada agora pelo Lead foi: "{{last_user_message}}"
+Responda APENAS com a sua próxima fala como Consultor:`,
+
+      'flow:journey_opening': `Você é um estrategista de Growth e reengajamento Dark Funnel (WhatsApp/Telegram).
+Seu único papel é produzir uma mensagem curta de "Abertura de Conexão" que faça um lead inativo (silencioso) ser forçado psicologicamente a responder ou prestar atenção.
+
+Regras do Quebra-Gelo:
+1. Tamanho extremo: Máximo de 1 a 3 frases. Curto, seco, instigante.
+2. Nenhuma "Venda": É proibido usar discursos corporativos, "Promoção", "Aproveite" ou links.
+3. Abordagem estilo Amigo: Deve parecer uma mensagem esquecida de alguém lembrando de algo.
+4. Hook Final: Tem que encerrar com uma pergunta interrogativa cruzada sobre o problema dele.
+
+Contexto da quebra: "O modelo marcou esse usuário sob risco de perda (churn/inatividade)".
+Ação Desejada: Chamar pelo primeiro nome (Ex: "Oi {{user_name}}") e questionar se ele ainda está enfrentando um certo problema que sua marca resolve.
+
+Construa apenas a mensagem inicial, nada além:`
+    }
+
+    const fallbackText = DEFAULT_PROMPTS[targetId] || ''
     const history = await getPromptHistory(c.env, targetId, 15)
+    
+    // Load active version from history, or fallback to the hardcoded defaults
     const active = history.length > 0 
       ? { text: history[0].prompt_text, model: history[0].model } 
-      : { text: '', model: '@cf/meta/llama-3-8b-instruct' } // Default empty state for new targets
+      : { text: fallbackText, model: '@cf/meta/llama-3-8b-instruct' }
 
     return c.json({ active, history })
   } catch (error) {

@@ -41,6 +41,57 @@ export function renderAdminDashboardPage(data: {
   campaigns: Array<{ id: string; name: string; channel: string; status: string; updated_at: string }>
   decisions: Array<{ decision_type: string; target_id: string | null; reason: string; created_at: string }>
   journeys: Array<{ id: string; name: string; objective?: string; system_prompt?: string; persona_name?: string; product_name?: string; status: string; created_at?: string; enrollmentCount: number }>
+  controlPanel: {
+    selectedType: 'campaign' | 'journey'
+    selectedId: string | null
+    detailLevel: 'summary' | 'operations' | 'full'
+    campaigns: Array<{ id: string; name: string; channel: string; status: string; updated_at: string }>
+    journeys: Array<{ id: string; name: string; objective?: string; persona_name?: string; product_name?: string; status: string; enrollmentCount: number }>
+    selectedCampaign: {
+      id: string
+      name: string
+      channel: string
+      status: string
+      base_copy: string | null
+      incentive_offer: string | null
+      updated_at: string | null
+      stats: {
+        sent: number
+        opened: number
+        clicked: number
+        converted: number
+        shared: number
+        failed: number
+        lastEventAt: string | null
+      }
+      recentEvents: Array<{
+        userId: string
+        userName: string | null
+        eventType: string
+        channel: string
+        timestamp: string
+      }>
+    } | null
+    selectedJourney: {
+      id: string
+      name: string
+      status: string
+      objective: string | null
+      systemPrompt: string | null
+      personaName: string | null
+      phaseCounts: Array<{ phase: string; count: number }>
+      totalEnrollments: number
+      retainedEnrollments: number
+      lastInteractionAt: string | null
+      recentEnrollments: Array<{
+        userId: string
+        userName: string | null
+        currentPhase: string
+        lastInteractionAt: string | null
+        turns: number
+      }>
+    } | null
+  }
 }): string {
   const noticeHtml =
     data.notice && data.noticeKind
@@ -110,6 +161,277 @@ export function renderAdminDashboardPage(data: {
         </tr>`
     )
     .join('')
+
+  const isJourneyControl = data.controlPanel.selectedType === 'journey'
+  const showOperationalControls = data.controlPanel.detailLevel !== 'summary'
+  const showFullTelemetry = data.controlPanel.detailLevel === 'full'
+  const selectedCampaign = data.controlPanel.selectedCampaign
+  const selectedJourney = data.controlPanel.selectedJourney
+  const firstCampaignId = data.controlPanel.campaigns[0]?.id ?? null
+  const firstJourneyId = data.controlPanel.journeys[0]?.id ?? null
+
+  const buildControlHref = (options: {
+    controlType?: 'campaign' | 'journey'
+    controlId?: string | null
+    detailLevel?: 'summary' | 'operations' | 'full'
+  }): string => {
+    const params = new URLSearchParams()
+    params.set('controlType', options.controlType ?? data.controlPanel.selectedType)
+    params.set('detailLevel', options.detailLevel ?? data.controlPanel.detailLevel)
+    const controlId = options.controlId ?? data.controlPanel.selectedId
+    if (controlId) params.set('controlId', controlId)
+    return `/admin?${params.toString()}#control-room`
+  }
+
+  const campaignControlListHtml = data.controlPanel.campaigns
+    .map((campaign) => {
+      const isActive = data.controlPanel.selectedType === 'campaign' && data.controlPanel.selectedId === campaign.id
+      const href = buildControlHref({ controlType: 'campaign', controlId: campaign.id })
+      const statusClass = campaign.status === 'active' ? 'badge-success' : 'badge-warn'
+      return `<a href="${href}" class="control-entity-item ${isActive ? 'active' : ''}">
+        <div>
+          <div class="font-bold">${escapeHtml(campaign.name)}</div>
+          <div class="text-xs opacity-60">Canal ${escapeHtml(campaign.channel)} • Atualizado ${escapeHtml(campaign.updated_at ? new Date(campaign.updated_at).toLocaleDateString('pt-BR') : '-')}</div>
+        </div>
+        <span class="badge ${statusClass}">${escapeHtml(campaign.status)}</span>
+      </a>`
+    })
+    .join('')
+
+  const journeyControlListHtml = data.controlPanel.journeys
+    .map((journey) => {
+      const isActive = data.controlPanel.selectedType === 'journey' && data.controlPanel.selectedId === journey.id
+      const href = buildControlHref({ controlType: 'journey', controlId: journey.id })
+      const statusClass = journey.status === 'active' ? 'badge-success' : 'badge-warn'
+      return `<a href="${href}" class="control-entity-item ${isActive ? 'active' : ''}">
+        <div>
+          <div class="font-bold">${escapeHtml(journey.name)}</div>
+          <div class="text-xs opacity-60">${escapeHtml((journey.persona_name || journey.product_name || journey.objective || 'Sem contexto').slice(0, 70))}</div>
+        </div>
+        <div class="flex items-center" style="gap:8px;">
+          <span class="badge badge-outline">${journey.enrollmentCount} leads</span>
+          <span class="badge ${statusClass}">${escapeHtml(journey.status)}</span>
+        </div>
+      </a>`
+    })
+    .join('')
+
+  const controlDetailSelectorHtml = ['summary', 'operations', 'full']
+    .map((level) => {
+      const levelLabel = level === 'summary' ? 'Resumo' : level === 'operations' ? 'Operacional' : 'Full Data'
+      const href = buildControlHref({ detailLevel: level as 'summary' | 'operations' | 'full' })
+      const className = data.controlPanel.detailLevel === level ? 'chip active' : 'chip'
+      return `<a href="${href}" class="${className}">${levelLabel}</a>`
+    })
+    .join('')
+
+  const controlTypeSelectorHtml = [
+    {
+      key: 'campaign' as const,
+      label: 'Campanhas',
+      controlId:
+        data.controlPanel.selectedType === 'campaign'
+          ? data.controlPanel.selectedId
+          : firstCampaignId,
+    },
+    {
+      key: 'journey' as const,
+      label: 'Jornadas',
+      controlId:
+        data.controlPanel.selectedType === 'journey'
+          ? data.controlPanel.selectedId
+          : firstJourneyId,
+    },
+  ]
+    .map((entry) => {
+      const href = buildControlHref({ controlType: entry.key, controlId: entry.controlId })
+      const className = data.controlPanel.selectedType === entry.key ? 'chip active' : 'chip'
+      return `<a href="${href}" class="${className}">${entry.label}</a>`
+    })
+    .join('')
+
+  const campaignControlBodyHtml = (() => {
+    if (!selectedCampaign) {
+      return '<div class="timeline-content"><span class="text-sm opacity-60">Nenhuma campanha disponível para controle no momento.</span></div>'
+    }
+
+    const sent = selectedCampaign.stats.sent
+    const opened = selectedCampaign.stats.opened
+    const converted = selectedCampaign.stats.converted
+    const failed = selectedCampaign.stats.failed
+    const openRate = sent > 0 ? (opened / sent) * 100 : 0
+    const conversionRate = sent > 0 ? (converted / sent) * 100 : 0
+
+    const recentEventsRows = selectedCampaign.recentEvents
+      .map(
+        (row) =>
+          `<tr>
+            <td><code class="compact-code">${escapeHtml(row.userId.slice(0, 8))}…</code></td>
+            <td>${escapeHtml(row.userName || '-')}</td>
+            <td><span class="badge badge-outline">${escapeHtml(row.eventType)}</span></td>
+            <td><span class="badge badge-outline">${escapeHtml(row.channel)}</span></td>
+            <td><span class="text-xs opacity-60">${escapeHtml(row.timestamp ? new Date(row.timestamp).toLocaleString('pt-BR') : '-')}</span></td>
+          </tr>`
+      )
+      .join('')
+
+    return `
+      <div class="mini-stat-grid">
+        <div class="mini-stat-card"><span class="text-xs opacity-60">Envios</span><strong>${sent}</strong></div>
+        <div class="mini-stat-card"><span class="text-xs opacity-60">Abertura</span><strong>${openRate.toFixed(1)}%</strong></div>
+        <div class="mini-stat-card"><span class="text-xs opacity-60">Conversão</span><strong>${conversionRate.toFixed(1)}%</strong></div>
+        <div class="mini-stat-card"><span class="text-xs opacity-60">Falhas</span><strong>${failed}</strong></div>
+      </div>
+
+      <div class="flow-rail">
+        <div class="flow-node"><span class="text-xs opacity-60">Segmento</span><strong>${sent}</strong></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node"><span class="text-xs opacity-60">Copy IA</span><strong>${selectedCampaign.stats.clicked}</strong></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node"><span class="text-xs opacity-60">Canal</span><strong>${escapeHtml(selectedCampaign.channel)}</strong></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node"><span class="text-xs opacity-60">Conversões</span><strong>${converted}</strong></div>
+      </div>
+
+      ${showOperationalControls ? `
+        <form method="post" action="/admin/actions/control/status" class="control-form-block">
+          <input type="hidden" name="controlType" value="campaign" />
+          <input type="hidden" name="controlId" value="${escapeHtml(selectedCampaign.id)}" />
+          <input type="hidden" name="detailLevel" value="${escapeHtml(data.controlPanel.detailLevel)}" />
+          <div class="action-row">
+            <button type="submit" name="action" value="start" class="btn btn-primary" style="width:auto;padding:8px 14px;">Iniciar</button>
+            <button type="submit" name="action" value="pause" class="btn btn-glass" style="width:auto;padding:8px 14px;">Pausar</button>
+            <button type="submit" name="action" value="stop" class="btn btn-glass" style="width:auto;padding:8px 14px;border-color:#ef44445a;color:#fca5a5;">Parar</button>
+          </div>
+        </form>
+      ` : ''}
+
+      ${showOperationalControls ? `
+        <form method="post" action="/admin/actions/control/edit" class="control-form-block">
+          <input type="hidden" name="controlType" value="campaign" />
+          <input type="hidden" name="controlId" value="${escapeHtml(selectedCampaign.id)}" />
+          <input type="hidden" name="detailLevel" value="${escapeHtml(data.controlPanel.detailLevel)}" />
+          <div class="inline-form-grid">
+            <div class="form-group"><label class="input-label">Nome</label><input class="input-control" name="name" value="${escapeHtml(selectedCampaign.name)}" required /></div>
+            <div class="form-group">
+              <label class="input-label">Canal</label>
+              <select class="input-control" name="channel">
+                <option value="whatsapp" ${selectedCampaign.channel === 'whatsapp' ? 'selected' : ''}>WhatsApp</option>
+                <option value="email" ${selectedCampaign.channel === 'email' ? 'selected' : ''}>Email</option>
+                <option value="telegram" ${selectedCampaign.channel === 'telegram' ? 'selected' : ''}>Telegram</option>
+                <option value="sms" ${selectedCampaign.channel === 'sms' ? 'selected' : ''}>SMS</option>
+              </select>
+            </div>
+            <div class="form-group" style="grid-column:1 / -1;"><label class="input-label">Base Copy</label><textarea class="input-control" name="baseCopy" rows="4">${escapeHtml(selectedCampaign.base_copy || '')}</textarea></div>
+            <div class="form-group"><label class="input-label">Oferta / Incentivo</label><input class="input-control" name="incentiveOffer" value="${escapeHtml(selectedCampaign.incentive_offer || '')}" /></div>
+          </div>
+          <button type="submit" class="btn btn-glass" style="width:auto;">Salvar Edição</button>
+        </form>
+      ` : ''}
+
+      ${showFullTelemetry ? `
+        <div class="table-container" style="margin-top:20px;">
+          <table>
+            <thead>
+              <tr><th>Lead</th><th>Nome</th><th>Evento</th><th>Canal</th><th>Quando</th></tr>
+            </thead>
+            <tbody>
+              ${recentEventsRows || '<tr><td colspan="5" class="opacity-40 text-center py-8">Sem eventos recentes para esta campanha.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      ` : ''}
+    `
+  })()
+
+  const journeyControlBodyHtml = (() => {
+    if (!selectedJourney) {
+      return '<div class="timeline-content"><span class="text-sm opacity-60">Nenhuma jornada disponível para controle no momento.</span></div>'
+    }
+
+    const phaseMax = Math.max(1, ...selectedJourney.phaseCounts.map((entry) => entry.count))
+    const retentionRate = selectedJourney.totalEnrollments > 0
+      ? (selectedJourney.retainedEnrollments / selectedJourney.totalEnrollments) * 100
+      : 0
+
+    const phaseBars = selectedJourney.phaseCounts
+      .map((entry) => {
+        const width = Math.max(8, Math.round((entry.count / phaseMax) * 100))
+        return `<div class="phase-bar-item">
+          <span class="phase-label">${escapeHtml(entry.phase)}</span>
+          <div class="phase-bar-track"><div class="phase-bar-fill" style="width:${width}%"></div></div>
+          <span class="phase-count">${entry.count}</span>
+        </div>`
+      })
+      .join('')
+
+    const recentEnrollmentsRows = selectedJourney.recentEnrollments
+      .map(
+        (row) =>
+          `<tr>
+            <td><code class="compact-code">${escapeHtml(row.userId.slice(0, 8))}…</code></td>
+            <td>${escapeHtml(row.userName || '-')}</td>
+            <td><span class="badge badge-outline">${escapeHtml(row.currentPhase)}</span></td>
+            <td>${row.turns}</td>
+            <td><span class="text-xs opacity-60">${escapeHtml(row.lastInteractionAt ? new Date(row.lastInteractionAt).toLocaleString('pt-BR') : '-')}</span></td>
+          </tr>`
+      )
+      .join('')
+
+    return `
+      <div class="mini-stat-grid">
+        <div class="mini-stat-card"><span class="text-xs opacity-60">Leads Inscritos</span><strong>${selectedJourney.totalEnrollments}</strong></div>
+        <div class="mini-stat-card"><span class="text-xs opacity-60">Retidos</span><strong>${selectedJourney.retainedEnrollments}</strong></div>
+        <div class="mini-stat-card"><span class="text-xs opacity-60">Retenção</span><strong>${retentionRate.toFixed(1)}%</strong></div>
+        <div class="mini-stat-card"><span class="text-xs opacity-60">Persona</span><strong>${escapeHtml(selectedJourney.personaName || '-')}</strong></div>
+      </div>
+
+      <div class="phase-bars-wrap">
+        ${phaseBars}
+      </div>
+
+      ${showOperationalControls ? `
+        <form method="post" action="/admin/actions/control/status" class="control-form-block">
+          <input type="hidden" name="controlType" value="journey" />
+          <input type="hidden" name="controlId" value="${escapeHtml(selectedJourney.id)}" />
+          <input type="hidden" name="detailLevel" value="${escapeHtml(data.controlPanel.detailLevel)}" />
+          <div class="action-row">
+            <button type="submit" name="action" value="start" class="btn btn-primary" style="width:auto;padding:8px 14px;">Iniciar</button>
+            <button type="submit" name="action" value="pause" class="btn btn-glass" style="width:auto;padding:8px 14px;">Pausar</button>
+            <button type="submit" name="action" value="stop" class="btn btn-glass" style="width:auto;padding:8px 14px;border-color:#ef44445a;color:#fca5a5;">Parar</button>
+          </div>
+        </form>
+      ` : ''}
+
+      ${showOperationalControls ? `
+        <form method="post" action="/admin/actions/control/edit" class="control-form-block">
+          <input type="hidden" name="controlType" value="journey" />
+          <input type="hidden" name="controlId" value="${escapeHtml(selectedJourney.id)}" />
+          <input type="hidden" name="detailLevel" value="${escapeHtml(data.controlPanel.detailLevel)}" />
+          <div class="inline-form-grid">
+            <div class="form-group"><label class="input-label">Nome</label><input class="input-control" name="name" value="${escapeHtml(selectedJourney.name)}" required /></div>
+            <div class="form-group"><label class="input-label">Persona</label><input class="input-control" value="${escapeHtml(selectedJourney.personaName || 'Auto Persona')}" readonly /></div>
+            <div class="form-group" style="grid-column:1 / -1;"><label class="input-label">Objetivo da Jornada</label><textarea class="input-control" name="objective" rows="3">${escapeHtml(selectedJourney.objective || '')}</textarea></div>
+            <div class="form-group" style="grid-column:1 / -1;"><label class="input-label">System Prompt</label><textarea class="input-control" name="systemPrompt" rows="5">${escapeHtml(selectedJourney.systemPrompt || '')}</textarea></div>
+          </div>
+          <button type="submit" class="btn btn-glass" style="width:auto;">Salvar Edição</button>
+        </form>
+      ` : ''}
+
+      ${showFullTelemetry ? `
+        <div class="table-container" style="margin-top:20px;">
+          <table>
+            <thead>
+              <tr><th>Lead</th><th>Nome</th><th>Fase</th><th>Turnos</th><th>Último contato</th></tr>
+            </thead>
+            <tbody>
+              ${recentEnrollmentsRows || '<tr><td colspan="5" class="opacity-40 text-center py-8">Sem inscrições recentes para esta jornada.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      ` : ''}
+    `
+  })()
 
   const whatsappWebhookUrl = escapeHtml(data.whatsappIntegration.webhookUrl ?? '')
   const whatsappTestPhone = escapeHtml(data.whatsappIntegration.testPhone ?? '')
@@ -472,6 +794,184 @@ export function renderAdminDashboardPage(data: {
 
     .compact-code { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 4px; color: var(--primary); }
 
+    /* Control Room */
+    .control-entity-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      max-height: 520px;
+      overflow-y: auto;
+      padding-right: 6px;
+    }
+    .control-entity-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px 14px;
+      text-decoration: none;
+      color: var(--text-main);
+      background: rgba(255, 255, 255, 0.01);
+      transition: border-color 0.2s, transform 0.2s, background 0.2s;
+    }
+    .control-entity-item:hover {
+      border-color: rgba(16, 185, 129, 0.45);
+      transform: translateY(-1px);
+      background: rgba(16, 185, 129, 0.05);
+    }
+    .control-entity-item.active {
+      border-color: rgba(16, 185, 129, 0.8);
+      background: rgba(16, 185, 129, 0.1);
+      box-shadow: inset 0 0 0 1px rgba(16, 185, 129, 0.25);
+    }
+    .chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .chip {
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 7px 12px;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      text-decoration: none;
+      color: var(--text-muted);
+      transition: all 0.2s;
+      background: rgba(255, 255, 255, 0.01);
+    }
+    .chip:hover {
+      color: var(--text-main);
+      border-color: rgba(16, 185, 129, 0.35);
+    }
+    .chip.active {
+      color: #04140f;
+      background: linear-gradient(135deg, #10b981, #22d3a6);
+      border-color: transparent;
+      font-weight: 700;
+    }
+    .mini-stat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+    .mini-stat-card {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.02);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .mini-stat-card strong {
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .flow-rail {
+      display: flex;
+      align-items: stretch;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 18px;
+    }
+    .flow-node {
+      min-width: 120px;
+      flex: 1;
+      border-radius: 14px;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      background: rgba(16, 185, 129, 0.08);
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .flow-node strong {
+      font-size: 0.95rem;
+    }
+    .flow-arrow {
+      display: grid;
+      place-items: center;
+      color: rgba(148, 163, 184, 0.8);
+      font-size: 1.1rem;
+      min-width: 18px;
+    }
+    .phase-bars-wrap {
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 14px;
+      background: rgba(99, 102, 241, 0.08);
+      margin-bottom: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .phase-bar-item {
+      display: grid;
+      grid-template-columns: 90px 1fr 32px;
+      gap: 10px;
+      align-items: center;
+    }
+    .phase-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      font-weight: 700;
+    }
+    .phase-bar-track {
+      width: 100%;
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.7);
+      overflow: hidden;
+    }
+    .phase-bar-fill {
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #10b981 0%, #6366f1 100%);
+      box-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
+    }
+    .phase-count {
+      text-align: right;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      color: var(--text-main);
+    }
+    .action-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .control-form-block {
+      margin-bottom: 16px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.01);
+    }
+    .inline-form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(220px, 1fr));
+      gap: 14px;
+      margin-bottom: 8px;
+    }
+    @media (max-width: 980px) {
+      .inline-form-grid {
+        grid-template-columns: 1fr;
+      }
+      .phase-bar-item {
+        grid-template-columns: 70px 1fr 28px;
+      }
+    }
+
     /* Utility */
     .font-bold { font-weight: 700; }
     .text-xs { font-size: 0.75rem; }
@@ -554,6 +1054,10 @@ export function renderAdminDashboardPage(data: {
       </a>
 
       <div class="nav-label">Engajamento Inteligente</div>
+      <a class="nav-item" data-view="control-room">
+        <svg fill="currentColor" viewBox="0 0 20 20"><path d="M4 3a1 1 0 00-1 1v3a1 1 0 001 1h3a1 1 0 001-1V4a1 1 0 00-1-1H4zM13 3a1 1 0 00-1 1v3a1 1 0 001 1h3a1 1 0 001-1V4a1 1 0 00-1-1h-3zM4 12a1 1 0 00-1 1v3a1 1 0 001 1h3a1 1 0 001-1v-3a1 1 0 00-1-1H4zM13 12a1 1 0 00-1 1v3a1 1 0 001 1h3a1 1 0 001-1v-3a1 1 0 00-1-1h-3z"></path></svg>
+        <span>Control Room</span>
+      </a>
       <a class="nav-item" data-view="journeys">
         <svg fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 0l-2 2a1 1 0 101.414 1.414L8 10.414l1.293 1.293a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
         <span>Jornadas AI</span>
@@ -752,6 +1256,7 @@ export function renderAdminDashboardPage(data: {
             <div class="panel-grid">
               <div>
                 <div class="form-group"><label class="input-label">ID da Campanha</label><input class="input-control" name="campaignId" required /></div>
+                <div class="form-group"><label class="input-label">Testar um Lead Específico (Opcional)</label><input class="input-control" name="targetUserId" placeholder="Ex: usr_123456" /></div>
                 <div class="form-group"><label class="input-label">Limite de Usuários</label><input class="input-control" name="limit" type="number" value="100" min="1" max="500" /></div>
                 <div class="form-group">
                   <label class="input-label">Estratégia de Segmentação</label>
@@ -1034,6 +1539,48 @@ export function renderAdminDashboardPage(data: {
               </tbody>
             </table>
           </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- VIEW: Control Room -->
+    <div id="view-control-room" class="view-content">
+      <div class="panel-grid" style="grid-template-columns: 1fr;">
+        <section class="panel">
+          <div class="panel-header">
+            <h3 class="panel-title">Controle Total de Execução</h3>
+            <span class="badge badge-glass">${escapeHtml(data.controlPanel.selectedType)}</span>
+          </div>
+          <p class="text-sm opacity-60" style="margin-top:-8px;margin-bottom:16px;">Selecione campanha ou jornada, altere nível de detalhe e execute ações de iniciar, pausar, parar e editar.</p>
+          <div class="chip-row">${controlTypeSelectorHtml}</div>
+          <div class="chip-row">${controlDetailSelectorHtml}</div>
+          <div class="text-xs opacity-60">Item em foco: ${escapeHtml(data.controlPanel.selectedId || 'nenhum')}</div>
+        </section>
+      </div>
+
+      <div class="panel-grid" style="margin-top:24px; grid-template-columns: minmax(280px, 0.9fr) 1.4fr;">
+        <section class="panel">
+          <div class="panel-header">
+            <h3 class="panel-title">${isJourneyControl ? 'Jornadas Selecionáveis' : 'Campanhas Selecionáveis'}</h3>
+            <span class="badge badge-outline">${isJourneyControl ? data.controlPanel.journeys.length : data.controlPanel.campaigns.length}</span>
+          </div>
+          <div class="control-entity-list">
+            ${isJourneyControl
+              ? journeyControlListHtml || '<div class="timeline-content"><span class="text-sm opacity-60">Nenhuma jornada cadastrada.</span></div>'
+              : campaignControlListHtml || '<div class="timeline-content"><span class="text-sm opacity-60">Nenhuma campanha cadastrada.</span></div>'}
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h3 class="panel-title">${isJourneyControl ? `Jornada: ${escapeHtml(selectedJourney?.name || '-')}` : `Campanha: ${escapeHtml(selectedCampaign?.name || '-')}`}</h3>
+            <div class="flex items-center" style="gap:8px;">
+              <span class="badge badge-outline">Nível ${escapeHtml(data.controlPanel.detailLevel)}</span>
+              <span class="badge ${(isJourneyControl ? selectedJourney?.status : selectedCampaign?.status) === 'active' ? 'badge-success' : 'badge-warn'}">${escapeHtml((isJourneyControl ? selectedJourney?.status : selectedCampaign?.status) || 'sem status')}</span>
+            </div>
+          </div>
+
+          ${isJourneyControl ? journeyControlBodyHtml : campaignControlBodyHtml}
         </section>
       </div>
     </div>
@@ -1381,6 +1928,7 @@ export function renderAdminDashboardPage(data: {
       'users': { title: 'Base de Leads', subtitle: 'Gestão de perfis e conformidade LGPD.' },
       'wa-groups': { title: 'Explorador de Grupos', subtitle: 'Extração e captura de audiência via grupos de WhatsApp.' },
       'integrations': { title: 'Integrações de Canais', subtitle: 'Configure webhooks e gateways de entrega multicanal.' },
+      'control-room': { title: 'Control Room', subtitle: 'Selecione campanha ou jornada, visualize diagrama e execute ações em tempo real.' },
       'journeys': { title: 'Jornadas AI', subtitle: 'Crie e gerencie jornadas conversacionais com persona AI inteligente.' },
       'ai-prompts': { title: 'Engenharia de Prompt', subtitle: 'Versionamento, Rollback e Auditoria Oficial.' },
       'playground': { title: 'Playground AI', subtitle: 'Ambiente seguro para simular e calibrar o funil de IA.' },

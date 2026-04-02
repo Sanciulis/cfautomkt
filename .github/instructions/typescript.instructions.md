@@ -68,6 +68,20 @@ Para agentes Antigravity, consulte o skill em `.agents/skills/martech-project-in
 5. Registrar evolução:
 - Registrar decisão técnica, impacto e próximos passos no documento de roadmap.
 
+### Fluxo obrigatório de deploy para agentes que alteram código
+- Seguir ordem de ambientes e evitar deploy no alvo errado.
+- Caminho preferencial:
+ - PR em `main`: workflow `Cloudflare CI/CD` com `validate` + `deploy-preview`.
+ - Push/Merge em `main`: workflow `Cloudflare CI/CD` com `validate` + `deploy-production`.
+- Deploy manual apenas com ambiente explícito:
+ - Preview: `npx wrangler deploy --env preview --minify`
+ - Produção: `npm run deploy`
+- Se o usuário não especificar produção, não executar deploy manual em produção.
+- Smoke test obrigatório após deploy:
+ - Preview deve retornar `"env":"preview"` em `https://martech-viral-system-preview.bkpdsf.workers.dev/`.
+ - Produção deve retornar `"env":"production"` em `https://fluxoia.com/`.
+- Se smoke test falhar, parar o rollout e reportar imediatamente.
+
 ### Critérios de qualidade para evolução contínua
 - Não entregar feature sem documentação mínima correspondente.
 - Não alterar comportamento crítico sem critério de validação definido.

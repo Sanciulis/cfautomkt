@@ -89,6 +89,20 @@ O Martech é uma plataforma de marketing viral baseada em Cloudflare Workers, Ho
 5. Governança:
 - Garantir consistência entre `SKILL.md`, `.github/instructions/*.instructions.md` e documentação operacional.
 
+### Fluxo obrigatório de deploy para todos os agentes
+- Todo agente que alterar código deve seguir o fluxo oficial de deploy e validação de ambiente.
+- Fluxo preferencial (CI/CD):
+ - Pull Request em `main`: executar `Cloudflare CI/CD` (`validate` + `deploy-preview`).
+ - Push/Merge em `main`: executar `Cloudflare CI/CD` (`validate` + `deploy-production`).
+- Deploy manual somente com alvo explícito:
+ - Preview: `npx wrangler deploy --env preview --minify`
+ - Produção: `npm run deploy`
+- Não executar deploy manual em produção quando o usuário não pedir produção explicitamente.
+- Após cada deploy, executar smoke test e validar ambiente retornado:
+ - Preview: `curl https://martech-viral-system-preview.bkpdsf.workers.dev/` deve retornar `"env":"preview"`.
+ - Produção: `curl https://fluxoia.com/` deve retornar `"env":"production"`.
+- Em falha de smoke test, interromper rollout e reportar imediatamente.
+
 ### Definição de pronto para evolução contínua
 - Código entregue e validado.
 - Workflows obrigatórios do GitHub Actions aprovados.
