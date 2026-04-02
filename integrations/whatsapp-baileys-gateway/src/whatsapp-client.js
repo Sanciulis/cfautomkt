@@ -26,9 +26,49 @@ function normalizePhoneDigits(rawPhone) {
   return digits
 }
 
-export function normalizePhoneToJid(rawPhone) {
-  const digits = normalizePhoneDigits(rawPhone)
+function normalizeDestinationJid(rawPhoneOrJid) {
+  if (typeof rawPhoneOrJid !== 'string') {
+    throw new Error('Phone must be a string.')
+  }
+
+  const normalized = rawPhoneOrJid.trim().toLowerCase()
+  if (!normalized) {
+    throw new Error('Phone must be a non-empty string.')
+  }
+
+  const atIndex = normalized.indexOf('@')
+  if (atIndex > 0) {
+    const localPart = normalized.slice(0, atIndex).trim()
+    const domainPart = normalized.slice(atIndex + 1).trim()
+    if (!localPart || !domainPart) {
+      throw new Error('Destination JID is invalid.')
+    }
+
+    if (domainPart === 's.whatsapp.net' || domainPart === 'c.us') {
+      const userPart = localPart.split(':')[0]
+      const digits = userPart.replace(/[^0-9]/g, '')
+      if (digits.length >= 10 && digits.length <= 15) {
+        return `${digits}@s.whatsapp.net`
+      }
+      return `${localPart}@${domainPart}`
+    }
+
+    if (domainPart === 'lid') {
+      return `${localPart}@${domainPart}`
+    }
+
+    throw new Error('Unsupported WhatsApp destination domain.')
+  }
+
+  const digits = normalized.replace(/[^0-9]/g, '')
+  if (digits.length < 10 || digits.length > 15) {
+    throw new Error('Phone must have between 10 and 15 digits including country code.')
+  }
   return `${digits}@s.whatsapp.net`
+}
+
+export function normalizePhoneToJid(rawPhone) {
+  return normalizeDestinationJid(rawPhone)
 }
 
 export function normalizePhoneForPairing(rawPhone) {

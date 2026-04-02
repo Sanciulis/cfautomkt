@@ -56,7 +56,7 @@ function normalizeControlDetailLevel(value: string | null): ControlDetailLevel {
   return 'operations'
 }
 
-function normalizeWhatsAppParticipantPhone(value: unknown): string | null {
+function normalizeWhatsAppParticipantContact(value: unknown): string | null {
   const raw = safeString(value)
   if (!raw) return null
 
@@ -64,14 +64,24 @@ function normalizeWhatsAppParticipantPhone(value: unknown): string | null {
   const atIndex = normalized.indexOf('@')
 
   if (atIndex > 0) {
-    const localPart = normalized.slice(0, atIndex)
-    const domainPart = normalized.slice(atIndex + 1)
-    if (domainPart !== 's.whatsapp.net' && domainPart !== 'c.us') {
-      return null
+    const localPart = normalized.slice(0, atIndex).trim()
+    const domainPart = normalized.slice(atIndex + 1).trim()
+    if (!localPart || !domainPart) return null
+
+    if (domainPart === 's.whatsapp.net' || domainPart === 'c.us') {
+      // Multi-device JIDs can include a device suffix (user:device@server).
+      // Keep only the user segment when deriving a phone number.
+      const userPart = localPart.split(':')[0]
+      const digits = userPart.replace(/[^0-9]/g, '')
+      if (digits.length >= 10 && digits.length <= 15) return digits
+      return `${localPart}@${domainPart}`
     }
-    const digits = localPart.replace(/[^0-9]/g, '')
-    if (digits.length < 10 || digits.length > 15) return null
-    return digits
+
+    if (domainPart === 'lid') {
+      return `${localPart}@${domainPart}`
+    }
+
+    return null
   }
 
   const digits = normalized.replace(/[^0-9]/g, '')
@@ -531,30 +541,30 @@ admin.post('/actions/groups/import', async (c) => {
       return c.redirect(buildAdminRedirect('Nenhum participante recebido para importação.', 'error'), 302)
     }
 
-    const normalizedPhones = Array.from(
+    const normalizedContacts = Array.from(
       new Set(
         parsedParticipants
-          .map((participant) => normalizeWhatsAppParticipantPhone(participant))
-          .filter((phone): phone is string => typeof phone === 'string')
+          .map((participant) => normalizeWhatsAppParticipantContact(participant))
+          .filter((contact): contact is string => typeof contact === 'string')
       )
     )
 
-    if (normalizedPhones.length === 0) {
+    if (normalizedContacts.length === 0) {
       return c.redirect(
-        buildAdminRedirect('Nao foi encontrado nenhum numero de telefone valido para importacao.', 'error'),
+        buildAdminRedirect('Nao foi encontrado nenhum contato valido de WhatsApp para importacao.', 'error'),
         302
       )
     }
 
     let imported = 0
     let failed = 0
-    const ignored = parsedParticipants.length - normalizedPhones.length
+    const ignored = parsedParticipants.length - normalizedContacts.length
 
-    for (const phone of normalizedPhones) {
+    for (const contact of normalizedContacts) {
        try {
            await createUserRecord(c.env, {
                name: `Lead via ${groupName}`,
-               phone: phone,
+               phone: contact,
                preferredChannel: 'whatsapp',
                consentSource: `group_extraction`,
                marketingOptIn: 'true'

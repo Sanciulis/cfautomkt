@@ -1373,7 +1373,7 @@ export function renderAdminDashboardPage(data: {
           <div class="table-container" style="flex:1;">
             <table>
               <thead>
-                <tr><th>Número Identificado</th><th>Status</th></tr>
+                <tr><th>Contato Identificado</th><th>Status</th></tr>
               </thead>
               <tbody id="participants-list-container">
                 <tr><td colspan="2" class="opacity-40 text-center py-8">-</td></tr>
@@ -2436,22 +2436,65 @@ export function renderAdminDashboardPage(data: {
       });
     }
 
-    function normalizePhoneFromParticipantId(participantId) {
+    function resolveParticipantContact(participantId) {
       if (typeof participantId !== 'string') return null;
-      const normalized = participantId.trim().toLowerCase();
-      if (!normalized) return null;
+      const normalizedId = participantId.trim().toLowerCase();
+      if (!normalizedId) return null;
 
-      const atIndex = normalized.indexOf('@');
+      const atIndex = normalizedId.indexOf('@');
       if (atIndex > 0) {
-        const localPart = normalized.slice(0, atIndex);
-        const domainPart = normalized.slice(atIndex + 1);
-        if (domainPart !== 's.whatsapp.net' && domainPart !== 'c.us') return null;
-        const digits = localPart.replace(/[^0-9]/g, '');
-        return digits.length >= 10 && digits.length <= 15 ? digits : null;
+        const localPart = normalizedId.slice(0, atIndex).trim();
+        const domainPart = normalizedId.slice(atIndex + 1).trim();
+        if (!localPart || !domainPart) return null;
+
+        const canonicalId = localPart + '@' + domainPart;
+
+        if (domainPart === 's.whatsapp.net' || domainPart === 'c.us') {
+          const userPart = localPart.split(':')[0];
+          const digits = userPart.replace(/[^0-9]/g, '');
+          if (digits.length >= 10 && digits.length <= 15) {
+            return {
+              value: digits,
+              display: '+' + digits,
+              kind: 'phone',
+              dedupeKey: 'phone:' + digits,
+              domain: domainPart,
+            };
+          }
+          return {
+            value: canonicalId,
+            display: canonicalId,
+            kind: 'jid',
+            dedupeKey: 'jid:' + canonicalId,
+            domain: domainPart,
+          };
+        }
+
+        if (domainPart === 'lid') {
+          return {
+            value: canonicalId,
+            display: canonicalId,
+            kind: 'jid',
+            dedupeKey: 'jid:' + canonicalId,
+            domain: domainPart,
+          };
+        }
+
+        return { ignoredDomain: domainPart };
       }
 
-      const digits = normalized.replace(/[^0-9]/g, '');
-      return digits.length >= 10 && digits.length <= 15 ? digits : null;
+      const digits = normalizedId.replace(/[^0-9]/g, '');
+      if (digits.length >= 10 && digits.length <= 15) {
+        return {
+          value: digits,
+          display: '+' + digits,
+          kind: 'phone',
+          dedupeKey: 'phone:' + digits,
+          domain: 'digits',
+        };
+      }
+
+      return { ignoredDomain: 'sem-dominio' };
     }
 
     async function loadGroup(g) {
@@ -2464,59 +2507,86 @@ export function renderAdminDashboardPage(data: {
            const data = await response.json();
            
             if (data.status === 'success' && Array.isArray(data.participants)) {
-              const phones = [];
-              const seenPhones = new Set();
+              const contacts = [];
+              const seenContacts = new Set();
               let ignoredParticipants = 0;
               let duplicatedParticipants = 0;
+              let jidFallbackParticipants = 0;
+              const ignoredByDomain = {};
 
               data.participants.forEach((participant) => {
                 const participantId = participant && typeof participant.id === 'string' ? participant.id : '';
-                const normalizedPhone = normalizePhoneFromParticipantId(participantId);
-                if (!normalizedPhone) {
+                const resolvedContact = resolveParticipantContact(participantId);
+
+                if (!resolvedContact || !resolvedContact.value) {
+                  const domain = resolvedContact && resolvedContact.ignoredDomain
+                    ? resolvedContact.ignoredDomain
+                    : participantId.includes('@')
+                      ? participantId.split('@').pop().toLowerCase()
+                      : 'sem-dominio';
+                  ignoredByDomain[domain] = (ignoredByDomain[domain] || 0) + 1;
                   ignoredParticipants += 1;
                   return;
                 }
-                if (seenPhones.has(normalizedPhone)) {
+
+                if (seenContacts.has(resolvedContact.dedupeKey)) {
                   duplicatedParticipants += 1;
                   return;
                 }
-                seenPhones.add(normalizedPhone);
-                phones.push(normalizedPhone);
+
+                seenContacts.add(resolvedContact.dedupeKey);
+                if (resolvedContact.kind === 'jid') {
+                  jidFallbackParticipants += 1;
+                }
+                contacts.push(resolvedContact);
               });
                
               participantsContainer.innerHTML = '';
 
-              if (phones.length === 0) {
-                participantsContainer.innerHTML = '<tr><td colspan="2" class="text-error text-center py-8">Nenhum telefone valido encontrado neste grupo.</td></tr>';
-                document.getElementById('selected-group-name').innerText = 'Extraindo contatos de: ' + g.name + ' (0 telefones validos)';
+              if (contacts.length === 0) {
+                const ignoredDomainDetails = Object.entries(ignoredByDomain)
+                  .map(([domain, count]) => domain + ': ' + count)
+                  .join(' | ');
+                participantsContainer.innerHTML = '<tr><td colspan="2" class="text-error text-center py-8">Nenhum contato valido encontrado neste grupo.</td></tr>';
+                if (ignoredDomainDetails) {
+                  const tr = document.createElement('tr');
+                  tr.innerHTML = '<td colspan="2" class="opacity-60 text-center py-4">Dominios ignorados -> ' + ignoredDomainDetails + '</td>';
+                  participantsContainer.appendChild(tr);
+                }
+                document.getElementById('selected-group-name').innerText = 'Extraindo contatos de: ' + g.name + ' (0 contatos validos)';
                 return;
               }
 
-              phones.slice(0, 50).forEach(phone => {
+              contacts.slice(0, 50).forEach((contact) => {
                 const tr = document.createElement('tr');
-                tr.innerHTML = '<td><code class="compact-code">+' + phone + '</code></td><td><span class="badge badge-success">Sincronizado</span></td>';
+                const badge = contact.kind === 'phone' ? 'Telefone' : 'ID WhatsApp';
+                const badgeClass = contact.kind === 'phone' ? 'badge-success' : 'badge-outline';
+                tr.innerHTML = '<td><code class="compact-code">' + contact.display + '</code></td><td><span class="badge ' + badgeClass + '">' + badge + '</span></td>';
                 participantsContainer.appendChild(tr);
               });
                
-              if(phones.length > 50) {
+              if(contacts.length > 50) {
                 const tr = document.createElement('tr');
-                tr.innerHTML = '<td colspan="2" class="opacity-40 text-center py-4">+ ' + (phones.length - 50) + ' adicionais carregados</td>';
+                tr.innerHTML = '<td colspan="2" class="opacity-40 text-center py-4">+ ' + (contacts.length - 50) + ' adicionais carregados</td>';
                 participantsContainer.appendChild(tr);
               }
 
-              if (ignoredParticipants > 0 || duplicatedParticipants > 0) {
+              if (ignoredParticipants > 0 || duplicatedParticipants > 0 || jidFallbackParticipants > 0) {
+                const ignoredDomainDetails = Object.entries(ignoredByDomain)
+                  .map(([domain, count]) => domain + ': ' + count)
+                  .join(' | ');
                 const tr = document.createElement('tr');
-                tr.innerHTML = '<td colspan="2" class="opacity-60 text-center py-4">Ignorados: ' + ignoredParticipants + ' IDs nao telefonicos. Duplicados removidos: ' + duplicatedParticipants + '.</td>';
+                tr.innerHTML = '<td colspan="2" class="opacity-60 text-center py-4">Fallback por ID WhatsApp: ' + jidFallbackParticipants + '. Ignorados: ' + ignoredParticipants + '. Duplicados removidos: ' + duplicatedParticipants + '.' + (ignoredDomainDetails ? ' Dominios ignorados -> ' + ignoredDomainDetails : '') + '</td>';
                 participantsContainer.appendChild(tr);
               }
 
-              document.getElementById('selected-group-name').innerText = 'Extraindo contatos de: ' + g.name + ' (' + phones.length + ' telefones validos)';
+              document.getElementById('selected-group-name').innerText = 'Extraindo contatos de: ' + g.name + ' (' + contacts.length + ' contatos validos)';
 
                document.getElementById('import-group-id').value = g.id;
                document.getElementById('import-group-name').value = g.name;
-               document.getElementById('import-payload').value = JSON.stringify(phones);
+               document.getElementById('import-payload').value = JSON.stringify(contacts.map((contact) => contact.value));
                
-               btnImportCount.innerText = phones.length;
+               btnImportCount.innerText = contacts.length;
                formImport.style.display = 'block';
            }
        } catch (e) {
