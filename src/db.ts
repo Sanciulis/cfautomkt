@@ -1013,33 +1013,42 @@ export async function createServiceConversationSession(
   const status = input.status ?? 'active'
   const now = new Date().toISOString()
 
-  await env.DB.prepare(
-    `INSERT INTO service_conversation_sessions (
-      id,
-      user_id,
-      source_channel,
-      source_contact,
-      status,
-      latest_intent,
-      notes,
-      last_message_at,
-      created_at,
-      updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  )
-    .bind(
-      sessionId,
-      safeString(input.userId ?? null),
-      sourceChannel,
-      sourceContact,
-      status,
-      input.latestIntent ?? null,
-      safeString(input.notes),
-      now,
-      now,
-      now
+  try {
+    await env.DB.prepare(
+      `INSERT INTO service_conversation_sessions (
+        id,
+        user_id,
+        source_channel,
+        source_contact,
+        status,
+        latest_intent,
+        notes,
+        last_message_at,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run()
+      .bind(
+        sessionId,
+        safeString(input.userId ?? null),
+        sourceChannel,
+        sourceContact,
+        status,
+        input.latestIntent ?? null,
+        safeString(input.notes),
+        now,
+        now,
+        now
+      )
+      .run()
+  } catch (error) {
+    if (isMissingServiceTableError(error)) {
+      throw new Error(
+        'Tabelas do agente de serviços não encontradas. Execute as migrações do banco de dados (wrangler d1 migrations apply).'
+      )
+    }
+    throw error
+  }
 
   const created = await getServiceConversationSessionById(env, sessionId)
   if (!created) {
