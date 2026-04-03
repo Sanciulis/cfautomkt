@@ -26,6 +26,7 @@ id = "70edae18a45244dfb98a2d99e2cce33e"
 binding = "DB"
 database_name = "martech_db"
 database_id = "d43527f8-c4e1-4ff4-ac3f-85c175a3ddd5"
+migrations_dir = "migrations"
 
 [ai]
 binding = "AI"
@@ -57,6 +58,7 @@ id = "059caa2e15ef4818883eb9e59a734709"
 binding = "DB"
 database_name = "martech_db_preview"
 database_id = "f9b9617c-4939-447e-aa3d-77f9792ebda7"
+migrations_dir = "migrations"
 
 [env.preview.ai]
 binding = "AI"
