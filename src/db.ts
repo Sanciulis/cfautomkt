@@ -22,6 +22,17 @@ import type {
   NewsletterSentimentLabel,
   NewsletterAgentOverview,
   NewsletterAgentRecentSession,
+  ServiceConversationSessionRecord,
+  ServiceConversationMessageRecord,
+  ServiceConversationDirection,
+  ServiceConversationStatus,
+  ServiceAgentIntent,
+  ServiceAppointmentRecord,
+  ServiceQuoteRecord,
+  ServiceAppointmentStatus,
+  ServiceQuoteStatus,
+  ServiceAgentOverview,
+  ServiceAgentRecentSession,
 } from './types'
 import { JOURNEY_PHASES } from './types'
 import { EVENT_WEIGHTS } from './constants'
@@ -919,6 +930,601 @@ export async function getNewsletterAgentOverview(
         positive: 0,
         neutral: 0,
         negative: 0,
+      },
+      recentSessions: [],
+    }
+  }
+}
+
+// ── Service Conversational Agent (WhatsApp Services) ──────────
+
+function isMissingServiceTableError(error: unknown): boolean {
+  const text = String(error || '').toLowerCase()
+  return (
+    text.includes('no such table') &&
+    (text.includes('service_conversation_sessions') ||
+      text.includes('service_conversation_messages') ||
+      text.includes('service_appointments') ||
+      text.includes('service_quotes'))
+  )
+}
+
+export async function getServiceConversationSessionById(
+  env: Bindings,
+  sessionId: string
+): Promise<ServiceConversationSessionRecord | null> {
+  try {
+    const session = await env.DB.prepare(
+      'SELECT * FROM service_conversation_sessions WHERE id = ?'
+    )
+      .bind(sessionId)
+      .first<ServiceConversationSessionRecord>()
+
+    return session ?? null
+  } catch (error) {
+    if (isMissingServiceTableError(error)) return null
+    throw error
+  }
+}
+
+export async function getLatestServiceConversationSessionByContact(
+  env: Bindings,
+  sourceContact: string
+): Promise<ServiceConversationSessionRecord | null> {
+  const normalizedContact = safeString(sourceContact)
+  if (!normalizedContact) return null
+
+  try {
+    const session = await env.DB.prepare(
+      `SELECT *
+       FROM service_conversation_sessions
+       WHERE source_contact = ?
+       ORDER BY COALESCE(last_message_at, updated_at, created_at) DESC
+       LIMIT 1`
+    )
+      .bind(normalizedContact)
+      .first<ServiceConversationSessionRecord>()
+
+    return session ?? null
+  } catch (error) {
+    if (isMissingServiceTableError(error)) return null
+    throw error
+  }
+}
+
+export async function createServiceConversationSession(
+  env: Bindings,
+  input: {
+    userId?: string | null
+    sourceChannel?: string | null
+    sourceContact: string
+    status?: ServiceConversationStatus
+    latestIntent?: ServiceAgentIntent | null
+    notes?: string | null
+  }
+): Promise<ServiceConversationSessionRecord> {
+  const sessionId = crypto.randomUUID()
+  const sourceContact = safeString(input.sourceContact)
+  if (!sourceContact) {
+    throw new Error('sourceContact is required to create service conversation session')
+  }
+
+  const sourceChannel = safeString(input.sourceChannel) ?? 'whatsapp'
+  const status = input.status ?? 'active'
+  const now = new Date().toISOString()
+
+  await env.DB.prepare(
+    `INSERT INTO service_conversation_sessions (
+      id,
+      user_id,
+      source_channel,
+      source_contact,
+      status,
+      latest_intent,
+      notes,
+      last_message_at,
+      created_at,
+      updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+    .bind(
+      sessionId,
+      safeString(input.userId ?? null),
+      sourceChannel,
+      sourceContact,
+      status,
+      input.latestIntent ?? null,
+      safeString(input.notes),
+      now,
+      now,
+      now
+    )
+    .run()
+
+  const created = await getServiceConversationSessionById(env, sessionId)
+  if (!created) {
+    throw new Error('Failed to create service conversation session')
+  }
+
+  return created
+}
+
+export async function updateServiceConversationSession(
+  env: Bindings,
+  sessionId: string,
+  updates: Partial<{
+    userId: string | null
+    status: ServiceConversationStatus
+    latestIntent: ServiceAgentIntent | null
+    sentimentScore: number | null
+    sentimentLabel: NewsletterSentimentLabel | null
+    notes: string | null
+    nextFollowupAt: string | null
+    lastMessageAt: string | null
+  }>
+): Promise<ServiceConversationSessionRecord | null> {
+  const existing = await getServiceConversationSessionById(env, sessionId)
+  if (!existing) return null
+
+  const nextUserId = updates.userId === undefined ? existing.user_id : safeString(updates.userId)
+  const nextStatus = updates.status ?? existing.status
+  const nextLatestIntent =
+    updates.latestIntent === undefined ? existing.latest_intent : updates.latestIntent
+  const nextSentimentScore =
+    updates.sentimentScore === undefined ? existing.sentiment_score : updates.sentimentScore
+  const nextSentimentLabel =
+    updates.sentimentLabel === undefined ? existing.sentiment_label : updates.sentimentLabel
+  const nextNotes = updates.notes === undefined ? existing.notes : safeString(updates.notes)
+  const nextFollowupAt =
+    updates.nextFollowupAt === undefined
+      ? existing.next_followup_at
+      : safeString(updates.nextFollowupAt)
+  const nextLastMessageAt =
+    updates.lastMessageAt === undefined
+      ? existing.last_message_at
+      : safeString(updates.lastMessageAt)
+
+  await env.DB.prepare(
+    `UPDATE service_conversation_sessions
+     SET user_id = ?,
+         status = ?,
+         latest_intent = ?,
+         sentiment_score = ?,
+         sentiment_label = ?,
+         notes = ?,
+         next_followup_at = ?,
+         last_message_at = ?,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?`
+  )
+    .bind(
+      nextUserId,
+      nextStatus,
+      nextLatestIntent,
+      nextSentimentScore,
+      nextSentimentLabel,
+      nextNotes,
+      nextFollowupAt,
+      nextLastMessageAt,
+      sessionId
+    )
+    .run()
+
+  return getServiceConversationSessionById(env, sessionId)
+}
+
+export async function appendServiceConversationMessage(
+  env: Bindings,
+  input: {
+    sessionId: string
+    direction: ServiceConversationDirection
+    messageText: string
+    intent?: ServiceAgentIntent | null
+    sentimentScore?: number | null
+    sentimentLabel?: NewsletterSentimentLabel | null
+    aiModel?: string | null
+    metadata?: unknown
+  }
+): Promise<ServiceConversationMessageRecord | null> {
+  const sessionId = safeString(input.sessionId)
+  const messageText = safeString(input.messageText)
+
+  if (!sessionId || !messageText) {
+    throw new Error('sessionId and messageText are required to append service message')
+  }
+
+  await env.DB.prepare(
+    `INSERT INTO service_conversation_messages (
+      session_id,
+      direction,
+      message_text,
+      intent,
+      sentiment_score,
+      sentiment_label,
+      ai_model,
+      metadata
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+    .bind(
+      sessionId,
+      input.direction,
+      messageText,
+      input.intent ?? null,
+      input.sentimentScore ?? null,
+      input.sentimentLabel ?? null,
+      safeString(input.aiModel),
+      input.metadata ? JSON.stringify(input.metadata) : null
+    )
+    .run()
+
+  const message = await env.DB.prepare(
+    `SELECT *
+     FROM service_conversation_messages
+     WHERE session_id = ?
+     ORDER BY id DESC
+     LIMIT 1`
+  )
+    .bind(sessionId)
+    .first<ServiceConversationMessageRecord>()
+
+  return message ?? null
+}
+
+export async function listServiceConversationMessages(
+  env: Bindings,
+  sessionId: string,
+  limit = 100
+): Promise<ServiceConversationMessageRecord[]> {
+  const boundedLimit = Math.max(1, Math.min(500, Math.floor(limit)))
+
+  try {
+    const result = await env.DB.prepare(
+      `SELECT *
+       FROM service_conversation_messages
+       WHERE session_id = ?
+       ORDER BY created_at ASC, id ASC
+       LIMIT ?`
+    )
+      .bind(sessionId, boundedLimit)
+      .all<ServiceConversationMessageRecord>()
+
+    return result.results ?? []
+  } catch (error) {
+    if (isMissingServiceTableError(error)) return []
+    throw error
+  }
+}
+
+export async function createServiceAppointment(
+  env: Bindings,
+  input: {
+    sessionId: string
+    userId?: string | null
+    sourceContact: string
+    serviceType?: string | null
+    requestedDate?: string | null
+    requestedTime?: string | null
+    timezone?: string | null
+    notes?: string | null
+    status?: ServiceAppointmentStatus
+  }
+): Promise<ServiceAppointmentRecord | null> {
+  const id = crypto.randomUUID()
+  const sessionId = safeString(input.sessionId)
+  const sourceContact = safeString(input.sourceContact)
+  if (!sessionId || !sourceContact) {
+    throw new Error('sessionId and sourceContact are required to create appointment')
+  }
+
+  await env.DB.prepare(
+    `INSERT INTO service_appointments (
+      id,
+      session_id,
+      user_id,
+      source_contact,
+      service_type,
+      requested_date,
+      requested_time,
+      timezone,
+      notes,
+      status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+    .bind(
+      id,
+      sessionId,
+      safeString(input.userId),
+      sourceContact,
+      safeString(input.serviceType),
+      safeString(input.requestedDate),
+      safeString(input.requestedTime),
+      safeString(input.timezone),
+      safeString(input.notes),
+      input.status ?? 'pending'
+    )
+    .run()
+
+  const created = await env.DB.prepare('SELECT * FROM service_appointments WHERE id = ?')
+    .bind(id)
+    .first<ServiceAppointmentRecord>()
+
+  return created ?? null
+}
+
+export async function createServiceQuote(
+  env: Bindings,
+  input: {
+    sessionId: string
+    userId?: string | null
+    sourceContact: string
+    serviceType?: string | null
+    budgetRange?: string | null
+    timeline?: string | null
+    details?: string | null
+    status?: ServiceQuoteStatus
+    quoteValue?: number | null
+  }
+): Promise<ServiceQuoteRecord | null> {
+  const id = crypto.randomUUID()
+  const sessionId = safeString(input.sessionId)
+  const sourceContact = safeString(input.sourceContact)
+  if (!sessionId || !sourceContact) {
+    throw new Error('sessionId and sourceContact are required to create quote')
+  }
+
+  await env.DB.prepare(
+    `INSERT INTO service_quotes (
+      id,
+      session_id,
+      user_id,
+      source_contact,
+      service_type,
+      budget_range,
+      timeline,
+      details,
+      status,
+      quote_value
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+    .bind(
+      id,
+      sessionId,
+      safeString(input.userId),
+      sourceContact,
+      safeString(input.serviceType),
+      safeString(input.budgetRange),
+      safeString(input.timeline),
+      safeString(input.details),
+      input.status ?? 'requested',
+      input.quoteValue ?? null
+    )
+    .run()
+
+  const created = await env.DB.prepare('SELECT * FROM service_quotes WHERE id = ?')
+    .bind(id)
+    .first<ServiceQuoteRecord>()
+
+  return created ?? null
+}
+
+export async function listServiceSessionAppointments(
+  env: Bindings,
+  sessionId: string,
+  limit = 30
+): Promise<ServiceAppointmentRecord[]> {
+  const boundedLimit = Math.max(1, Math.min(200, Math.floor(limit)))
+
+  try {
+    const result = await env.DB.prepare(
+      `SELECT *
+       FROM service_appointments
+       WHERE session_id = ?
+       ORDER BY COALESCE(updated_at, created_at) DESC
+       LIMIT ?`
+    )
+      .bind(sessionId, boundedLimit)
+      .all<ServiceAppointmentRecord>()
+
+    return result.results ?? []
+  } catch (error) {
+    if (isMissingServiceTableError(error)) return []
+    throw error
+  }
+}
+
+export async function listServiceSessionQuotes(
+  env: Bindings,
+  sessionId: string,
+  limit = 30
+): Promise<ServiceQuoteRecord[]> {
+  const boundedLimit = Math.max(1, Math.min(200, Math.floor(limit)))
+
+  try {
+    const result = await env.DB.prepare(
+      `SELECT *
+       FROM service_quotes
+       WHERE session_id = ?
+       ORDER BY COALESCE(updated_at, created_at) DESC
+       LIMIT ?`
+    )
+      .bind(sessionId, boundedLimit)
+      .all<ServiceQuoteRecord>()
+
+    return result.results ?? []
+  } catch (error) {
+    if (isMissingServiceTableError(error)) return []
+    throw error
+  }
+}
+
+export async function listServiceAgentRecentSessions(
+  env: Bindings,
+  limit = 30
+): Promise<ServiceAgentRecentSession[]> {
+  const boundedLimit = Math.max(1, Math.min(200, Math.floor(limit)))
+
+  try {
+    const result = await env.DB.prepare(
+      `SELECT s.id,
+              s.user_id,
+              u.name AS user_name,
+              s.source_contact,
+              s.status,
+              s.latest_intent,
+              s.sentiment_score,
+              s.sentiment_label,
+              s.last_message_at,
+              (
+                SELECT COUNT(*)
+                FROM service_conversation_messages m
+                WHERE m.session_id = s.id
+              ) AS message_count
+       FROM service_conversation_sessions s
+       LEFT JOIN users u ON u.id = s.user_id
+       ORDER BY COALESCE(s.last_message_at, s.updated_at, s.created_at) DESC
+       LIMIT ?`
+    )
+      .bind(boundedLimit)
+      .all<{
+        id: string
+        user_id: string | null
+        user_name: string | null
+        source_contact: string
+        status: ServiceConversationStatus
+        latest_intent: ServiceAgentIntent | null
+        sentiment_score: number | null
+        sentiment_label: NewsletterSentimentLabel | null
+        last_message_at: string | null
+        message_count: number
+      }>()
+
+    return (result.results ?? []).map((row) => ({
+      id: row.id,
+      userId: row.user_id,
+      userName: row.user_name,
+      sourceContact: row.source_contact,
+      status: row.status,
+      latestIntent: row.latest_intent,
+      sentimentScore: row.sentiment_score,
+      sentimentLabel: row.sentiment_label,
+      lastMessageAt: row.last_message_at,
+      messageCount: toNumber(row.message_count),
+    }))
+  } catch (error) {
+    if (isMissingServiceTableError(error)) return []
+    throw error
+  }
+}
+
+export async function getServiceAgentOverview(
+  env: Bindings,
+  recentLimit = 30
+): Promise<ServiceAgentOverview> {
+  try {
+    const totalsRow = await env.DB.prepare(
+      `SELECT COUNT(*) AS total_sessions,
+              SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active_sessions,
+              SUM(CASE WHEN status = 'qualified' THEN 1 ELSE 0 END) AS qualified_sessions,
+              SUM(CASE WHEN status = 'scheduled' THEN 1 ELSE 0 END) AS scheduled_sessions,
+              SUM(CASE WHEN status = 'quoted' THEN 1 ELSE 0 END) AS quoted_sessions,
+              SUM(CASE WHEN status = 'opt_out' THEN 1 ELSE 0 END) AS opt_out_sessions,
+              AVG(sentiment_score) AS avg_sentiment
+       FROM service_conversation_sessions`
+    ).first<{
+      total_sessions: number
+      active_sessions: number
+      qualified_sessions: number
+      scheduled_sessions: number
+      quoted_sessions: number
+      opt_out_sessions: number
+      avg_sentiment: number | null
+    }>()
+
+    const intentBucketsRow = await env.DB.prepare(
+      `SELECT SUM(CASE WHEN latest_intent = 'appointment' THEN 1 ELSE 0 END) AS appointment,
+              SUM(CASE WHEN latest_intent = 'quote' THEN 1 ELSE 0 END) AS quote,
+              SUM(CASE WHEN latest_intent = 'question' THEN 1 ELSE 0 END) AS question,
+              SUM(CASE WHEN latest_intent = 'opt_out' THEN 1 ELSE 0 END) AS opt_out,
+              SUM(CASE WHEN latest_intent = 'other' OR latest_intent IS NULL THEN 1 ELSE 0 END) AS other
+       FROM service_conversation_sessions`
+    ).first<{
+      appointment: number
+      quote: number
+      question: number
+      opt_out: number
+      other: number
+    }>()
+
+    const pipelineRow = await env.DB.prepare(
+      `SELECT (SELECT COUNT(*) FROM service_appointments WHERE status = 'pending') AS appointments_pending,
+              (SELECT COUNT(*) FROM service_appointments WHERE status = 'confirmed') AS appointments_confirmed,
+              (SELECT COUNT(*) FROM service_quotes WHERE status = 'requested') AS quotes_requested,
+              (SELECT COUNT(*) FROM service_quotes WHERE status = 'sent') AS quotes_sent,
+              (SELECT COUNT(*) FROM service_quotes WHERE status = 'accepted') AS quotes_accepted`
+    ).first<{
+      appointments_pending: number
+      appointments_confirmed: number
+      quotes_requested: number
+      quotes_sent: number
+      quotes_accepted: number
+    }>()
+
+    const recentSessions = await listServiceAgentRecentSessions(env, recentLimit)
+
+    return {
+      generatedAt: new Date().toISOString(),
+      totals: {
+        totalSessions: toNumber(totalsRow?.total_sessions),
+        activeSessions: toNumber(totalsRow?.active_sessions),
+        qualifiedSessions: toNumber(totalsRow?.qualified_sessions),
+        scheduledSessions: toNumber(totalsRow?.scheduled_sessions),
+        quotedSessions: toNumber(totalsRow?.quoted_sessions),
+        optOutSessions: toNumber(totalsRow?.opt_out_sessions),
+        averageSentiment: Number(totalsRow?.avg_sentiment ?? 0),
+      },
+      intentBuckets: {
+        appointment: toNumber(intentBucketsRow?.appointment),
+        quote: toNumber(intentBucketsRow?.quote),
+        question: toNumber(intentBucketsRow?.question),
+        optOut: toNumber(intentBucketsRow?.opt_out),
+        other: toNumber(intentBucketsRow?.other),
+      },
+      pipeline: {
+        appointmentsPending: toNumber(pipelineRow?.appointments_pending),
+        appointmentsConfirmed: toNumber(pipelineRow?.appointments_confirmed),
+        quotesRequested: toNumber(pipelineRow?.quotes_requested),
+        quotesSent: toNumber(pipelineRow?.quotes_sent),
+        quotesAccepted: toNumber(pipelineRow?.quotes_accepted),
+      },
+      recentSessions,
+    }
+  } catch (error) {
+    if (!isMissingServiceTableError(error)) throw error
+
+    return {
+      generatedAt: new Date().toISOString(),
+      totals: {
+        totalSessions: 0,
+        activeSessions: 0,
+        qualifiedSessions: 0,
+        scheduledSessions: 0,
+        quotedSessions: 0,
+        optOutSessions: 0,
+        averageSentiment: 0,
+      },
+      intentBuckets: {
+        appointment: 0,
+        quote: 0,
+        question: 0,
+        optOut: 0,
+        other: 0,
+      },
+      pipeline: {
+        appointmentsPending: 0,
+        appointmentsConfirmed: 0,
+        quotesRequested: 0,
+        quotesSent: 0,
+        quotesAccepted: 0,
       },
       recentSessions: [],
     }

@@ -1,5 +1,12 @@
 import { Hono } from 'hono'
-import type { Bindings, JourneyPhase, JourneyConversationMessage, JourneyRecord, SegmentCriteria } from '../types'
+import type {
+  Bindings,
+  JourneyPhase,
+  JourneyConversationMessage,
+  JourneyRecord,
+  SegmentCriteria,
+  ServiceConversationStatus,
+} from '../types'
 import {
   DEFAULT_WHATSAPP_TEST_MESSAGE,
   DEFAULT_EMAIL_TEST_MESSAGE,
@@ -48,6 +55,17 @@ import {
   getLatestNewsletterConversationSessionByContact,
   createNewsletterConversationSession,
   appendNewsletterConversationMessage,
+  getServiceAgentOverview,
+  getServiceConversationSessionById,
+  listServiceConversationMessages,
+  updateServiceConversationSession,
+  getLatestServiceConversationSessionByContact,
+  createServiceConversationSession,
+  appendServiceConversationMessage,
+  createServiceAppointment,
+  createServiceQuote,
+  listServiceSessionAppointments,
+  listServiceSessionQuotes,
 } from '../db'
 import { setUserMarketingConsent } from '../consent'
 import { simulatePersonaConversation } from '../persona'
@@ -67,6 +85,11 @@ import { createFreezingRule, getFreezingRules, getFreezingRuleById, updateFreezi
 import { runPromptEvaluation } from '../ai-eval'
 import { getPromptHistory, publishPromptVersion, getActivePrompt } from '../prompt-manager'
 import { analyzeNewsletterSentiment, generateNewsletterOpeningMessage } from '../newsletter-agent'
+import {
+  analyzeServiceSentiment,
+  detectServiceIntent,
+  generateServiceOpeningMessage,
+} from '../service-agent'
 
 const admin = new Hono<{ Bindings: Bindings }>()
 
@@ -149,6 +172,18 @@ function buildAdminNewsletterRedirect(
   params.set('kind', kind)
   if (sessionId) params.set('newsletterSessionId', sessionId)
   return `/admin?${params.toString()}#newsletter-agent`
+}
+
+function buildAdminServiceRedirect(
+  notice: string,
+  kind: 'success' | 'error',
+  sessionId?: string | null
+): string {
+  const params = new URLSearchParams()
+  params.set('notice', notice)
+  params.set('kind', kind)
+  if (sessionId) params.set('serviceSessionId', sessionId)
+  return `/admin?${params.toString()}#service-agent`
 }
 
 function normalizeNewsletterContact(value: unknown): string | null {
@@ -271,6 +306,59 @@ async function sendNewsletterAgentWhatsAppMessage(
   }
 }
 
+async function sendServiceAgentWhatsAppMessage(
+  env: Bindings,
+  destinationContact: string,
+  message: string,
+  sessionId: string,
+  source: 'manual_start' | 'manual_reply'
+): Promise<{ ok: boolean; status: number; responsePreview: string }> {
+  const dispatchUrl = await resolveDispatchUrl('whatsapp', env)
+  const dispatchToken = safeString(env.DISPATCH_BEARER_TOKEN)
+
+  if (!dispatchUrl || !dispatchToken) {
+    return {
+      ok: false,
+      status: 500,
+      responsePreview: 'WhatsApp dispatch is not configured for service agent.',
+    }
+  }
+
+  const payload = {
+    channel: 'whatsapp',
+    campaign: {
+      id: 'service-agent',
+      name: 'Service Conversational Agent',
+    },
+    user: {
+      id: `service-session-${sessionId}`,
+      phone: destinationContact,
+      preferredChannel: 'whatsapp',
+    },
+    message,
+    metadata: {
+      source,
+      sessionId,
+    },
+  }
+
+  const response = await fetch(dispatchUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${dispatchToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+
+  const responseText = await response.text()
+  return {
+    ok: response.ok,
+    status: response.status,
+    responsePreview: responseText.slice(0, 500),
+  }
+}
+
 // Login Page
 admin.get('/login', async (c) => {
   const hasSession = await hasValidAdminSession(c)
@@ -325,7 +413,7 @@ admin.get('/', async (c) => {
   const unauthorized = await ensureAdminSession(c)
   if (unauthorized) return c.redirect('/admin/login', 302)
 
-  const [overview, campaigns, decisions, users, whatsappIntegration, emailIntegration, telegramIntegration, journeys, newsletterOverview] = await Promise.all([
+  const [overview, campaigns, decisions, users, whatsappIntegration, emailIntegration, telegramIntegration, journeys, newsletterOverview, serviceOverview] = await Promise.all([
     getOverviewMetrics(c.env),
     c.env.DB.prepare(
       'SELECT id, name, channel, status, updated_at FROM campaigns ORDER BY updated_at DESC LIMIT 30'
@@ -341,6 +429,7 @@ admin.get('/', async (c) => {
     getAdminTelegramIntegrationConfig(c.env),
     listJourneys(c.env),
     getNewsletterAgentOverview(c.env, 20),
+    getServiceAgentOverview(c.env, 20),
   ])
 
   // Fetch enrollment counts for each journey
@@ -625,6 +714,114 @@ admin.get('/', async (c) => {
     }))
   }
 
+  const requestedServiceSessionId = safeString(c.req.query('serviceSessionId'))
+  const defaultServiceSessionId = serviceOverview.recentSessions[0]?.id ?? null
+  const focusedServiceSessionId = requestedServiceSessionId ?? defaultServiceSessionId
+
+  let focusedServiceSession: {
+    id: string
+    userId: string | null
+    userName: string | null
+    sourceContact: string
+    sourceChannel: string
+    status: string
+    latestIntent: string | null
+    sentimentScore: number | null
+    sentimentLabel: string | null
+    notes: string | null
+    nextFollowupAt: string | null
+    lastMessageAt: string | null
+  } | null = null
+
+  let focusedServiceMessages: Array<{
+    id: number
+    direction: string
+    messageText: string
+    intent: string | null
+    sentimentScore: number | null
+    sentimentLabel: string | null
+    aiModel: string | null
+    metadata: string | null
+    createdAt: string
+  }> = []
+
+  let focusedServiceAppointments: Array<{
+    id: string
+    serviceType: string | null
+    requestedDate: string | null
+    requestedTime: string | null
+    status: string
+    updatedAt: string
+  }> = []
+
+  let focusedServiceQuotes: Array<{
+    id: string
+    serviceType: string | null
+    budgetRange: string | null
+    timeline: string | null
+    status: string
+    quoteValue: number | null
+    updatedAt: string
+  }> = []
+
+  if (focusedServiceSessionId) {
+    const [sessionRecord, messageRows, appointmentRows, quoteRows] = await Promise.all([
+      getServiceConversationSessionById(c.env, focusedServiceSessionId),
+      listServiceConversationMessages(c.env, focusedServiceSessionId, 120),
+      listServiceSessionAppointments(c.env, focusedServiceSessionId, 30),
+      listServiceSessionQuotes(c.env, focusedServiceSessionId, 30),
+    ])
+
+    if (sessionRecord) {
+      const referencedUser = users.results?.find((entry) => entry.id === sessionRecord.user_id) ?? null
+      focusedServiceSession = {
+        id: sessionRecord.id,
+        userId: sessionRecord.user_id,
+        userName: referencedUser?.name ?? null,
+        sourceContact: sessionRecord.source_contact,
+        sourceChannel: sessionRecord.source_channel,
+        status: sessionRecord.status,
+        latestIntent: sessionRecord.latest_intent,
+        sentimentScore: sessionRecord.sentiment_score,
+        sentimentLabel: sessionRecord.sentiment_label,
+        notes: sessionRecord.notes,
+        nextFollowupAt: sessionRecord.next_followup_at,
+        lastMessageAt: sessionRecord.last_message_at,
+      }
+    }
+
+    focusedServiceMessages = messageRows.map((message) => ({
+      id: message.id,
+      direction: message.direction,
+      messageText: message.message_text,
+      intent: message.intent,
+      sentimentScore: message.sentiment_score,
+      sentimentLabel: message.sentiment_label,
+      aiModel: message.ai_model,
+      metadata: message.metadata,
+      createdAt: message.created_at,
+    }))
+
+    focusedServiceAppointments = appointmentRows.map((appointment) => ({
+      id: appointment.id,
+      serviceType: appointment.service_type,
+      requestedDate: appointment.requested_date,
+      requestedTime: appointment.requested_time,
+      status: appointment.status,
+      updatedAt: appointment.updated_at,
+    }))
+
+    focusedServiceQuotes = quoteRows.map((quote) => ({
+      id: quote.id,
+      serviceType: quote.service_type,
+      budgetRange: quote.budget_range,
+      timeline: quote.timeline,
+      status: quote.status,
+      quoteValue: quote.quote_value,
+      updatedAt: quote.updated_at,
+    }))
+  }
+
   const notice = safeString(c.req.query('notice'))
   const noticeKind = safeString(c.req.query('kind'))
 
@@ -673,6 +870,14 @@ admin.get('/', async (c) => {
         selectedSessionId: focusedNewsletterSessionId,
         selectedSession: focusedNewsletterSession,
         selectedMessages: focusedNewsletterMessages,
+      },
+      serviceAgent: serviceOverview,
+      serviceAgentSession: {
+        selectedSessionId: focusedServiceSessionId,
+        selectedSession: focusedServiceSession,
+        selectedMessages: focusedServiceMessages,
+        appointments: focusedServiceAppointments,
+        quotes: focusedServiceQuotes,
       },
     })
   )
@@ -1127,6 +1332,340 @@ admin.get('/api/newsletter-agent/sessions/:sessionId/messages', async (c) => {
     return c.json({
       session,
       messages,
+    })
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
+// Action - Start Service Agent conversation from admin screen
+admin.post('/actions/service-agent/start', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    const form = await c.req.parseBody()
+    const normalizedContact = normalizeNewsletterContact(
+      typeof form.contact === 'string' ? form.contact : null
+    )
+    if (!normalizedContact) {
+      return c.redirect(
+        buildAdminServiceRedirect('Contato invalido. Use telefone ou JID WhatsApp valido.', 'error'),
+        302
+      )
+    }
+
+    const providedName = safeString(typeof form.contactName === 'string' ? form.contactName : null)
+    const customOpeningMessage = safeString(
+      typeof form.openingMessage === 'string' ? form.openingMessage : null
+    )
+
+    let linkedUser = await findUserByNewsletterContact(c.env, normalizedContact)
+
+    if (linkedUser && toNumber(linkedUser.marketing_opt_in) === 0) {
+      return c.redirect(
+        buildAdminServiceRedirect(
+          'Este contato esta em opt-out. Reative consentimento antes de iniciar.',
+          'error'
+        ),
+        302
+      )
+    }
+
+    if (!linkedUser) {
+      await createUserRecord(c.env, {
+        name: providedName ?? `Lead ${normalizedContact}`,
+        phone: normalizedContact,
+        preferredChannel: 'whatsapp',
+        marketingOptIn: true,
+        consentSource: 'service_agent_admin_start',
+      })
+      linkedUser = await findUserByNewsletterContact(c.env, normalizedContact)
+    }
+
+    let session = await getLatestServiceConversationSessionByContact(c.env, normalizedContact)
+    if (!session) {
+      session = await createServiceConversationSession(c.env, {
+        userId: linkedUser?.id ?? null,
+        sourceChannel: 'whatsapp',
+        sourceContact: normalizedContact,
+        status: 'active',
+      })
+    }
+
+    const openingMessage =
+      customOpeningMessage ??
+      (await generateServiceOpeningMessage(c.env, {
+        customerName: providedName ?? linkedUser?.name ?? null,
+        contextHint: 'Abordagem inicial pelo painel administrativo.',
+      }))
+
+    const dispatchResult = await sendServiceAgentWhatsAppMessage(
+      c.env,
+      normalizedContact,
+      openingMessage,
+      session.id,
+      'manual_start'
+    )
+
+    if (!dispatchResult.ok) {
+      await appendServiceConversationMessage(c.env, {
+        sessionId: session.id,
+        direction: 'system',
+        messageText: `Falha ao iniciar abordagem (HTTP ${dispatchResult.status}).`,
+        metadata: {
+          source: 'admin_manual_start',
+          responsePreview: dispatchResult.responsePreview,
+        },
+      })
+
+      return c.redirect(
+        buildAdminServiceRedirect(
+          `Nao foi possivel iniciar o contato (HTTP ${dispatchResult.status}).`,
+          'error',
+          session.id
+        ),
+        302
+      )
+    }
+
+    const sentiment = analyzeServiceSentiment(openingMessage)
+    const intent = detectServiceIntent(openingMessage)
+    await appendServiceConversationMessage(c.env, {
+      sessionId: session.id,
+      direction: 'agent',
+      messageText: openingMessage,
+      intent,
+      sentimentScore: sentiment.score,
+      sentimentLabel: sentiment.label,
+      aiModel: customOpeningMessage ? null : DEFAULT_AI_MODEL,
+      metadata: {
+        source: 'admin_manual_start',
+      },
+    })
+
+    await updateServiceConversationSession(c.env, session.id, {
+      userId: session.user_id ?? linkedUser?.id ?? null,
+      status: 'active',
+      latestIntent: intent,
+      sentimentScore: sentiment.score,
+      sentimentLabel: sentiment.label,
+      lastMessageAt: new Date().toISOString(),
+    })
+
+    return c.redirect(
+      buildAdminServiceRedirect('Abordagem inicial enviada com sucesso.', 'success', session.id),
+      302
+    )
+  } catch (error) {
+    return c.redirect(
+      buildAdminServiceRedirect(`Falha ao iniciar abordagem: ${String(error)}`, 'error'),
+      302
+    )
+  }
+})
+
+// Action - Send manual reply on an existing service session
+admin.post('/actions/service-agent/reply', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    const form = await c.req.parseBody()
+    const sessionId = safeString(typeof form.sessionId === 'string' ? form.sessionId : null)
+    const replyMessage = safeString(typeof form.replyMessage === 'string' ? form.replyMessage : null)
+
+    if (!sessionId || !replyMessage) {
+      return c.redirect(
+        buildAdminServiceRedirect('Informe sessao e mensagem para envio manual.', 'error', sessionId),
+        302
+      )
+    }
+
+    const session = await getServiceConversationSessionById(c.env, sessionId)
+    if (!session) {
+      return c.redirect(buildAdminServiceRedirect('Sessao nao encontrada.', 'error'), 302)
+    }
+
+    const dispatchResult = await sendServiceAgentWhatsAppMessage(
+      c.env,
+      session.source_contact,
+      replyMessage,
+      session.id,
+      'manual_reply'
+    )
+
+    if (!dispatchResult.ok) {
+      return c.redirect(
+        buildAdminServiceRedirect(
+          `Falha ao enviar resposta manual (HTTP ${dispatchResult.status}).`,
+          'error',
+          session.id
+        ),
+        302
+      )
+    }
+
+    const sentiment = analyzeServiceSentiment(replyMessage)
+    const intent = detectServiceIntent(replyMessage)
+
+    const appointmentRecord =
+      intent === 'appointment'
+        ? await createServiceAppointment(c.env, {
+            sessionId: session.id,
+            userId: session.user_id,
+            sourceContact: session.source_contact,
+            notes: replyMessage,
+            status: 'pending',
+          })
+        : null
+
+    const quoteRecord =
+      intent === 'quote'
+        ? await createServiceQuote(c.env, {
+            sessionId: session.id,
+            userId: session.user_id,
+            sourceContact: session.source_contact,
+            details: replyMessage,
+            status: 'requested',
+          })
+        : null
+
+    const nextStatus =
+      intent === 'opt_out'
+        ? 'opt_out'
+        : appointmentRecord
+          ? 'scheduled'
+          : quoteRecord
+            ? 'quoted'
+            : intent === 'question'
+              ? 'qualified'
+              : session.status
+
+    await appendServiceConversationMessage(c.env, {
+      sessionId: session.id,
+      direction: 'agent',
+      messageText: replyMessage,
+      intent,
+      sentimentScore: sentiment.score,
+      sentimentLabel: sentiment.label,
+      metadata: {
+        source: 'admin_manual_reply',
+        appointmentId: appointmentRecord?.id ?? null,
+        quoteId: quoteRecord?.id ?? null,
+      },
+    })
+
+    await updateServiceConversationSession(c.env, session.id, {
+      status: nextStatus,
+      latestIntent: intent,
+      sentimentScore: sentiment.score,
+      sentimentLabel: sentiment.label,
+      lastMessageAt: new Date().toISOString(),
+    })
+
+    if (session.user_id && intent === 'opt_out') {
+      await setUserMarketingConsent(c.env, session.user_id, false, 'service_agent_admin_optout')
+    }
+
+    return c.redirect(
+      buildAdminServiceRedirect('Resposta manual enviada com sucesso.', 'success', session.id),
+      302
+    )
+  } catch (error) {
+    return c.redirect(
+      buildAdminServiceRedirect(`Falha ao enviar resposta manual: ${String(error)}`, 'error'),
+      302
+    )
+  }
+})
+
+// Action - Update service session status and notes
+admin.post('/actions/service-agent/status', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    const form = await c.req.parseBody()
+    const sessionId = safeString(typeof form.sessionId === 'string' ? form.sessionId : null)
+    if (!sessionId) {
+      return c.redirect(buildAdminServiceRedirect('Sessao nao informada.', 'error'), 302)
+    }
+
+    const statusCandidate = safeString(typeof form.status === 'string' ? form.status : null)
+    const notes = safeString(typeof form.notes === 'string' ? form.notes : null)
+    const nextFollowupAt = safeString(
+      typeof form.nextFollowupAt === 'string' ? form.nextFollowupAt : null
+    )
+
+    let nextStatus: ServiceConversationStatus | undefined
+    if (
+      statusCandidate === 'active' ||
+      statusCandidate === 'qualified' ||
+      statusCandidate === 'scheduled' ||
+      statusCandidate === 'quoted' ||
+      statusCandidate === 'opt_out' ||
+      statusCandidate === 'closed'
+    ) {
+      nextStatus = statusCandidate
+    }
+
+    const updated = await updateServiceConversationSession(c.env, sessionId, {
+      status: nextStatus,
+      notes,
+      nextFollowupAt,
+    })
+
+    if (!updated) {
+      return c.redirect(buildAdminServiceRedirect('Sessao nao encontrada.', 'error', sessionId), 302)
+    }
+
+    return c.redirect(
+      buildAdminServiceRedirect('Sessao de servicos atualizada.', 'success', sessionId),
+      302
+    )
+  } catch (error) {
+    return c.redirect(
+      buildAdminServiceRedirect(`Falha ao atualizar sessao: ${String(error)}`, 'error'),
+      302
+    )
+  }
+})
+
+// API - Service agent overview
+admin.get('/api/service-agent/overview', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.json({ error: 'Unauthorized' }, 401)
+
+  try {
+    const overview = await getServiceAgentOverview(c.env, 40)
+    return c.json(overview)
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
+// API - Service session messages
+admin.get('/api/service-agent/sessions/:sessionId/messages', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.json({ error: 'Unauthorized' }, 401)
+
+  try {
+    const sessionId = c.req.param('sessionId')
+    const session = await getServiceConversationSessionById(c.env, sessionId)
+    if (!session) return c.json({ error: 'Session not found' }, 404)
+
+    const [messages, appointments, quotes] = await Promise.all([
+      listServiceConversationMessages(c.env, sessionId, 200),
+      listServiceSessionAppointments(c.env, sessionId, 50),
+      listServiceSessionQuotes(c.env, sessionId, 50),
+    ])
+
+    return c.json({
+      session,
+      messages,
+      appointments,
+      quotes,
     })
   } catch (error) {
     return c.json({ error: String(error) }, 500)

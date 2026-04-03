@@ -147,6 +147,89 @@ export function renderAdminDashboardPage(data: {
       createdAt: string
     }>
   }
+  serviceAgent: {
+    generatedAt: string
+    totals: {
+      totalSessions: number
+      activeSessions: number
+      qualifiedSessions: number
+      scheduledSessions: number
+      quotedSessions: number
+      optOutSessions: number
+      averageSentiment: number
+    }
+    intentBuckets: {
+      appointment: number
+      quote: number
+      question: number
+      optOut: number
+      other: number
+    }
+    pipeline: {
+      appointmentsPending: number
+      appointmentsConfirmed: number
+      quotesRequested: number
+      quotesSent: number
+      quotesAccepted: number
+    }
+    recentSessions: Array<{
+      id: string
+      userId: string | null
+      userName: string | null
+      sourceContact: string
+      status: string
+      latestIntent: string | null
+      sentimentScore: number | null
+      sentimentLabel: string | null
+      lastMessageAt: string | null
+      messageCount: number
+    }>
+  }
+  serviceAgentSession: {
+    selectedSessionId: string | null
+    selectedSession: {
+      id: string
+      userId: string | null
+      userName: string | null
+      sourceContact: string
+      sourceChannel: string
+      status: string
+      latestIntent: string | null
+      sentimentScore: number | null
+      sentimentLabel: string | null
+      notes: string | null
+      nextFollowupAt: string | null
+      lastMessageAt: string | null
+    } | null
+    selectedMessages: Array<{
+      id: number
+      direction: string
+      messageText: string
+      intent: string | null
+      sentimentScore: number | null
+      sentimentLabel: string | null
+      aiModel: string | null
+      metadata: string | null
+      createdAt: string
+    }>
+    appointments: Array<{
+      id: string
+      serviceType: string | null
+      requestedDate: string | null
+      requestedTime: string | null
+      status: string
+      updatedAt: string
+    }>
+    quotes: Array<{
+      id: string
+      serviceType: string | null
+      budgetRange: string | null
+      timeline: string | null
+      status: string
+      quoteValue: number | null
+      updatedAt: string
+    }>
+  }
 }): string {
   const noticeHtml =
     data.notice && data.noticeKind
@@ -576,6 +659,93 @@ export function renderAdminDashboardPage(data: {
     ? `${selectedNewsletterSession.feedbackRating}/5`
     : '-'
   const newsletterContactPrefill = escapeHtml(selectedNewsletterSession?.sourceContact || '')
+
+  const selectedServiceSession = data.serviceAgentSession.selectedSession
+  const selectedServiceMessages = data.serviceAgentSession.selectedMessages
+
+  const buildServiceSessionHref = (sessionId: string): string => {
+    const params = new URLSearchParams()
+    params.set('serviceSessionId', sessionId)
+    return `/admin?${params.toString()}#service-agent`
+  }
+
+  const resolveServiceStatusClass = (status: string): string => {
+    if (status === 'scheduled') return 'badge-success'
+    if (status === 'quoted') return 'badge-glass'
+    if (status === 'opt_out') return 'badge-warn'
+    if (status === 'closed') return 'badge-outline'
+    return 'badge-outline'
+  }
+
+  const serviceRecentSessionsHtml = data.serviceAgent.recentSessions
+    .map((session) => {
+      const href = buildServiceSessionHref(session.id)
+      const isActive = data.serviceAgentSession.selectedSessionId === session.id
+      const sessionLabel = escapeHtml(session.userName || session.sourceContact)
+      const intentLabel = escapeHtml(session.latestIntent || 'other')
+      const lastMessageLabel = session.lastMessageAt
+        ? new Date(session.lastMessageAt).toLocaleString('pt-BR')
+        : '-'
+      return `<a href="${href}" class="control-entity-item ${isActive ? 'active' : ''}">
+        <div>
+          <div class="font-bold">${sessionLabel}</div>
+          <div class="text-xs opacity-60">${escapeHtml(session.sourceContact)} • ${session.messageCount} msgs • intent ${intentLabel}</div>
+          <div class="text-xs opacity-40">${escapeHtml(lastMessageLabel)}</div>
+        </div>
+        <div class="flex items-center" style="gap:8px;">
+          <span class="badge ${resolveServiceStatusClass(session.status)}">${escapeHtml(session.status)}</span>
+        </div>
+      </a>`
+    })
+    .join('')
+
+  const serviceMessageRowsHtml = selectedServiceMessages
+    .map((message) => {
+      const directionBadgeClass =
+        message.direction === 'inbound'
+          ? 'badge-outline'
+          : message.direction === 'agent'
+            ? 'badge-success'
+            : 'badge-glass'
+      const intentLabel = message.intent ? ` • ${message.intent}` : ''
+      const sentimentLabel = message.sentimentLabel ? ` • ${message.sentimentLabel}` : ''
+      const aiLabel = message.aiModel ? ` • ${message.aiModel}` : ''
+      return `<tr>
+        <td><span class="badge ${directionBadgeClass}">${escapeHtml(message.direction)}</span></td>
+        <td><span class="text-sm">${escapeHtml(message.messageText)}</span></td>
+        <td><span class="text-xs opacity-60">${escapeHtml(new Date(message.createdAt).toLocaleString('pt-BR'))}${escapeHtml(intentLabel)}${escapeHtml(sentimentLabel)}${escapeHtml(aiLabel)}</span></td>
+      </tr>`
+    })
+    .join('')
+
+  const serviceAppointmentRowsHtml = data.serviceAgentSession.appointments
+    .map((appointment) =>
+      `<tr>
+        <td><code class="compact-code">${escapeHtml(appointment.id.slice(0, 8))}…</code></td>
+        <td>${escapeHtml(appointment.serviceType || '-')}</td>
+        <td>${escapeHtml(appointment.requestedDate || '-')} ${escapeHtml(appointment.requestedTime || '')}</td>
+        <td><span class="badge badge-outline">${escapeHtml(appointment.status)}</span></td>
+      </tr>`
+    )
+    .join('')
+
+  const serviceQuoteRowsHtml = data.serviceAgentSession.quotes
+    .map((quote) =>
+      `<tr>
+        <td><code class="compact-code">${escapeHtml(quote.id.slice(0, 8))}…</code></td>
+        <td>${escapeHtml(quote.serviceType || '-')}</td>
+        <td>${escapeHtml(quote.budgetRange || '-')}</td>
+        <td><span class="badge badge-glass">${escapeHtml(quote.status)}</span></td>
+      </tr>`
+    )
+    .join('')
+
+  const serviceSelectedStatusClass = resolveServiceStatusClass(selectedServiceSession?.status || 'active')
+  const serviceSentimentLabel = selectedServiceSession?.sentimentLabel
+    ? `${selectedServiceSession.sentimentLabel} (${Number(selectedServiceSession.sentimentScore ?? 0).toFixed(2)})`
+    : '-'
+  const serviceContactPrefill = escapeHtml(selectedServiceSession?.sourceContact || '')
+  const serviceIntentLabel = escapeHtml(selectedServiceSession?.latestIntent || '-')
 
   return `<!doctype html>
 <html lang="pt-BR">
@@ -1179,6 +1349,10 @@ export function renderAdminDashboardPage(data: {
       <a class="nav-item" data-view="newsletter-agent">
         <svg fill="currentColor" viewBox="0 0 20 20"><path d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-3.441-.684L2 17l.739-3.147A6.807 6.807 0 012 10c0-3.866 3.582-7 8-7s8 3.134 8 7z"></path></svg>
         <span>Agente Newsletter</span>
+      </a>
+      <a class="nav-item" data-view="service-agent">
+        <svg fill="currentColor" viewBox="0 0 20 20"><path d="M2 5a2 2 0 012-2h12a2 2 0 012 2v8a2 2 0 01-2 2h-3l-3 3-3-3H4a2 2 0 01-2-2V5zm4 2a1 1 0 000 2h8a1 1 0 100-2H6zm0 4a1 1 0 100 2h5a1 1 0 100-2H6z"></path></svg>
+        <span>Agente Servicos</span>
       </a>
       <a class="nav-item" data-view="journeys">
         <svg fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 0l-2 2a1 1 0 101.414 1.414L8 10.414l1.293 1.293a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
@@ -1844,6 +2018,166 @@ export function renderAdminDashboardPage(data: {
       </div>
     </div>
 
+    <!-- VIEW: Service Agent -->
+    <div id="view-service-agent" class="view-content">
+      <section class="stats-grid" style="margin-bottom: 24px;">
+        <div class="stat-card">
+          <span class="stat-label">Sessoes Totais</span>
+          <span class="stat-value">${data.serviceAgent.totals.totalSessions}</span>
+          <div class="stat-accent"></div>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Agendamentos</span>
+          <span class="stat-value">${data.serviceAgent.totals.scheduledSessions}</span>
+          <div class="stat-accent" style="background:var(--secondary)"></div>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Orcamentos</span>
+          <span class="stat-value">${data.serviceAgent.totals.quotedSessions}</span>
+          <div class="stat-accent"></div>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Sentimento Medio</span>
+          <span class="stat-value">${Number(data.serviceAgent.totals.averageSentiment).toFixed(2)}</span>
+          <div class="stat-accent" style="background:var(--secondary)"></div>
+        </div>
+      </section>
+
+      <div class="panel-grid" style="grid-template-columns: 1fr 1fr;">
+        <section class="panel">
+          <div class="panel-header">
+            <h3 class="panel-title">Iniciar Atendimento por Contato</h3>
+            <span class="badge badge-glass">manual start</span>
+          </div>
+          <p class="text-sm opacity-60 mb-6">Inicia o agente de servicos para agendamento, orcamento e tira-duvidas no WhatsApp.</p>
+          <form method="post" action="/admin/actions/service-agent/start">
+            <div class="form-group">
+              <label class="input-label">Contato WhatsApp (telefone ou JID)</label>
+              <input class="input-control" name="contact" value="${serviceContactPrefill}" placeholder="5511999990001 ou 5511999990001@s.whatsapp.net" required />
+            </div>
+            <div class="form-group">
+              <label class="input-label">Nome (opcional)</label>
+              <input class="input-control" name="contactName" placeholder="Ex: Joao" />
+            </div>
+            <div class="form-group">
+              <label class="input-label">Mensagem inicial customizada (opcional)</label>
+              <textarea class="input-control" name="openingMessage" rows="4" placeholder="Se vazio, o sistema gera a abertura automaticamente."></textarea>
+            </div>
+            <button type="submit" class="btn btn-primary">Iniciar Atendimento</button>
+          </form>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h3 class="panel-title">Pipeline Comercial</h3>
+            <span class="badge badge-outline">Atualizado ${escapeHtml(new Date(data.serviceAgent.generatedAt).toLocaleTimeString('pt-BR'))}</span>
+          </div>
+          <div class="mini-stat-grid">
+            <div class="mini-stat-card"><span class="text-xs opacity-60">Intent agendamento</span><strong>${data.serviceAgent.intentBuckets.appointment}</strong></div>
+            <div class="mini-stat-card"><span class="text-xs opacity-60">Intent orcamento</span><strong>${data.serviceAgent.intentBuckets.quote}</strong></div>
+            <div class="mini-stat-card"><span class="text-xs opacity-60">Agend. pendentes</span><strong>${data.serviceAgent.pipeline.appointmentsPending}</strong></div>
+            <div class="mini-stat-card"><span class="text-xs opacity-60">Agend. confirmados</span><strong>${data.serviceAgent.pipeline.appointmentsConfirmed}</strong></div>
+            <div class="mini-stat-card"><span class="text-xs opacity-60">Orc. solicitados</span><strong>${data.serviceAgent.pipeline.quotesRequested}</strong></div>
+            <div class="mini-stat-card"><span class="text-xs opacity-60">Orc. enviados</span><strong>${data.serviceAgent.pipeline.quotesSent}</strong></div>
+          </div>
+          <p class="text-xs opacity-60" style="margin-top: 12px;">O agente registra cada sessao, mensagem e eventos de agenda/orcamento para auditoria operacional.</p>
+        </section>
+      </div>
+
+      <div class="panel-grid" style="margin-top:24px; grid-template-columns: minmax(280px, 0.9fr) 1.4fr;">
+        <section class="panel">
+          <div class="panel-header">
+            <h3 class="panel-title">Sessoes Recentes</h3>
+            <span class="badge badge-outline">${data.serviceAgent.recentSessions.length}</span>
+          </div>
+          <div class="control-entity-list">
+            ${serviceRecentSessionsHtml || '<div class="timeline-content"><span class="text-sm opacity-60">Nenhuma sessao registrada ainda.</span></div>'}
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h3 class="panel-title">Sessao Selecionada</h3>
+            <span class="badge ${serviceSelectedStatusClass}">${escapeHtml(selectedServiceSession?.status || 'sem_sessao')}</span>
+          </div>
+
+          ${selectedServiceSession ? `
+            <div class="mini-stat-grid" style="margin-bottom: 16px;">
+              <div class="mini-stat-card"><span class="text-xs opacity-60">Contato</span><strong>${escapeHtml(selectedServiceSession.sourceContact)}</strong></div>
+              <div class="mini-stat-card"><span class="text-xs opacity-60">Intent</span><strong>${serviceIntentLabel}</strong></div>
+              <div class="mini-stat-card"><span class="text-xs opacity-60">Sentimento</span><strong>${escapeHtml(serviceSentimentLabel)}</strong></div>
+              <div class="mini-stat-card"><span class="text-xs opacity-60">Follow-up</span><strong>${escapeHtml(selectedServiceSession.nextFollowupAt ? new Date(selectedServiceSession.nextFollowupAt).toLocaleString('pt-BR') : '-')}</strong></div>
+            </div>
+
+            <div class="table-container" style="max-height: 260px; overflow-y: auto;">
+              <table>
+                <thead>
+                  <tr><th>Direcao</th><th>Mensagem</th><th>Meta</th></tr>
+                </thead>
+                <tbody>
+                  ${serviceMessageRowsHtml || '<tr><td colspan="3" class="opacity-40 text-center py-8">Sem mensagens nesta sessao.</td></tr>'}
+                </tbody>
+              </table>
+            </div>
+
+            <div class="panel-grid" style="grid-template-columns: 1fr 1fr; margin-top: 12px; gap: 12px;">
+              <div class="table-container" style="max-height: 200px; overflow-y:auto;">
+                <table>
+                  <thead><tr><th>ID</th><th>Servico</th><th>Data/Hora</th><th>Status</th></tr></thead>
+                  <tbody>
+                    ${serviceAppointmentRowsHtml || '<tr><td colspan="4" class="opacity-40 text-center py-6">Sem agendamentos.</td></tr>'}
+                  </tbody>
+                </table>
+              </div>
+              <div class="table-container" style="max-height: 200px; overflow-y:auto;">
+                <table>
+                  <thead><tr><th>ID</th><th>Servico</th><th>Faixa</th><th>Status</th></tr></thead>
+                  <tbody>
+                    ${serviceQuoteRowsHtml || '<tr><td colspan="4" class="opacity-40 text-center py-6">Sem orcamentos.</td></tr>'}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <form method="post" action="/admin/actions/service-agent/reply" class="control-form-block" style="margin-top: 14px;">
+              <input type="hidden" name="sessionId" value="${escapeHtml(selectedServiceSession.id)}" />
+              <div class="form-group">
+                <label class="input-label">Enviar resposta manual</label>
+                <textarea class="input-control" name="replyMessage" rows="3" placeholder="Mensagem manual para o contato" required></textarea>
+              </div>
+              <button type="submit" class="btn btn-glass" style="width:auto;">Enviar Mensagem</button>
+            </form>
+
+            <form method="post" action="/admin/actions/service-agent/status" class="control-form-block" style="margin-top: 12px;">
+              <input type="hidden" name="sessionId" value="${escapeHtml(selectedServiceSession.id)}" />
+              <div class="inline-form-grid">
+                <div class="form-group">
+                  <label class="input-label">Status</label>
+                  <select class="input-control" name="status">
+                    <option value="active" ${selectedServiceSession.status === 'active' ? 'selected' : ''}>active</option>
+                    <option value="qualified" ${selectedServiceSession.status === 'qualified' ? 'selected' : ''}>qualified</option>
+                    <option value="scheduled" ${selectedServiceSession.status === 'scheduled' ? 'selected' : ''}>scheduled</option>
+                    <option value="quoted" ${selectedServiceSession.status === 'quoted' ? 'selected' : ''}>quoted</option>
+                    <option value="opt_out" ${selectedServiceSession.status === 'opt_out' ? 'selected' : ''}>opt_out</option>
+                    <option value="closed" ${selectedServiceSession.status === 'closed' ? 'selected' : ''}>closed</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="input-label">Proximo follow-up (opcional)</label>
+                  <input class="input-control" name="nextFollowupAt" type="datetime-local" />
+                </div>
+                <div class="form-group" style="grid-column:1 / -1;">
+                  <label class="input-label">Notas internas</label>
+                  <textarea class="input-control" name="notes" rows="3">${escapeHtml(selectedServiceSession.notes || '')}</textarea>
+                </div>
+              </div>
+              <button type="submit" class="btn btn-glass" style="width:auto;">Salvar Sessao</button>
+            </form>
+          ` : '<div class="timeline-content"><span class="text-sm opacity-60">Selecione uma sessao para auditar historico, pipeline e follow-up.</span></div>'}
+        </section>
+      </div>
+    </div>
+
     <!-- VIEW: Playground AI -->
     <div id="view-playground" class="view-content">
       <div class="panel-grid" style="grid-template-columns: 1fr 2fr; align-items: start;">
@@ -2189,6 +2523,7 @@ export function renderAdminDashboardPage(data: {
       'integrations': { title: 'Integrações de Canais', subtitle: 'Configure webhooks e gateways de entrega multicanal.' },
       'control-room': { title: 'Control Room', subtitle: 'Selecione campanha ou jornada, visualize diagrama e execute ações em tempo real.' },
       'newsletter-agent': { title: 'Agente Newsletter', subtitle: 'Inicie abordagens por contato e audite histórico, sentimento e feedback em uma única tela.' },
+      'service-agent': { title: 'Agente de Servicos', subtitle: 'Gerencie conversas de agendamento, orcamento e duvidas com rastreabilidade completa.' },
       'journeys': { title: 'Jornadas AI', subtitle: 'Crie e gerencie jornadas conversacionais com persona AI inteligente.' },
       'ai-prompts': { title: 'Engenharia de Prompt', subtitle: 'Versionamento, Rollback e Auditoria Oficial.' },
       'playground': { title: 'Playground AI', subtitle: 'Ambiente seguro para simular e calibrar o funil de IA.' },

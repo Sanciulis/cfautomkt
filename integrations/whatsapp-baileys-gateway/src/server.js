@@ -82,6 +82,15 @@ const waClient = new WhatsAppClient({
   onInboundMessage: async (inbound) => {
     if (!config.inboundWebhook?.url) return
 
+    logger.info(
+      {
+        sourceContact: inbound.sourceContact,
+        messageId: inbound.messageId,
+        preview: typeof inbound.message === 'string' ? inbound.message.slice(0, 120) : null,
+      },
+      'Forwarding inbound message to Worker webhook'
+    )
+
     await forwardInboundMessage({
       sourceContact: inbound.sourceContact,
       message: inbound.message,
@@ -112,6 +121,10 @@ app.get('/health', (_req, res) => {
     connected: status.connected,
     connecting: status.connecting,
     startedAt: status.startedAt,
+    inboundWebhookConfigured: Boolean(config.inboundWebhook?.url),
+    inboundWebhookHost: config.inboundWebhook?.url
+      ? new URL(config.inboundWebhook.url).host
+      : null,
   })
 })
 

@@ -195,7 +195,39 @@ Executar conversas de WhatsApp orientadas a conversão para newsletter semanal c
 
 ---
 
-### 4. AI Learning Loop (`src/scheduled.ts`)
+### 4. Agente Conversacional de Servicos (`src/service-agent.ts` + `src/routes/api.ts`)
+
+**Propósito**:
+Gerenciar conversas comerciais de WhatsApp para agendamento, orcamento e tira-duvidas com rastreabilidade fim-a-fim no painel admin.
+
+**Capacidades**:
+- Detecção de intenção (`appointment`, `quote`, `question`, `opt_out`, `other`)
+- Sinal de sentimento por mensagem
+- Registro de pipeline comercial:
+ - solicitacoes de agendamento (`service_appointments`)
+ - solicitacoes de orcamento (`service_quotes`)
+- Resposta automatica com fallback seguro para coleta de contexto
+
+**Persistência dedicada**:
+- `service_conversation_sessions`
+- `service_conversation_messages`
+- `service_appointments`
+- `service_quotes`
+
+**Operação no painel**:
+- Início manual por contato (`/admin/actions/service-agent/start`)
+- Resposta manual (`/admin/actions/service-agent/reply`)
+- Atualização de status, notas e follow-up (`/admin/actions/service-agent/status`)
+- Auditoria de sessão com histórico, agendamentos e orcamentos
+
+**Integração inbound**:
+- Endpoint `POST /webhooks/whatsapp/services/inbound`
+- Autenticação com `DISPATCH_BEARER_TOKEN`
+- Encaminhamento via gateway Baileys quando `INBOUND_WEBHOOK_URL` estiver configurado
+
+---
+
+### 5. AI Learning Loop (`src/scheduled.ts`)
 
 **Localização**: `src/scheduled.ts:140-175`
 

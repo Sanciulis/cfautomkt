@@ -358,6 +358,33 @@ Proximos passos:
 - Definir experimento A/B para mensagem inicial do agente.
 - Adicionar agregacao temporal de conversao por janela (24h/7d/30d).
 
+### 2026-04-03 - Agente Conversacional de Servicos (Agendamento, Orcamento e Duvidas)
+Data da atualizacao: 2026-04-03
+Responsavel: Engenharia
+Entrega realizada:
+- Criado modulo `service-agent.ts` para atendimento comercial no WhatsApp com intents de agendamento, orcamento, duvidas e opt-out.
+- Criadas tabelas dedicadas de sessao, historico e pipeline (`service_conversation_sessions`, `service_conversation_messages`, `service_appointments`, `service_quotes`).
+- Adicionado endpoint inbound `POST /webhooks/whatsapp/services/inbound` com autenticacao Bearer.
+- Painel Admin ganhou view dedicada para:
+ - iniciar atendimento por contato
+ - acompanhar historico da sessao
+ - registrar follow-up/notas operacionais
+ - visualizar eventos de agendamento e orcamento
+Fluxos impactados:
+- Captura e qualificacao de demanda comercial via WhatsApp
+- Rastreabilidade operacional de pipeline de atendimento
+Metricas antes:
+- Conversas comerciais de servicos nao tinham trilha estruturada unica entre inbound e operacao.
+Metricas depois:
+- Cada sessao gera historico auditavel, status de pipeline e eventos transacionais de agenda/orcamento.
+Riscos identificados:
+- Intencao ambigua pode classificar quote/agendamento com dados incompletos.
+Acoes corretivas:
+- Respostas de fallback coletam contexto faltante (servico, data/hora, faixa de investimento) para reduzir ruído.
+Proximos passos:
+- Adicionar score de qualificacao por sessao para priorizacao comercial.
+- Implementar SLA de follow-up com alertas por tempo sem resposta.
+
 ## Definicao de Sucesso do Programa
 O programa sera considerado bem-sucedido quando:
 1. Houver melhoria consistente de qualidade e conversao com evidencias.

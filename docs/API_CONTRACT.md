@@ -484,6 +484,50 @@ Comportamento:
 - `GET /admin/api/newsletter-agent/sessions/:sessionId/messages`
  - retorna sessao e historico completo de mensagens
 
+## Agente de Servicos via WhatsApp (Agendamento, Orcamento e Duvidas)
+
+### Inbound Webhook
+`POST /webhooks/whatsapp/services/inbound`
+
+Autenticacao:
+- Header `Authorization: Bearer <DISPATCH_BEARER_TOKEN>`
+
+Request (exemplo):
+```json
+{
+  "sourceContact": "5511999990001@s.whatsapp.net",
+  "message": "quero agendar uma consultoria para amanha 14h",
+  "messageId": "WPP123",
+  "timestamp": "1712092200",
+  "user": {
+    "name": "Carlos"
+  }
+}
+```
+
+Comportamento:
+- cria/atualiza sessao em `service_conversation_sessions`
+- registra mensagens em `service_conversation_messages`
+- classifica intencao (`appointment`, `quote`, `question`, `opt_out`, `other`)
+- cria eventos de pipeline quando aplicavel:
+ - `service_appointments` para intent de agendamento
+ - `service_quotes` para intent de orcamento
+- envia resposta automatica via gateway WhatsApp
+
+### Acoes no painel Admin (tela Agente Servicos)
+- `POST /admin/actions/service-agent/start`
+ - inicia atendimento por contato
+- `POST /admin/actions/service-agent/reply`
+ - envia resposta manual e registra no historico
+- `POST /admin/actions/service-agent/status`
+ - atualiza status da sessao, notas e follow-up
+
+### APIs de auditoria no painel Admin
+- `GET /admin/api/service-agent/overview`
+ - visao consolidada de pipeline, intents e sessoes
+- `GET /admin/api/service-agent/sessions/:sessionId/messages`
+ - retorna sessao, mensagens, agendamentos e orcamentos relacionados
+
 ## Erros comuns
 - `400`: payload invalido
 - `404`: usuario/campanha/jornada nao encontrado

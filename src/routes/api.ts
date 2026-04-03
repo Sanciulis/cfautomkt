@@ -34,12 +34,20 @@ import {
   updateNewsletterConversationSession,
   appendNewsletterConversationMessage,
   listNewsletterConversationMessages,
+  getLatestServiceConversationSessionByContact,
+  createServiceConversationSession,
+  updateServiceConversationSession,
+  appendServiceConversationMessage,
+  listServiceConversationMessages,
+  createServiceAppointment,
+  createServiceQuote,
 } from '../db'
 import { setUserMarketingConsent } from '../consent'
 import { generatePersonalizedMessage } from '../ai'
 import { executeCampaignDispatch } from '../dispatch'
 import { runPersonaConversation, generateJourneyOpeningMessage, simulatePersonaConversation } from '../persona'
 import { generateNewsletterAgentReply } from '../newsletter-agent'
+import { generateServiceAgentReply } from '../service-agent'
 
 const api = new Hono<{ Bindings: Bindings }>()
 
@@ -147,6 +155,58 @@ async function sendNewsletterAgentWhatsAppReply(
     message,
     metadata: {
       source: 'newsletter_conversation_agent',
+      sessionId,
+    },
+  }
+
+  const response = await fetch(dispatchUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${dispatchToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+
+  const responseText = await response.text()
+  return {
+    ok: response.ok,
+    status: response.status,
+    responsePreview: responseText.slice(0, 500),
+  }
+}
+
+async function sendServiceAgentWhatsAppReply(
+  env: Bindings,
+  destinationContact: string,
+  message: string,
+  sessionId: string
+): Promise<{ ok: boolean; status: number; responsePreview: string }> {
+  const dispatchUrl = await resolveDispatchUrl('whatsapp', env)
+  const dispatchToken = safeString(env.DISPATCH_BEARER_TOKEN)
+
+  if (!dispatchUrl || !dispatchToken) {
+    return {
+      ok: false,
+      status: 500,
+      responsePreview: 'WhatsApp dispatch is not configured for service agent.',
+    }
+  }
+
+  const payload = {
+    channel: 'whatsapp',
+    campaign: {
+      id: 'service-agent',
+      name: 'Service Conversational Agent',
+    },
+    user: {
+      id: `service-session-${sessionId}`,
+      phone: destinationContact,
+      preferredChannel: 'whatsapp',
+    },
+    message,
+    metadata: {
+      source: 'service_conversation_agent',
       sessionId,
     },
   }
@@ -577,6 +637,212 @@ api.post('/webhooks/whatsapp/inbound', async (c) => {
     sentiment: agentReply.sentiment,
     feedbackRating,
     reply: agentReply.replyText,
+    messagesStored: storedMessages.length,
+  })
+})
+
+// WhatsApp inbound webhook for service conversational agent
+api.post('/webhooks/whatsapp/services/inbound', async (c) => {
+  const configuredToken = safeString(c.env.DISPATCH_BEARER_TOKEN)
+  if (!configuredToken) {
+    return c.json({ error: 'DISPATCH_BEARER_TOKEN is not configured.' }, 500)
+  }
+
+  const providedToken = extractBearerToken(c.req.header('authorization') ?? null)
+  if (!providedToken || !constantTimeEqual(providedToken, configuredToken)) {
+    return c.json({ error: 'Unauthorized' }, 401)
+  }
+
+  const body = (await c.req.json().catch(() => null)) as
+    | Partial<{
+        sourceContact: string
+        from: string
+        contact: string
+        message: string
+        text: string
+        user: {
+          phone?: string
+          name?: string
+          id?: string
+        }
+        messageId: string
+        timestamp: string
+      }>
+    | null
+
+  if (!body) return c.json({ error: 'Invalid JSON body' }, 400)
+
+  const inboundMessage = safeString(body.message ?? body.text)
+  const normalizedContact = normalizeWhatsAppInboundContact(
+    body.sourceContact ?? body.from ?? body.contact ?? body.user?.phone
+  )
+
+  if (!normalizedContact) {
+    return c.json({ error: 'Missing or invalid source contact.' }, 400)
+  }
+
+  if (!inboundMessage) {
+    return c.json({ error: 'Missing inbound message text.' }, 400)
+  }
+
+  const inboundUser = await resolveInboundUserByContact(c.env, normalizedContact)
+  const customerName = safeString(body.user?.name) ?? safeString(inboundUser?.name)
+
+  let session = await getLatestServiceConversationSessionByContact(c.env, normalizedContact)
+  if (!session) {
+    session = await createServiceConversationSession(c.env, {
+      userId: inboundUser?.id ?? null,
+      sourceChannel: 'whatsapp',
+      sourceContact: normalizedContact,
+      status: 'active',
+    })
+  } else if (!session.user_id && inboundUser?.id) {
+    const updatedSession = await updateServiceConversationSession(c.env, session.id, {
+      userId: inboundUser.id,
+    })
+    if (updatedSession) session = updatedSession
+  }
+
+  const history = await listServiceConversationMessages(c.env, session.id, 30)
+  const agentReply = await generateServiceAgentReply(c.env, {
+    customerName,
+    inboundMessage,
+    history,
+  })
+
+  const nowIso = new Date().toISOString()
+
+  await appendServiceConversationMessage(c.env, {
+    sessionId: session.id,
+    direction: 'inbound',
+    messageText: inboundMessage,
+    intent: agentReply.intent,
+    sentimentScore: agentReply.sentiment.score,
+    sentimentLabel: agentReply.sentiment.label,
+    metadata: {
+      source: 'gateway_inbound',
+      messageId: safeString(body.messageId),
+      timestamp: safeString(body.timestamp),
+    },
+  })
+
+  const appointmentRecord =
+    agentReply.shouldCreateAppointment && agentReply.appointmentDraft
+      ? await createServiceAppointment(c.env, {
+          sessionId: session.id,
+          userId: session.user_id ?? inboundUser?.id ?? null,
+          sourceContact: normalizedContact,
+          serviceType: agentReply.appointmentDraft.serviceType,
+          requestedDate: agentReply.appointmentDraft.requestedDate,
+          requestedTime: agentReply.appointmentDraft.requestedTime,
+          timezone: agentReply.appointmentDraft.timezone,
+          notes: agentReply.appointmentDraft.notes,
+          status: 'pending',
+        })
+      : null
+
+  const quoteRecord =
+    agentReply.shouldCreateQuote && agentReply.quoteDraft
+      ? await createServiceQuote(c.env, {
+          sessionId: session.id,
+          userId: session.user_id ?? inboundUser?.id ?? null,
+          sourceContact: normalizedContact,
+          serviceType: agentReply.quoteDraft.serviceType,
+          budgetRange: agentReply.quoteDraft.budgetRange,
+          timeline: agentReply.quoteDraft.timeline,
+          details: agentReply.quoteDraft.details,
+          status: 'requested',
+        })
+      : null
+
+  const sessionStatus = agentReply.shouldOptOut
+    ? 'opt_out'
+    : appointmentRecord
+      ? 'scheduled'
+      : quoteRecord
+        ? 'quoted'
+        : agentReply.sessionStatus
+
+  const updatedAfterInbound = await updateServiceConversationSession(c.env, session.id, {
+    userId: session.user_id ?? inboundUser?.id ?? null,
+    status: sessionStatus,
+    latestIntent: agentReply.intent,
+    sentimentScore: agentReply.sentiment.score,
+    sentimentLabel: agentReply.sentiment.label,
+    lastMessageAt: nowIso,
+  })
+  if (updatedAfterInbound) session = updatedAfterInbound
+
+  if (inboundUser?.id) {
+    if (agentReply.shouldOptOut) {
+      await setUserMarketingConsent(c.env, inboundUser.id, false, 'service_agent_optout')
+    } else if (appointmentRecord || quoteRecord) {
+      await setUserMarketingConsent(c.env, inboundUser.id, true, 'service_agent_intent_capture')
+    }
+  }
+
+  const dispatchResult = await sendServiceAgentWhatsAppReply(
+    c.env,
+    normalizedContact,
+    agentReply.replyText,
+    session.id
+  )
+
+  if (!dispatchResult.ok) {
+    await appendServiceConversationMessage(c.env, {
+      sessionId: session.id,
+      direction: 'system',
+      messageText: `Falha ao enviar resposta do agente de servicos (HTTP ${dispatchResult.status}).`,
+      metadata: {
+        responsePreview: dispatchResult.responsePreview,
+      },
+    })
+
+    return c.json(
+      {
+        error: 'Failed to dispatch service agent response.',
+        statusCode: dispatchResult.status,
+        details: dispatchResult.responsePreview,
+        sessionId: session.id,
+      },
+      502
+    )
+  }
+
+  await appendServiceConversationMessage(c.env, {
+    sessionId: session.id,
+    direction: 'agent',
+    messageText: agentReply.replyText,
+    intent: agentReply.intent,
+    sentimentScore: agentReply.sentiment.score,
+    sentimentLabel: agentReply.sentiment.label,
+    aiModel: DEFAULT_AI_MODEL,
+    metadata: {
+      dispatchStatus: dispatchResult.status,
+      appointmentId: appointmentRecord?.id ?? null,
+      quoteId: quoteRecord?.id ?? null,
+    },
+  })
+
+  await updateServiceConversationSession(c.env, session.id, {
+    status: sessionStatus,
+    latestIntent: agentReply.intent,
+    sentimentScore: agentReply.sentiment.score,
+    sentimentLabel: agentReply.sentiment.label,
+    lastMessageAt: nowIso,
+  })
+
+  const storedMessages = await listServiceConversationMessages(c.env, session.id, 100)
+
+  return c.json({
+    status: 'success',
+    sessionId: session.id,
+    sessionStatus,
+    intent: agentReply.intent,
+    sentiment: agentReply.sentiment,
+    reply: agentReply.replyText,
+    appointmentId: appointmentRecord?.id ?? null,
+    quoteId: quoteRecord?.id ?? null,
     messagesStored: storedMessages.length,
   })
 })

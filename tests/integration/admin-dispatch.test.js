@@ -44,6 +44,10 @@ class MockD1Database {
     this.journeyEnrollments = seed.journeyEnrollments ?? []
     this.newsletterConversationSessions = seed.newsletterConversationSessions ?? []
     this.newsletterConversationMessages = seed.newsletterConversationMessages ?? []
+    this.serviceConversationSessions = seed.serviceConversationSessions ?? []
+    this.serviceConversationMessages = seed.serviceConversationMessages ?? []
+    this.serviceAppointments = seed.serviceAppointments ?? []
+    this.serviceQuotes = seed.serviceQuotes ?? []
   }
 
   hydrateJourney(journey) {
@@ -156,6 +160,52 @@ class MockD1Database {
         positive: sessions.filter((item) => item.sentiment_label === 'positive').length,
         neutral: sessions.filter((item) => item.sentiment_label === 'neutral').length,
         negative: sessions.filter((item) => item.sentiment_label === 'negative').length,
+      }
+    }
+
+    if (
+      normalized.includes('count(*) as total_sessions') &&
+      normalized.includes('from service_conversation_sessions')
+    ) {
+      const sessions = this.serviceConversationSessions
+      const avgSentiment = sessions.length
+        ? sessions.reduce((sum, item) => sum + Number(item.sentiment_score ?? 0), 0) / sessions.length
+        : null
+
+      return {
+        total_sessions: sessions.length,
+        active_sessions: sessions.filter((item) => item.status === 'active').length,
+        qualified_sessions: sessions.filter((item) => item.status === 'qualified').length,
+        scheduled_sessions: sessions.filter((item) => item.status === 'scheduled').length,
+        quoted_sessions: sessions.filter((item) => item.status === 'quoted').length,
+        opt_out_sessions: sessions.filter((item) => item.status === 'opt_out').length,
+        avg_sentiment: avgSentiment,
+      }
+    }
+
+    if (
+      normalized.includes("sum(case when latest_intent = 'appointment' then 1 else 0 end) as appointment") &&
+      normalized.includes('from service_conversation_sessions')
+    ) {
+      const sessions = this.serviceConversationSessions
+      return {
+        appointment: sessions.filter((item) => item.latest_intent === 'appointment').length,
+        quote: sessions.filter((item) => item.latest_intent === 'quote').length,
+        question: sessions.filter((item) => item.latest_intent === 'question').length,
+        opt_out: sessions.filter((item) => item.latest_intent === 'opt_out').length,
+        other: sessions.filter((item) => item.latest_intent === 'other' || !item.latest_intent).length,
+      }
+    }
+
+    if (
+      normalized.includes("(select count(*) from service_appointments where status = 'pending') as appointments_pending")
+    ) {
+      return {
+        appointments_pending: this.serviceAppointments.filter((item) => item.status === 'pending').length,
+        appointments_confirmed: this.serviceAppointments.filter((item) => item.status === 'confirmed').length,
+        quotes_requested: this.serviceQuotes.filter((item) => item.status === 'requested').length,
+        quotes_sent: this.serviceQuotes.filter((item) => item.status === 'sent').length,
+        quotes_accepted: this.serviceQuotes.filter((item) => item.status === 'accepted').length,
       }
     }
 
@@ -307,6 +357,40 @@ class MockD1Database {
           }
         })
     }
+
+      if (
+        normalized.includes('from service_conversation_sessions s') &&
+        normalized.includes('left join users u on u.id = s.user_id')
+      ) {
+        const [limitRaw] = params
+        const limit = Number(limitRaw) || 0
+        return [...this.serviceConversationSessions]
+          .sort((a, b) =>
+            String(b.last_message_at ?? b.updated_at ?? b.created_at ?? '').localeCompare(
+              String(a.last_message_at ?? a.updated_at ?? a.created_at ?? '')
+            )
+          )
+          .slice(0, limit)
+          .map((session) => {
+            const user = this.users.find((row) => row.id === session.user_id)
+            const messageCount = this.serviceConversationMessages.filter(
+              (message) => message.session_id === session.id
+            ).length
+
+            return {
+              id: session.id,
+              user_id: session.user_id,
+              user_name: user?.name ?? null,
+              source_contact: session.source_contact,
+              status: session.status,
+              latest_intent: session.latest_intent,
+              sentiment_score: session.sentiment_score,
+              sentiment_label: session.sentiment_label,
+              last_message_at: session.last_message_at,
+              message_count: messageCount,
+            }
+          })
+      }
 
     if (
       normalized ===

@@ -275,6 +275,122 @@ export type NewsletterAgentOverview = {
   recentSessions: NewsletterAgentRecentSession[]
 }
 
+export type ServiceConversationStatus =
+  | 'active'
+  | 'qualified'
+  | 'scheduled'
+  | 'quoted'
+  | 'opt_out'
+  | 'closed'
+
+export type ServiceAgentIntent = 'appointment' | 'quote' | 'question' | 'opt_out' | 'other'
+
+export type ServiceConversationDirection = 'inbound' | 'agent' | 'system'
+
+export type ServiceConversationSessionRecord = {
+  id: string
+  user_id: string | null
+  source_channel: string
+  source_contact: string
+  status: ServiceConversationStatus
+  latest_intent: ServiceAgentIntent | null
+  sentiment_score: number | null
+  sentiment_label: NewsletterSentimentLabel | null
+  notes: string | null
+  next_followup_at: string | null
+  last_message_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type ServiceConversationMessageRecord = {
+  id: number
+  session_id: string
+  direction: ServiceConversationDirection
+  message_text: string
+  intent: ServiceAgentIntent | null
+  sentiment_score: number | null
+  sentiment_label: NewsletterSentimentLabel | null
+  ai_model: string | null
+  metadata: string | null
+  created_at: string
+}
+
+export type ServiceAppointmentStatus = 'pending' | 'confirmed' | 'rescheduled' | 'cancelled'
+
+export type ServiceQuoteStatus = 'requested' | 'sent' | 'accepted' | 'rejected' | 'expired'
+
+export type ServiceAppointmentRecord = {
+  id: string
+  session_id: string
+  user_id: string | null
+  source_contact: string
+  service_type: string | null
+  requested_date: string | null
+  requested_time: string | null
+  timezone: string | null
+  notes: string | null
+  status: ServiceAppointmentStatus
+  created_at: string
+  updated_at: string
+}
+
+export type ServiceQuoteRecord = {
+  id: string
+  session_id: string
+  user_id: string | null
+  source_contact: string
+  service_type: string | null
+  budget_range: string | null
+  timeline: string | null
+  details: string | null
+  status: ServiceQuoteStatus
+  quote_value: number | null
+  created_at: string
+  updated_at: string
+}
+
+export type ServiceAgentRecentSession = {
+  id: string
+  userId: string | null
+  userName: string | null
+  sourceContact: string
+  status: ServiceConversationStatus
+  latestIntent: ServiceAgentIntent | null
+  sentimentScore: number | null
+  sentimentLabel: NewsletterSentimentLabel | null
+  lastMessageAt: string | null
+  messageCount: number
+}
+
+export type ServiceAgentOverview = {
+  generatedAt: string
+  totals: {
+    totalSessions: number
+    activeSessions: number
+    qualifiedSessions: number
+    scheduledSessions: number
+    quotedSessions: number
+    optOutSessions: number
+    averageSentiment: number
+  }
+  intentBuckets: {
+    appointment: number
+    quote: number
+    question: number
+    optOut: number
+    other: number
+  }
+  pipeline: {
+    appointmentsPending: number
+    appointmentsConfirmed: number
+    quotesRequested: number
+    quotesSent: number
+    quotesAccepted: number
+  }
+  recentSessions: ServiceAgentRecentSession[]
+}
+
 export type JourneyCreateInput = {
   id?: string | null
   name: string

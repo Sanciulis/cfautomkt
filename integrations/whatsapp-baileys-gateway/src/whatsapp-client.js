@@ -288,7 +288,24 @@ export class WhatsAppClient {
       this.handleConnectionUpdate(update)
     })
     socket.ev.on('messages.upsert', (event) => {
-      this.handleMessagesUpsert(event)
+      void this.handleMessagesUpsert(event)
+    })
+    socket.ev.on('messaging-history.set', (event) => {
+      const messages = Array.isArray(event?.messages) ? event.messages : []
+      if (!messages.length) return
+
+      this.logger.info(
+        {
+          messages: messages.length,
+          isLatest: Boolean(event?.isLatest),
+        },
+        'Received WhatsApp messaging-history.set event'
+      )
+
+      void this.handleMessagesUpsert({
+        type: 'messaging-history.set',
+        messages,
+      })
     })
   }
 
