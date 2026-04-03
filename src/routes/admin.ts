@@ -76,7 +76,9 @@ import {
   getAdminEmailIntegrationConfig,
   saveAdminEmailIntegrationConfig,
   getAdminTelegramIntegrationConfig,
-  saveAdminTelegramIntegrationConfig
+  saveAdminTelegramIntegrationConfig,
+  getAdminServiceAgentConfig,
+  saveAdminServiceAgentConfig,
 } from '../integration'
 import { executeCampaignDispatch } from '../dispatch'
 import { renderAdminLoginPage, renderAdminDashboardPage } from '../templates'
@@ -413,7 +415,7 @@ admin.get('/', async (c) => {
   const unauthorized = await ensureAdminSession(c)
   if (unauthorized) return c.redirect('/admin/login', 302)
 
-  const [overview, campaigns, decisions, users, whatsappIntegration, emailIntegration, telegramIntegration, journeys, newsletterOverview, serviceOverview] = await Promise.all([
+  const [overview, campaigns, decisions, users, whatsappIntegration, emailIntegration, telegramIntegration, serviceAgentConfig, journeys, newsletterOverview, serviceOverview] = await Promise.all([
     getOverviewMetrics(c.env),
     c.env.DB.prepare(
       'SELECT id, name, channel, status, updated_at FROM campaigns ORDER BY updated_at DESC LIMIT 30'
@@ -427,6 +429,7 @@ admin.get('/', async (c) => {
     getAdminWhatsAppIntegrationConfig(c.env),
     getAdminEmailIntegrationConfig(c.env),
     getAdminTelegramIntegrationConfig(c.env),
+    getAdminServiceAgentConfig(c.env),
     listJourneys(c.env),
     getNewsletterAgentOverview(c.env, 20),
     getServiceAgentOverview(c.env, 20),
@@ -872,6 +875,7 @@ admin.get('/', async (c) => {
         selectedMessages: focusedNewsletterMessages,
       },
       serviceAgent: serviceOverview,
+      serviceAgentConfig,
       serviceAgentSession: {
         selectedSessionId: focusedServiceSessionId,
         selectedSession: focusedServiceSession,
@@ -1344,6 +1348,7 @@ admin.post('/actions/service-agent/start', async (c) => {
   if (unauthorized) return c.redirect('/admin/login', 302)
 
   try {
+    const serviceAgentConfig = await getAdminServiceAgentConfig(c.env)
     const form = await c.req.parseBody()
     const normalizedContact = normalizeNewsletterContact(
       typeof form.contact === 'string' ? form.contact : null
@@ -1398,6 +1403,7 @@ admin.post('/actions/service-agent/start', async (c) => {
       (await generateServiceOpeningMessage(c.env, {
         customerName: providedName ?? linkedUser?.name ?? null,
         contextHint: 'Abordagem inicial pelo painel administrativo.',
+        config: serviceAgentConfig,
       }))
 
     const dispatchResult = await sendServiceAgentWhatsAppMessage(
@@ -1438,7 +1444,7 @@ admin.post('/actions/service-agent/start', async (c) => {
       intent,
       sentimentScore: sentiment.score,
       sentimentLabel: sentiment.label,
-      aiModel: customOpeningMessage ? null : DEFAULT_AI_MODEL,
+      aiModel: customOpeningMessage ? null : serviceAgentConfig.aiModel,
       metadata: {
         source: 'admin_manual_start',
       },
@@ -1627,6 +1633,82 @@ admin.post('/actions/service-agent/status', async (c) => {
   } catch (error) {
     return c.redirect(
       buildAdminServiceRedirect(`Falha ao atualizar sessao: ${String(error)}`, 'error'),
+      302
+    )
+  }
+})
+
+// Action - Save Service Agent runtime configuration
+admin.post('/actions/service-agent/config/save', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    const currentConfig = await getAdminServiceAgentConfig(c.env)
+    const form = await c.req.parseBody()
+
+    const isChecked = (value: unknown): boolean =>
+      value === 'on' || value === 'true' || value === '1'
+
+    const parseReplyLimit = (value: unknown, fallback: number): number => {
+      const raw = typeof value === 'string' ? safeString(value) : null
+      const parsed = raw ? toNumber(raw) : fallback
+      if (!Number.isFinite(parsed)) return fallback
+      return Math.max(160, Math.min(700, Math.round(parsed)))
+    }
+
+    const parseTime = (value: unknown): string | null => {
+      const timeValue = safeString(typeof value === 'string' ? value : null)
+      if (!timeValue) return null
+      return /^([01]\d|2[0-3]):([0-5]\d)$/.test(timeValue) ? timeValue : null
+    }
+
+    const businessHoursEnabled = isChecked(form.businessHoursEnabled)
+    const businessHoursStart = parseTime(form.businessHoursStart)
+    const businessHoursEnd = parseTime(form.businessHoursEnd)
+
+    if (businessHoursEnabled && (!businessHoursStart || !businessHoursEnd)) {
+      return c.redirect(
+        buildAdminServiceRedirect(
+          'Horario comercial invalido. Use o formato HH:MM para inicio e fim.',
+          'error'
+        ),
+        302
+      )
+    }
+
+    const config = {
+      autoReplyEnabled: isChecked(form.autoReplyEnabled),
+      autoCreateAppointments: isChecked(form.autoCreateAppointments),
+      autoCreateQuotes: isChecked(form.autoCreateQuotes),
+      businessHoursEnabled,
+      businessHoursStart: businessHoursStart ?? currentConfig.businessHoursStart,
+      businessHoursEnd: businessHoursEnd ?? currentConfig.businessHoursEnd,
+      timezone:
+        safeString(typeof form.timezone === 'string' ? form.timezone : null) ?? currentConfig.timezone,
+      offHoursAutoReply:
+        safeString(typeof form.offHoursAutoReply === 'string' ? form.offHoursAutoReply : null) ??
+        currentConfig.offHoursAutoReply,
+      openingTemplate:
+        safeString(typeof form.openingTemplate === 'string' ? form.openingTemplate : null) ??
+        currentConfig.openingTemplate,
+      qualificationScript:
+        safeString(typeof form.qualificationScript === 'string' ? form.qualificationScript : null) ??
+        currentConfig.qualificationScript,
+      aiModel:
+        safeString(typeof form.aiModel === 'string' ? form.aiModel : null) ?? currentConfig.aiModel,
+      maxReplyChars: parseReplyLimit(form.maxReplyChars, currentConfig.maxReplyChars),
+      updatedAt: new Date().toISOString(),
+    }
+
+    await saveAdminServiceAgentConfig(c.env, config)
+    return c.redirect(
+      buildAdminServiceRedirect('Configuracao do Service Agent salva com sucesso.', 'success'),
+      302
+    )
+  } catch (error) {
+    return c.redirect(
+      buildAdminServiceRedirect(`Falha ao salvar configuracao: ${String(error)}`, 'error'),
       302
     )
   }

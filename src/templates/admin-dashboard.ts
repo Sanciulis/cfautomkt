@@ -185,6 +185,21 @@ export function renderAdminDashboardPage(data: {
       messageCount: number
     }>
   }
+  serviceAgentConfig: {
+    autoReplyEnabled: boolean
+    autoCreateAppointments: boolean
+    autoCreateQuotes: boolean
+    businessHoursEnabled: boolean
+    businessHoursStart: string | null
+    businessHoursEnd: string | null
+    timezone: string
+    offHoursAutoReply: string | null
+    openingTemplate: string | null
+    qualificationScript: string | null
+    aiModel: string
+    maxReplyChars: number
+    updatedAt: string | null
+  }
   serviceAgentSession: {
     selectedSessionId: string | null
     selectedSession: {
@@ -746,6 +761,25 @@ export function renderAdminDashboardPage(data: {
     : '-'
   const serviceContactPrefill = escapeHtml(selectedServiceSession?.sourceContact || '')
   const serviceIntentLabel = escapeHtml(selectedServiceSession?.latestIntent || '-')
+
+  const serviceAgentConfig = data.serviceAgentConfig
+  const serviceConfigUpdatedAtLabel = serviceAgentConfig.updatedAt
+    ? new Date(serviceAgentConfig.updatedAt).toLocaleString('pt-BR')
+    : 'nao configurado'
+  const serviceConfigAutoReplyChecked = serviceAgentConfig.autoReplyEnabled ? 'checked' : ''
+  const serviceConfigAutoAppointmentsChecked = serviceAgentConfig.autoCreateAppointments
+    ? 'checked'
+    : ''
+  const serviceConfigAutoQuotesChecked = serviceAgentConfig.autoCreateQuotes ? 'checked' : ''
+  const serviceConfigBusinessHoursChecked = serviceAgentConfig.businessHoursEnabled ? 'checked' : ''
+  const serviceConfigAiModel = escapeHtml(serviceAgentConfig.aiModel || DEFAULT_AI_MODEL)
+  const serviceConfigMaxReplyChars = escapeHtml(String(serviceAgentConfig.maxReplyChars || 340))
+  const serviceConfigTimezone = escapeHtml(serviceAgentConfig.timezone || 'America/Sao_Paulo')
+  const serviceConfigBusinessHoursStart = escapeHtml(serviceAgentConfig.businessHoursStart || '09:00')
+  const serviceConfigBusinessHoursEnd = escapeHtml(serviceAgentConfig.businessHoursEnd || '18:00')
+  const serviceConfigOpeningTemplate = escapeHtml(serviceAgentConfig.openingTemplate || '')
+  const serviceConfigOffHoursReply = escapeHtml(serviceAgentConfig.offHoursAutoReply || '')
+  const serviceConfigQualificationScript = escapeHtml(serviceAgentConfig.qualificationScript || '')
 
   return `<!doctype html>
 <html lang="pt-BR">
@@ -2041,6 +2075,76 @@ export function renderAdminDashboardPage(data: {
           <span class="stat-value">${Number(data.serviceAgent.totals.averageSentiment).toFixed(2)}</span>
           <div class="stat-accent" style="background:var(--secondary)"></div>
         </div>
+      </section>
+
+      <section class="panel" style="margin-bottom: 24px;">
+        <div class="panel-header">
+          <h3 class="panel-title">Configuracao Completa do Service Agent</h3>
+          <span class="badge badge-outline">Atualizado ${escapeHtml(serviceConfigUpdatedAtLabel)}</span>
+        </div>
+        <p class="text-sm opacity-60 mb-6">Ajuste o comportamento operacional do agente, regras de captura e parametros de resposta em tempo real.</p>
+        <form method="post" action="/admin/actions/service-agent/config/save">
+          <div class="panel-grid" style="grid-template-columns: 1fr 1fr 1fr; gap: 14px;">
+            <label class="input-label" style="display:flex;align-items:center;gap:8px;margin:0;">
+              <input type="checkbox" name="autoReplyEnabled" value="true" ${serviceConfigAutoReplyChecked} />
+              Auto reply no inbound
+            </label>
+            <label class="input-label" style="display:flex;align-items:center;gap:8px;margin:0;">
+              <input type="checkbox" name="autoCreateAppointments" value="true" ${serviceConfigAutoAppointmentsChecked} />
+              Auto criar agendamentos
+            </label>
+            <label class="input-label" style="display:flex;align-items:center;gap:8px;margin:0;">
+              <input type="checkbox" name="autoCreateQuotes" value="true" ${serviceConfigAutoQuotesChecked} />
+              Auto criar orcamentos
+            </label>
+            <label class="input-label" style="display:flex;align-items:center;gap:8px;margin:0;">
+              <input type="checkbox" name="businessHoursEnabled" value="true" ${serviceConfigBusinessHoursChecked} />
+              Restringir ao horario comercial
+            </label>
+          </div>
+
+          <div class="panel-grid" style="grid-template-columns: 1.2fr 0.8fr 0.8fr 0.8fr; gap: 14px; margin-top: 14px;">
+            <div class="form-group">
+              <label class="input-label">Modelo de IA</label>
+              <input class="input-control" name="aiModel" value="${serviceConfigAiModel}" placeholder="@cf/meta/llama-3-8b-instruct" />
+            </div>
+            <div class="form-group">
+              <label class="input-label">Max chars por resposta</label>
+              <input class="input-control" name="maxReplyChars" type="number" min="160" max="700" value="${serviceConfigMaxReplyChars}" />
+            </div>
+            <div class="form-group">
+              <label class="input-label">Inicio expediente</label>
+              <input class="input-control" name="businessHoursStart" type="time" value="${serviceConfigBusinessHoursStart}" />
+            </div>
+            <div class="form-group">
+              <label class="input-label">Fim expediente</label>
+              <input class="input-control" name="businessHoursEnd" type="time" value="${serviceConfigBusinessHoursEnd}" />
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-top: 14px;">
+            <label class="input-label">Timezone operacional</label>
+            <input class="input-control" name="timezone" value="${serviceConfigTimezone}" placeholder="America/Sao_Paulo" />
+          </div>
+
+          <div class="panel-grid" style="grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px;">
+            <div class="form-group">
+              <label class="input-label">Template de abertura</label>
+              <textarea class="input-control" name="openingTemplate" rows="4" placeholder="Use {{name}} para personalizar.">${serviceConfigOpeningTemplate}</textarea>
+            </div>
+            <div class="form-group">
+              <label class="input-label">Mensagem fora do horario</label>
+              <textarea class="input-control" name="offHoursAutoReply" rows="4">${serviceConfigOffHoursReply}</textarea>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-top: 14px;">
+            <label class="input-label">Diretriz de qualificacao comercial</label>
+            <textarea class="input-control" name="qualificationScript" rows="3">${serviceConfigQualificationScript}</textarea>
+          </div>
+
+          <button type="submit" class="btn btn-primary" style="margin-top: 10px; width:auto;">Salvar Configuracao do Agente</button>
+        </form>
       </section>
 
       <div class="panel-grid" style="grid-template-columns: 1fr 1fr;">

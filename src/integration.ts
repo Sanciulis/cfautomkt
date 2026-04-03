@@ -2,17 +2,57 @@ import type {
   Bindings, 
   AdminWhatsAppIntegrationConfig, 
   AdminEmailIntegrationConfig, 
-  AdminTelegramIntegrationConfig 
+  AdminTelegramIntegrationConfig,
+  AdminServiceAgentConfig 
 } from './types'
 import { 
   ADMIN_WHATSAPP_INTEGRATION_CONFIG_KEY, 
   ADMIN_EMAIL_INTEGRATION_CONFIG_KEY, 
   ADMIN_TELEGRAM_INTEGRATION_CONFIG_KEY, 
+  ADMIN_SERVICE_AGENT_CONFIG_KEY,
   DEFAULT_WHATSAPP_TEST_MESSAGE,
   DEFAULT_EMAIL_TEST_MESSAGE,
-  DEFAULT_TELEGRAM_TEST_MESSAGE
+  DEFAULT_TELEGRAM_TEST_MESSAGE,
+  DEFAULT_AI_MODEL,
+  DEFAULT_SERVICE_AGENT_OFF_HOURS_REPLY,
+  DEFAULT_SERVICE_AGENT_OPENING_TEMPLATE,
+  DEFAULT_SERVICE_AGENT_QUALIFICATION_SCRIPT
 } from './constants'
 import { safeString } from './utils'
+
+const BUSINESS_HOUR_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/
+
+function parseBoolean(value: unknown, fallback: boolean): boolean {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (normalized === 'true' || normalized === '1' || normalized === 'on') return true
+    if (normalized === 'false' || normalized === '0' || normalized === 'off') return false
+  }
+  return fallback
+}
+
+function clampNumber(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN
+  if (!Number.isFinite(parsed)) return fallback
+  return Math.max(min, Math.min(max, Math.round(parsed)))
+}
+
+function normalizeBusinessHour(value: unknown): string | null {
+  const parsed = safeString(value)
+  if (!parsed) return null
+  return BUSINESS_HOUR_PATTERN.test(parsed) ? parsed : null
+}
+
+function normalizeTimezone(value: unknown): string {
+  const timezone = safeString(value) ?? 'America/Sao_Paulo'
+  try {
+    Intl.DateTimeFormat('pt-BR', { timeZone: timezone }).format(new Date())
+    return timezone
+  } catch {
+    return 'America/Sao_Paulo'
+  }
+}
 
 export function validateAdminIntegrationWebhookUrl(
   value: string,
@@ -180,4 +220,68 @@ export async function saveAdminTelegramIntegrationConfig(
   config: AdminTelegramIntegrationConfig
 ): Promise<void> {
   await env.MARTECH_KV.put(ADMIN_TELEGRAM_INTEGRATION_CONFIG_KEY, JSON.stringify(config))
+}
+
+export function normalizeServiceAgentConfig(
+  input: unknown,
+  _env: Bindings
+): AdminServiceAgentConfig {
+  if (!input || typeof input !== 'object') {
+    return {
+      autoReplyEnabled: true,
+      autoCreateAppointments: true,
+      autoCreateQuotes: true,
+      businessHoursEnabled: false,
+      businessHoursStart: '09:00',
+      businessHoursEnd: '18:00',
+      timezone: 'America/Sao_Paulo',
+      offHoursAutoReply: DEFAULT_SERVICE_AGENT_OFF_HOURS_REPLY,
+      openingTemplate: DEFAULT_SERVICE_AGENT_OPENING_TEMPLATE,
+      qualificationScript: DEFAULT_SERVICE_AGENT_QUALIFICATION_SCRIPT,
+      aiModel: DEFAULT_AI_MODEL,
+      maxReplyChars: 340,
+      updatedAt: null,
+    }
+  }
+
+  const parsed = input as Partial<AdminServiceAgentConfig>
+
+  return {
+    autoReplyEnabled: parseBoolean(parsed.autoReplyEnabled, true),
+    autoCreateAppointments: parseBoolean(parsed.autoCreateAppointments, true),
+    autoCreateQuotes: parseBoolean(parsed.autoCreateQuotes, true),
+    businessHoursEnabled: parseBoolean(parsed.businessHoursEnabled, false),
+    businessHoursStart: normalizeBusinessHour(parsed.businessHoursStart) ?? '09:00',
+    businessHoursEnd: normalizeBusinessHour(parsed.businessHoursEnd) ?? '18:00',
+    timezone: normalizeTimezone(parsed.timezone),
+    offHoursAutoReply:
+      safeString(parsed.offHoursAutoReply) ?? DEFAULT_SERVICE_AGENT_OFF_HOURS_REPLY,
+    openingTemplate: safeString(parsed.openingTemplate) ?? DEFAULT_SERVICE_AGENT_OPENING_TEMPLATE,
+    qualificationScript:
+      safeString(parsed.qualificationScript) ?? DEFAULT_SERVICE_AGENT_QUALIFICATION_SCRIPT,
+    aiModel: safeString(parsed.aiModel) ?? DEFAULT_AI_MODEL,
+    maxReplyChars: clampNumber(parsed.maxReplyChars, 340, 160, 700),
+    updatedAt: safeString(parsed.updatedAt),
+  }
+}
+
+export async function getAdminServiceAgentConfig(
+  env: Bindings
+): Promise<AdminServiceAgentConfig> {
+  const raw = await env.MARTECH_KV.get(ADMIN_SERVICE_AGENT_CONFIG_KEY)
+  if (!raw) return normalizeServiceAgentConfig(null, env)
+
+  try {
+    const parsed = JSON.parse(raw)
+    return normalizeServiceAgentConfig(parsed, env)
+  } catch {
+    return normalizeServiceAgentConfig(null, env)
+  }
+}
+
+export async function saveAdminServiceAgentConfig(
+  env: Bindings,
+  config: AdminServiceAgentConfig
+): Promise<void> {
+  await env.MARTECH_KV.put(ADMIN_SERVICE_AGENT_CONFIG_KEY, JSON.stringify(config))
 }

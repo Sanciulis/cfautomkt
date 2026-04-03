@@ -385,6 +385,34 @@ Proximos passos:
 - Adicionar score de qualificacao por sessao para priorizacao comercial.
 - Implementar SLA de follow-up com alertas por tempo sem resposta.
 
+### 2026-04-03 - Painel completo de configuracao do Service Agent
+Data da atualizacao: 2026-04-03
+Responsavel: Engenharia
+Entrega realizada:
+- Adicionada configuracao dedicada do Service Agent com persistencia em KV (`admin_config:service_agent`).
+- Painel Admin ganhou formulario completo para ajustar:
+ - auto-reply inbound
+ - captura automatica de agendamentos/orcamentos
+ - horario comercial e timezone
+ - template de abertura, resposta fora de horario e script de qualificacao
+ - modelo de IA e limite de caracteres
+- Runtime do agente passou a ler essa configuracao em tempo real para abertura e respostas do webhook de servicos.
+- Quando auto-reply estiver desligado, inbound e registrado e sinalizado para tratamento manual (`manual_queue`).
+Fluxos impactados:
+- Operacao comercial de atendimento via WhatsApp
+- Governanca de prompts e parametros operacionais sem alteracao de codigo
+Metricas antes:
+- Parametros do agente estavam hardcoded no runtime, sem painel dedicado.
+Metricas depois:
+- Ajustes operacionais do Service Agent podem ser feitos pelo Admin com efeito imediato.
+Riscos identificados:
+- Configuracoes incoerentes de horario/timezone podem gerar resposta fora da janela esperada.
+Acoes corretivas:
+- Validacao de formato HH:MM no save e fallback seguro para defaults em leitura.
+Proximos passos:
+- Adicionar dry-run de configuracao para simular resposta do agente antes de publicar mudancas.
+- Versionar historico de mudancas de configuracao por usuario admin.
+
 ## Definicao de Sucesso do Programa
 O programa sera considerado bem-sucedido quando:
 1. Houver melhoria consistente de qualidade e conversao com evidencias.

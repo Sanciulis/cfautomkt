@@ -218,6 +218,12 @@ Gerenciar conversas comerciais de WhatsApp para agendamento, orcamento e tira-du
 - Início manual por contato (`/admin/actions/service-agent/start`)
 - Resposta manual (`/admin/actions/service-agent/reply`)
 - Atualização de status, notas e follow-up (`/admin/actions/service-agent/status`)
+- Configuração operacional completa (`/admin/actions/service-agent/config/save`):
+ - auto-reply inbound (ligar/desligar)
+ - captura automática de agendamentos e orcamentos
+ - janela de horário comercial + timezone
+ - template de abertura, mensagem fora do horario e diretriz de qualificação
+ - modelo de IA e limite de caracteres por resposta
 - Auditoria de sessão com histórico, agendamentos e orcamentos
 
 **Integração inbound**:

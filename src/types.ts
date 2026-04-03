@@ -491,3 +491,19 @@ export type AdminTelegramIntegrationConfig = {
   testMessage: string | null
   updatedAt: string | null
 }
+
+export type AdminServiceAgentConfig = {
+  autoReplyEnabled: boolean
+  autoCreateAppointments: boolean
+  autoCreateQuotes: boolean
+  businessHoursEnabled: boolean
+  businessHoursStart: string | null
+  businessHoursEnd: string | null
+  timezone: string
+  offHoursAutoReply: string | null
+  openingTemplate: string | null
+  qualificationScript: string | null
+  aiModel: string
+  maxReplyChars: number
+  updatedAt: string | null
+}

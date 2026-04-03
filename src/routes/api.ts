@@ -47,7 +47,12 @@ import { generatePersonalizedMessage } from '../ai'
 import { executeCampaignDispatch } from '../dispatch'
 import { runPersonaConversation, generateJourneyOpeningMessage, simulatePersonaConversation } from '../persona'
 import { generateNewsletterAgentReply } from '../newsletter-agent'
-import { generateServiceAgentReply } from '../service-agent'
+import {
+  analyzeServiceSentiment,
+  detectServiceIntent,
+  generateServiceAgentReply,
+} from '../service-agent'
+import { getAdminServiceAgentConfig } from '../integration'
 
 const api = new Hono<{ Bindings: Bindings }>()
 
@@ -703,11 +708,74 @@ api.post('/webhooks/whatsapp/services/inbound', async (c) => {
     if (updatedSession) session = updatedSession
   }
 
+  const serviceAgentConfig = await getAdminServiceAgentConfig(c.env)
   const history = await listServiceConversationMessages(c.env, session.id, 30)
+
+  if (!serviceAgentConfig.autoReplyEnabled) {
+    const nowIso = new Date().toISOString()
+    const manualIntent = detectServiceIntent(inboundMessage)
+    const manualSentiment = analyzeServiceSentiment(inboundMessage)
+    const manualStatus = manualIntent === 'opt_out' ? 'opt_out' : 'active'
+
+    await appendServiceConversationMessage(c.env, {
+      sessionId: session.id,
+      direction: 'inbound',
+      messageText: inboundMessage,
+      intent: manualIntent,
+      sentimentScore: manualSentiment.score,
+      sentimentLabel: manualSentiment.label,
+      metadata: {
+        source: 'gateway_inbound',
+        messageId: safeString(body.messageId),
+        timestamp: safeString(body.timestamp),
+        autoReplyEnabled: false,
+      },
+    })
+
+    await updateServiceConversationSession(c.env, session.id, {
+      userId: session.user_id ?? inboundUser?.id ?? null,
+      status: manualStatus,
+      latestIntent: manualIntent,
+      sentimentScore: manualSentiment.score,
+      sentimentLabel: manualSentiment.label,
+      lastMessageAt: nowIso,
+    })
+
+    if (inboundUser?.id && manualIntent === 'opt_out') {
+      await setUserMarketingConsent(c.env, inboundUser.id, false, 'service_agent_optout')
+    }
+
+    await appendServiceConversationMessage(c.env, {
+      sessionId: session.id,
+      direction: 'system',
+      messageText:
+        'Auto reply desativado no painel. Mensagem inbound registrada para tratamento manual.',
+      metadata: {
+        source: 'service_agent_config',
+      },
+    })
+
+    const storedMessages = await listServiceConversationMessages(c.env, session.id, 100)
+
+    return c.json(
+      {
+        status: 'manual_queue',
+        sessionId: session.id,
+        sessionStatus: manualStatus,
+        intent: manualIntent,
+        sentiment: manualSentiment,
+        reply: null,
+        messagesStored: storedMessages.length,
+      },
+      202
+    )
+  }
+
   const agentReply = await generateServiceAgentReply(c.env, {
     customerName,
     inboundMessage,
     history,
+    config: serviceAgentConfig,
   })
 
   const nowIso = new Date().toISOString()
@@ -727,7 +795,9 @@ api.post('/webhooks/whatsapp/services/inbound', async (c) => {
   })
 
   const appointmentRecord =
-    agentReply.shouldCreateAppointment && agentReply.appointmentDraft
+    serviceAgentConfig.autoCreateAppointments &&
+    agentReply.shouldCreateAppointment &&
+    agentReply.appointmentDraft
       ? await createServiceAppointment(c.env, {
           sessionId: session.id,
           userId: session.user_id ?? inboundUser?.id ?? null,
@@ -742,7 +812,9 @@ api.post('/webhooks/whatsapp/services/inbound', async (c) => {
       : null
 
   const quoteRecord =
-    agentReply.shouldCreateQuote && agentReply.quoteDraft
+    serviceAgentConfig.autoCreateQuotes &&
+    agentReply.shouldCreateQuote &&
+    agentReply.quoteDraft
       ? await createServiceQuote(c.env, {
           sessionId: session.id,
           userId: session.user_id ?? inboundUser?.id ?? null,
@@ -816,7 +888,7 @@ api.post('/webhooks/whatsapp/services/inbound', async (c) => {
     intent: agentReply.intent,
     sentimentScore: agentReply.sentiment.score,
     sentimentLabel: agentReply.sentiment.label,
-    aiModel: DEFAULT_AI_MODEL,
+    aiModel: serviceAgentConfig.aiModel,
     metadata: {
       dispatchStatus: dispatchResult.status,
       appointmentId: appointmentRecord?.id ?? null,

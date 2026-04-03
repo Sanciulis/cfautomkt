@@ -1,11 +1,17 @@
 import type {
+  AdminServiceAgentConfig,
   Bindings,
   NewsletterSentimentLabel,
   ServiceAgentIntent,
   ServiceConversationMessageRecord,
   ServiceConversationStatus,
 } from './types'
-import { DEFAULT_AI_MODEL } from './constants'
+import {
+  DEFAULT_AI_MODEL,
+  DEFAULT_SERVICE_AGENT_OFF_HOURS_REPLY,
+  DEFAULT_SERVICE_AGENT_OPENING_TEMPLATE,
+  DEFAULT_SERVICE_AGENT_QUALIFICATION_SCRIPT,
+} from './constants'
 import { extractAIText, safeString } from './utils'
 import { logAIInference } from './ai-observability'
 
@@ -99,6 +105,91 @@ const SERVICE_KEYWORDS: Array<{ pattern: string; label: string }> = [
   { pattern: 'crm', label: 'implantacao crm' },
   { pattern: 'site', label: 'site ou landing page' },
 ]
+
+type ResolvedServiceAgentConfig = {
+  businessHoursEnabled: boolean
+  businessHoursStart: string | null
+  businessHoursEnd: string | null
+  timezone: string
+  offHoursAutoReply: string
+  openingTemplate: string
+  qualificationScript: string
+  aiModel: string
+  maxReplyChars: number
+}
+
+function resolveRuntimeConfig(config?: AdminServiceAgentConfig | null): ResolvedServiceAgentConfig {
+  const maxReplyChars = Number(config?.maxReplyChars)
+  return {
+    businessHoursEnabled: Boolean(config?.businessHoursEnabled),
+    businessHoursStart: safeString(config?.businessHoursStart) ?? '09:00',
+    businessHoursEnd: safeString(config?.businessHoursEnd) ?? '18:00',
+    timezone: safeString(config?.timezone) ?? 'America/Sao_Paulo',
+    offHoursAutoReply:
+      safeString(config?.offHoursAutoReply) ?? DEFAULT_SERVICE_AGENT_OFF_HOURS_REPLY,
+    openingTemplate:
+      safeString(config?.openingTemplate) ?? DEFAULT_SERVICE_AGENT_OPENING_TEMPLATE,
+    qualificationScript:
+      safeString(config?.qualificationScript) ?? DEFAULT_SERVICE_AGENT_QUALIFICATION_SCRIPT,
+    aiModel: safeString(config?.aiModel) ?? DEFAULT_AI_MODEL,
+    maxReplyChars:
+      Number.isFinite(maxReplyChars) && maxReplyChars >= 160 && maxReplyChars <= 700
+        ? Math.round(maxReplyChars)
+        : 340,
+  }
+}
+
+function parseHourToMinutes(value: string | null): number | null {
+  const raw = safeString(value)
+  if (!raw) return null
+  const match = raw.match(/^([01]\d|2[0-3]):([0-5]\d)$/)
+  if (!match) return null
+  const hour = Number(match[1])
+  const minute = Number(match[2])
+  return hour * 60 + minute
+}
+
+function getLocalTimeMinutes(timezone: string): number | null {
+  try {
+    const formatted = new Intl.DateTimeFormat('en-GB', {
+      timeZone: timezone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(new Date())
+
+    const [hourPart, minutePart] = formatted.split(':')
+    const hour = Number(hourPart)
+    const minute = Number(minutePart)
+    if (!Number.isFinite(hour) || !Number.isFinite(minute)) return null
+    return hour * 60 + minute
+  } catch {
+    return null
+  }
+}
+
+function isInsideBusinessHours(config: ResolvedServiceAgentConfig): boolean {
+  if (!config.businessHoursEnabled) return true
+
+  const startMinutes = parseHourToMinutes(config.businessHoursStart)
+  const endMinutes = parseHourToMinutes(config.businessHoursEnd)
+  const nowMinutes = getLocalTimeMinutes(config.timezone)
+
+  if (startMinutes === null || endMinutes === null || nowMinutes === null) return true
+
+  if (startMinutes <= endMinutes) {
+    return nowMinutes >= startMinutes && nowMinutes <= endMinutes
+  }
+
+  return nowMinutes >= startMinutes || nowMinutes <= endMinutes
+}
+
+function applyTemplate(template: string, customerName: string | null): string {
+  const customerLabel = safeString(customerName) ?? 'cliente'
+  return template
+    .replace(/{{\s*name\s*}}/gi, customerLabel)
+    .replace(/{{\s*optOutHint\s*}}/gi, 'Se preferir parar, e so responder SAIR.')
+}
 
 function clampSentiment(value: number): number {
   return Math.max(-1, Math.min(1, value))
@@ -211,8 +302,12 @@ function buildConversationContext(messages: ServiceConversationMessageRecord[]):
     .join('\n')
 }
 
-function buildSystemPrompt(customerName: string | null): string {
+function buildSystemPrompt(
+  customerName: string | null,
+  config: ResolvedServiceAgentConfig
+): string {
   const customerLabel = safeString(customerName) ?? 'cliente'
+  const qualificationScript = config.qualificationScript
 
   return `Voce e um consultor comercial via WhatsApp para servicos de marketing e automacao.
 
@@ -221,18 +316,23 @@ Objetivos:
 - Avancar para o proximo passo comercial com clareza.
 
 Regras:
-- Portugues brasileiro, tom humano, maximo 340 caracteres.
+- Portugues brasileiro, tom humano, maximo ${config.maxReplyChars} caracteres.
 - Seja direto, cordial e objetivo.
 - Nunca invente preco fechado se nao tiver dado suficiente.
 - Se faltar dado, faca ate duas perguntas curtas para fechar contexto.
 - Sempre ofereca saida: "Se preferir parar, me avise com SAIR".
 
+Diretriz de qualificacao:
+- ${qualificationScript}
+
 Contato atual: ${customerLabel}`
 }
 
-function fallbackOpeningMessage(customerName: string | null): string {
-  const nameChunk = customerName ? ` ${customerName}` : ''
-  return `Oi${nameChunk}! Sou do time comercial. Posso te ajudar com agendamento, orcamento ou tirar duvidas agora mesmo. Se preferir parar, e so responder SAIR.`
+function fallbackOpeningMessage(
+  customerName: string | null,
+  config: ResolvedServiceAgentConfig
+): string {
+  return applyTemplate(config.openingTemplate, customerName).slice(0, 260)
 }
 
 function fallbackOptOutReply(): string {
@@ -273,8 +373,14 @@ export async function generateServiceOpeningMessage(
   input: {
     customerName: string | null
     contextHint?: string | null
+    config?: AdminServiceAgentConfig | null
   }
 ): Promise<string> {
+  const runtimeConfig = resolveRuntimeConfig(input.config)
+  if (!isInsideBusinessHours(runtimeConfig)) {
+    return runtimeConfig.offHoursAutoReply.slice(0, 260)
+  }
+
   const systemPrompt =
     'Voce escreve mensagens iniciais para atendimento comercial no WhatsApp com foco em agendamento, orcamento e esclarecimento de duvidas.'
   const contextHint = safeString(input.contextHint)
@@ -283,6 +389,8 @@ export async function generateServiceOpeningMessage(
     'A mensagem deve oferecer: agendamento, orcamento e tira-duvidas.',
     'Tom humano, sem linguagem robotica, maximo 260 caracteres.',
     'Inclua opcao de saida: "se preferir parar, e so responder SAIR".',
+    `Diretriz de qualificacao: ${runtimeConfig.qualificationScript}.`,
+    `Template base desejado: ${runtimeConfig.openingTemplate}.`,
     input.customerName ? `Nome da pessoa: ${input.customerName}.` : null,
     contextHint ? `Contexto adicional: ${contextHint}.` : null,
   ]
@@ -291,7 +399,7 @@ export async function generateServiceOpeningMessage(
 
   const startedAt = Date.now()
   try {
-    const response = await env.AI.run(DEFAULT_AI_MODEL, {
+    const response = await env.AI.run(runtimeConfig.aiModel, {
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: prompt },
@@ -299,11 +407,13 @@ export async function generateServiceOpeningMessage(
     })
 
     const generated = safeString(extractAIText(response))
-    const openingMessage = generated ? generated.slice(0, 260) : fallbackOpeningMessage(input.customerName)
+    const openingMessage = generated
+      ? generated.slice(0, 260)
+      : fallbackOpeningMessage(input.customerName, runtimeConfig)
 
     await logAIInference(env, {
       flow: 'service_agent_opening_message',
-      model: DEFAULT_AI_MODEL,
+      model: runtimeConfig.aiModel,
       status: 'success',
       latencyMs: Date.now() - startedAt,
       fallbackUsed: !generated,
@@ -314,7 +424,7 @@ export async function generateServiceOpeningMessage(
   } catch (error) {
     await logAIInference(env, {
       flow: 'service_agent_opening_message',
-      model: DEFAULT_AI_MODEL,
+      model: runtimeConfig.aiModel,
       status: 'error',
       latencyMs: Date.now() - startedAt,
       fallbackUsed: true,
@@ -322,7 +432,7 @@ export async function generateServiceOpeningMessage(
       errorMessage: String(error),
     })
 
-    return fallbackOpeningMessage(input.customerName)
+    return fallbackOpeningMessage(input.customerName, runtimeConfig)
   }
 }
 
@@ -332,12 +442,15 @@ export async function generateServiceAgentReply(
     customerName: string | null
     inboundMessage: string
     history: ServiceConversationMessageRecord[]
+    config?: AdminServiceAgentConfig | null
   }
 ): Promise<ServiceAgentReply> {
   const message = safeString(input.inboundMessage)
   if (!message) {
     throw new Error('inboundMessage is required')
   }
+
+  const runtimeConfig = resolveRuntimeConfig(input.config)
 
   const sentiment = analyzeServiceSentiment(message)
   const intent = detectServiceIntent(message)
@@ -378,6 +491,20 @@ export async function generateServiceAgentReply(
     }
   }
 
+  if (!isInsideBusinessHours(runtimeConfig)) {
+    return {
+      replyText: runtimeConfig.offHoursAutoReply.slice(0, runtimeConfig.maxReplyChars),
+      intent,
+      sentiment,
+      sessionStatus: 'active',
+      shouldOptOut: false,
+      shouldCreateAppointment: false,
+      shouldCreateQuote: false,
+      appointmentDraft: null,
+      quoteDraft: null,
+    }
+  }
+
   if (intent === 'appointment') {
     return {
       replyText: buildAppointmentFallbackReply(appointmentDraft!),
@@ -408,12 +535,12 @@ export async function generateServiceAgentReply(
 
   if (intent === 'question') {
     const conversationContext = buildConversationContext(input.history)
-    const systemPrompt = buildSystemPrompt(input.customerName)
+    const systemPrompt = buildSystemPrompt(input.customerName, runtimeConfig)
     const promptSource = `${systemPrompt}\n\nHISTORICO:\n${conversationContext}\n\nNOVA_MENSAGEM:${message}`
     const startedAt = Date.now()
 
     try {
-      const response = await env.AI.run(DEFAULT_AI_MODEL, {
+      const response = await env.AI.run(runtimeConfig.aiModel, {
         messages: [
           { role: 'system', content: systemPrompt },
           {
@@ -425,11 +552,13 @@ export async function generateServiceAgentReply(
       })
 
       const generated = safeString(extractAIText(response))
-      const replyText = generated ? generated.slice(0, 340) : fallbackQuestionReply()
+      const replyText = generated
+        ? generated.slice(0, runtimeConfig.maxReplyChars)
+        : fallbackQuestionReply()
 
       await logAIInference(env, {
         flow: 'service_agent_reply',
-        model: DEFAULT_AI_MODEL,
+        model: runtimeConfig.aiModel,
         status: 'success',
         latencyMs: Date.now() - startedAt,
         fallbackUsed: !generated,
@@ -454,7 +583,7 @@ export async function generateServiceAgentReply(
     } catch (error) {
       await logAIInference(env, {
         flow: 'service_agent_reply',
-        model: DEFAULT_AI_MODEL,
+        model: runtimeConfig.aiModel,
         status: 'error',
         latencyMs: Date.now() - startedAt,
         fallbackUsed: true,
