@@ -96,6 +96,48 @@ function asText(value) {
   return trimmed.length > 0 ? trimmed : null
 }
 
+const TEXT_HINT_KEYS = new Set([
+  'conversation',
+  'text',
+  'caption',
+  'title',
+  'description',
+  'selectedDisplayText',
+  'selectedButtonId',
+  'selectedId',
+  'selectedRowId',
+  'contentText',
+  'hydratedContentText',
+  'body',
+])
+
+function findHintedText(node, depth = 0, visited = new Set()) {
+  if (!node || typeof node !== 'object') return null
+  if (depth > 8) return null
+  if (visited.has(node)) return null
+  visited.add(node)
+
+  for (const [key, value] of Object.entries(node)) {
+    if (TEXT_HINT_KEYS.has(key)) {
+      const direct = asText(value)
+      if (direct) return direct
+
+      if (value && typeof value === 'object') {
+        const nested = findHintedText(value, depth + 1, visited)
+        if (nested) return nested
+      }
+    }
+  }
+
+  for (const value of Object.values(node)) {
+    if (!value || typeof value !== 'object') continue
+    const nested = findHintedText(value, depth + 1, visited)
+    if (nested) return nested
+  }
+
+  return null
+}
+
 function unwrapMessageContent(message) {
   let cursor = message
   for (let depth = 0; depth < 8; depth += 1) {
@@ -103,9 +145,11 @@ function unwrapMessageContent(message) {
 
     const nested =
       cursor.ephemeralMessage?.message ??
+      cursor.deviceSentMessage?.message ??
       cursor.viewOnceMessage?.message ??
       cursor.viewOnceMessageV2?.message ??
       cursor.viewOnceMessageV2Extension?.message ??
+      cursor.protocolMessage?.editedMessage?.message ??
       cursor.documentWithCaptionMessage?.message ??
       cursor.editedMessage?.message ??
       cursor.keepInChatMessage?.message
@@ -170,6 +214,9 @@ function extractMessageText(payload) {
     const text = asText(candidate)
     if (text) return text
   }
+
+  const recursiveFallback = findHintedText(message)
+  if (recursiveFallback) return recursiveFallback
 
   return null
 }
@@ -246,11 +293,27 @@ export class WhatsAppClient {
   }
 
   async handleMessagesUpsert(event) {
-    if (!this.onInboundMessage || !event || !Array.isArray(event.messages)) {
+    if (!this.onInboundMessage || !event) {
       return
     }
 
-    for (const entry of event.messages) {
+    const messages = Array.isArray(event.messages)
+      ? event.messages
+      : event?.messages && typeof event.messages === 'object'
+        ? [event.messages]
+        : []
+
+    if (!messages.length) return
+
+    this.logger.info(
+      {
+        eventType: event?.type ?? null,
+        messages: messages.length,
+      },
+      'Received WhatsApp messages.upsert event'
+    )
+
+    for (const entry of messages) {
       if (entry?.key?.fromMe) continue
 
       const remoteJid = entry?.key?.remoteJid
@@ -264,7 +327,29 @@ export class WhatsAppClient {
       }
 
       const messageText = extractMessageText(entry)
-      if (!messageText) continue
+      if (!messageText) {
+        this.logger.info(
+          {
+            sourceContact: remoteJid,
+            messageId: entry?.key?.id ?? null,
+            messageKeys:
+              entry?.message && typeof entry.message === 'object'
+                ? Object.keys(entry.message).slice(0, 12)
+                : [],
+          },
+          'Skipping inbound message because text could not be extracted'
+        )
+        continue
+      }
+
+      this.logger.info(
+        {
+          sourceContact: remoteJid,
+          messageId: entry?.key?.id ?? null,
+          preview: messageText.slice(0, 120),
+        },
+        'Captured inbound WhatsApp message'
+      )
 
       try {
         await this.onInboundMessage({
