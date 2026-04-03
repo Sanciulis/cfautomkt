@@ -90,30 +90,85 @@ function extractDisconnectStatusCode(lastDisconnectError) {
   return Number.isFinite(maybeStatusCode) ? maybeStatusCode : null
 }
 
+function asText(value) {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
+function unwrapMessageContent(message) {
+  let cursor = message
+  for (let depth = 0; depth < 8; depth += 1) {
+    if (!cursor || typeof cursor !== 'object') break
+
+    const nested =
+      cursor.ephemeralMessage?.message ??
+      cursor.viewOnceMessage?.message ??
+      cursor.viewOnceMessageV2?.message ??
+      cursor.viewOnceMessageV2Extension?.message ??
+      cursor.documentWithCaptionMessage?.message ??
+      cursor.editedMessage?.message ??
+      cursor.keepInChatMessage?.message
+
+    if (!nested || nested === cursor) {
+      break
+    }
+
+    cursor = nested
+  }
+
+  return cursor
+}
+
+function extractInteractiveText(interactiveResponseMessage) {
+  if (!interactiveResponseMessage || typeof interactiveResponseMessage !== 'object') return null
+
+  const direct =
+    asText(interactiveResponseMessage.body?.text) ??
+    asText(interactiveResponseMessage.selectedDisplayText) ??
+    asText(interactiveResponseMessage.selectedId)
+  if (direct) return direct
+
+  const paramsJson = asText(interactiveResponseMessage.nativeFlowResponseMessage?.paramsJson)
+  if (!paramsJson) return null
+
+  try {
+    const parsed = JSON.parse(paramsJson)
+    return (
+      asText(parsed?.selected_display_text) ??
+      asText(parsed?.selectedDisplayText) ??
+      asText(parsed?.id) ??
+      asText(parsed?.title)
+    )
+  } catch {
+    return paramsJson
+  }
+}
+
 function extractMessageText(payload) {
   if (!payload || typeof payload !== 'object') return null
 
-  const message = payload.message
+  const message = unwrapMessageContent(payload.message)
   if (!message || typeof message !== 'object') return null
 
-  const conversation = message.conversation
-  if (typeof conversation === 'string' && conversation.trim().length > 0) {
-    return conversation.trim()
-  }
+  const candidates = [
+    message.conversation,
+    message.extendedTextMessage?.text,
+    message.imageMessage?.caption,
+    message.videoMessage?.caption,
+    message.documentMessage?.caption,
+    message.buttonsResponseMessage?.selectedDisplayText,
+    message.buttonsResponseMessage?.selectedButtonId,
+    message.templateButtonReplyMessage?.selectedDisplayText,
+    message.templateButtonReplyMessage?.selectedId,
+    message.listResponseMessage?.title,
+    message.listResponseMessage?.singleSelectReply?.selectedRowId,
+    extractInteractiveText(message.interactiveResponseMessage),
+  ]
 
-  const extendedText = message.extendedTextMessage?.text
-  if (typeof extendedText === 'string' && extendedText.trim().length > 0) {
-    return extendedText.trim()
-  }
-
-  const imageCaption = message.imageMessage?.caption
-  if (typeof imageCaption === 'string' && imageCaption.trim().length > 0) {
-    return imageCaption.trim()
-  }
-
-  const videoCaption = message.videoMessage?.caption
-  if (typeof videoCaption === 'string' && videoCaption.trim().length > 0) {
-    return videoCaption.trim()
+  for (const candidate of candidates) {
+    const text = asText(candidate)
+    if (text) return text
   }
 
   return null
@@ -199,7 +254,12 @@ export class WhatsAppClient {
       if (entry?.key?.fromMe) continue
 
       const remoteJid = entry?.key?.remoteJid
-      if (typeof remoteJid !== 'string' || remoteJid.endsWith('@g.us')) {
+      if (
+        typeof remoteJid !== 'string' ||
+        remoteJid.endsWith('@g.us') ||
+        remoteJid.endsWith('@broadcast') ||
+        remoteJid === 'status@broadcast'
+      ) {
         continue
       }
 
