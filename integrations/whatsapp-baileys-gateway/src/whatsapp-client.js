@@ -301,6 +301,25 @@ export class WhatsAppClient {
     }
   }
 
+  async getGroups() {
+    this.assertReady()
+    const groups = await this.socket.groupFetchAllParticipating()
+    return Object.values(groups).map((g) => ({
+      id: g.id,
+      name: g.subject,
+      count: g.participants.length,
+    }))
+  }
+
+  async getGroupParticipants(groupId) {
+    this.assertReady()
+    const metadata = await this.socket.groupMetadata(groupId)
+    return metadata.participants.map((p) => ({
+      id: p.id,
+      admin: p.admin || null,
+    }))
+  }
+
   async stop() {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
