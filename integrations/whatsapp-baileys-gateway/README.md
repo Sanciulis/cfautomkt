@@ -13,6 +13,12 @@ Gateway Node.js para envio de mensagens WhatsApp usando Baileys, integrado ao Wo
 3. Gateway envia mensagem via Baileys para o numero do usuario.
 4. Gateway responde `2xx` em sucesso para o Worker registrar `sent`.
 
+Fluxo inbound (opcional, recomendado para agente conversacional):
+1. Usuario responde no WhatsApp.
+2. Gateway captura mensagem inbound via evento do Baileys.
+3. Gateway encaminha para `INBOUND_WEBHOOK_URL` com `Authorization: Bearer <INBOUND_WEBHOOK_TOKEN>`.
+4. Worker processa a conversa e atualiza historico, sentimento e feedback.
+
 ## Setup
 ```bash
 cd integrations/whatsapp-baileys-gateway
@@ -37,6 +43,8 @@ Exemplo seguro de exposicao:
 ## Variaveis de ambiente
 - `DISPATCH_BEARER_TOKEN` (obrigatoria): deve ser igual ao secret `DISPATCH_BEARER_TOKEN` do Worker.
 - `GATEWAY_ADMIN_TOKEN` (opcional): token para endpoints de sessao (`/session/*`).
+- `INBOUND_WEBHOOK_URL` (opcional): endpoint do Worker para mensagens inbound.
+- `INBOUND_WEBHOOK_TOKEN` (opcional): token Bearer para o webhook inbound (default: `DISPATCH_BEARER_TOKEN`).
 - `PORT`, `HOST`
 - `BAILEYS_SESSION_DIR`
 - `BAILEYS_PRINT_QR`
@@ -83,6 +91,10 @@ npx wrangler secret put DISPATCH_BEARER_TOKEN --env preview
 ```
 
 No gateway, use o mesmo token em `.env`.
+
+Para habilitar inbound no agente de newsletter:
+- `INBOUND_WEBHOOK_URL = https://<worker-domain>/webhooks/whatsapp/inbound`
+- `INBOUND_WEBHOOK_TOKEN = <mesmo secret configurado no Worker>`
 
 ## Teste rapido
 ```bash

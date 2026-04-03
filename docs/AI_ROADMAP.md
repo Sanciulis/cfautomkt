@@ -330,6 +330,34 @@ Acoes corretivas:
 Proximos passos:
 - Implementar política de Rollout Gradual (Item 2 da Etapa 3).
 
+### 2026-04-03 - Agente Conversacional de Newsletter com inicio via tela Admin
+Data da atualizacao: 2026-04-03
+Responsavel: Engenharia
+Entrega realizada:
+- Criado modulo `newsletter-agent.ts` para intencao, sentimento e resposta automatica.
+- Criadas tabelas de sessao e historico (`newsletter_conversation_sessions`, `newsletter_conversation_messages`).
+- Adicionado endpoint inbound `POST /webhooks/whatsapp/inbound` com autenticacao Bearer.
+- Painel Admin ganhou view dedicada para:
+ - iniciar conversa por contato
+ - acompanhar historico de chat
+ - revisar sentimento
+ - salvar feedback/status
+- Gateway Baileys passou a encaminhar inbound para o Worker quando `INBOUND_WEBHOOK_URL` estiver configurado.
+Fluxos impactados:
+- Conversao de newsletter via WhatsApp
+- Observabilidade conversacional no painel operacional
+Metricas antes:
+- Nao havia trilha auditavel unica para abordagem conversacional de newsletter.
+Metricas depois:
+- Sessao e mensagens versionadas por contato com sinal de sentimento e feedback operacional.
+Riscos identificados:
+- Ambientes sem migracao podem nao possuir as tabelas novas.
+Acoes corretivas:
+- Funcoes de leitura foram tornadas resilientes para evitar quebra do dashboard sem migracao aplicada.
+Proximos passos:
+- Definir experimento A/B para mensagem inicial do agente.
+- Adicionar agregacao temporal de conversao por janela (24h/7d/30d).
+
 ## Definicao de Sucesso do Programa
 O programa sera considerado bem-sucedido quando:
 1. Houver melhoria consistente de qualidade e conversao com evidencias.

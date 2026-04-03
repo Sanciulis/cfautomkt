@@ -15,6 +15,13 @@ import type {
   JourneyEnrollInput,
   JourneyPhase,
   JourneyConversationMessage,
+  NewsletterConversationSessionRecord,
+  NewsletterConversationMessageRecord,
+  NewsletterConversationDirection,
+  NewsletterConversationStatus,
+  NewsletterSentimentLabel,
+  NewsletterAgentOverview,
+  NewsletterAgentRecentSession,
 } from './types'
 import { JOURNEY_PHASES } from './types'
 import { EVENT_WEIGHTS } from './constants'
@@ -554,5 +561,367 @@ export async function appendConversationMessage(
     .run()
 
   return trimmed
+}
+
+// ── Newsletter Conversational Agent ────────────────────────────
+
+function isMissingNewsletterTableError(error: unknown): boolean {
+  const text = String(error || '').toLowerCase()
+  return (
+    text.includes('no such table') &&
+    (text.includes('newsletter_conversation_sessions') ||
+      text.includes('newsletter_conversation_messages'))
+  )
+}
+
+export async function getNewsletterConversationSessionById(
+  env: Bindings,
+  sessionId: string
+): Promise<NewsletterConversationSessionRecord | null> {
+  try {
+    const session = await env.DB.prepare(
+      'SELECT * FROM newsletter_conversation_sessions WHERE id = ?'
+    )
+      .bind(sessionId)
+      .first<NewsletterConversationSessionRecord>()
+    return session ?? null
+  } catch (error) {
+    if (isMissingNewsletterTableError(error)) return null
+    throw error
+  }
+}
+
+export async function getLatestNewsletterConversationSessionByContact(
+  env: Bindings,
+  sourceContact: string
+): Promise<NewsletterConversationSessionRecord | null> {
+  const normalizedContact = safeString(sourceContact)
+  if (!normalizedContact) return null
+
+  try {
+    const session = await env.DB.prepare(
+      `SELECT *
+       FROM newsletter_conversation_sessions
+       WHERE source_contact = ?
+       ORDER BY COALESCE(last_message_at, updated_at, created_at) DESC
+       LIMIT 1`
+    )
+      .bind(normalizedContact)
+      .first<NewsletterConversationSessionRecord>()
+
+    return session ?? null
+  } catch (error) {
+    if (isMissingNewsletterTableError(error)) return null
+    throw error
+  }
+}
+
+export async function createNewsletterConversationSession(
+  env: Bindings,
+  input: {
+    userId?: string | null
+    sourceChannel?: string | null
+    sourceContact: string
+    status?: NewsletterConversationStatus
+  }
+): Promise<NewsletterConversationSessionRecord> {
+  const sessionId = crypto.randomUUID()
+  const sourceContact = safeString(input.sourceContact)
+  if (!sourceContact) {
+    throw new Error('sourceContact is required to create newsletter conversation session')
+  }
+
+  const sourceChannel = safeString(input.sourceChannel) ?? 'whatsapp'
+  const status = input.status ?? 'active'
+  const now = new Date().toISOString()
+
+  await env.DB.prepare(
+    `INSERT INTO newsletter_conversation_sessions (
+      id,
+      user_id,
+      source_channel,
+      source_contact,
+      status,
+      last_message_at,
+      created_at,
+      updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+    .bind(sessionId, safeString(input.userId ?? null), sourceChannel, sourceContact, status, now, now, now)
+    .run()
+
+  const created = await getNewsletterConversationSessionById(env, sessionId)
+  if (!created) {
+    throw new Error('Failed to create newsletter conversation session')
+  }
+  return created
+}
+
+export async function updateNewsletterConversationSession(
+  env: Bindings,
+  sessionId: string,
+  updates: Partial<{
+    userId: string | null
+    status: NewsletterConversationStatus
+    sentimentScore: number | null
+    sentimentLabel: NewsletterSentimentLabel | null
+    feedbackRating: number | null
+    feedbackText: string | null
+    convertedAt: string | null
+    lastMessageAt: string | null
+  }>
+): Promise<NewsletterConversationSessionRecord | null> {
+  const existing = await getNewsletterConversationSessionById(env, sessionId)
+  if (!existing) return null
+
+  const nextUserId = updates.userId === undefined ? existing.user_id : safeString(updates.userId)
+  const nextStatus = updates.status ?? existing.status
+  const nextSentimentScore =
+    updates.sentimentScore === undefined ? existing.sentiment_score : updates.sentimentScore
+  const nextSentimentLabel =
+    updates.sentimentLabel === undefined ? existing.sentiment_label : updates.sentimentLabel
+  const nextFeedbackRating =
+    updates.feedbackRating === undefined ? existing.feedback_rating : updates.feedbackRating
+  const nextFeedbackText =
+    updates.feedbackText === undefined ? existing.feedback_text : safeString(updates.feedbackText)
+  const nextConvertedAt =
+    updates.convertedAt === undefined ? existing.converted_at : safeString(updates.convertedAt)
+  const nextLastMessageAt =
+    updates.lastMessageAt === undefined
+      ? existing.last_message_at
+      : safeString(updates.lastMessageAt)
+
+  await env.DB.prepare(
+    `UPDATE newsletter_conversation_sessions
+     SET user_id = ?,
+         status = ?,
+         sentiment_score = ?,
+         sentiment_label = ?,
+         feedback_rating = ?,
+         feedback_text = ?,
+         converted_at = ?,
+         last_message_at = ?,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?`
+  )
+    .bind(
+      nextUserId,
+      nextStatus,
+      nextSentimentScore,
+      nextSentimentLabel,
+      nextFeedbackRating,
+      nextFeedbackText,
+      nextConvertedAt,
+      nextLastMessageAt,
+      sessionId
+    )
+    .run()
+
+  return getNewsletterConversationSessionById(env, sessionId)
+}
+
+export async function appendNewsletterConversationMessage(
+  env: Bindings,
+  input: {
+    sessionId: string
+    direction: NewsletterConversationDirection
+    messageText: string
+    sentimentScore?: number | null
+    sentimentLabel?: NewsletterSentimentLabel | null
+    aiModel?: string | null
+    metadata?: unknown
+  }
+): Promise<NewsletterConversationMessageRecord | null> {
+  const sessionId = safeString(input.sessionId)
+  const messageText = safeString(input.messageText)
+  if (!sessionId || !messageText) {
+    throw new Error('sessionId and messageText are required to append newsletter message')
+  }
+
+  await env.DB.prepare(
+    `INSERT INTO newsletter_conversation_messages (
+      session_id,
+      direction,
+      message_text,
+      sentiment_score,
+      sentiment_label,
+      ai_model,
+      metadata
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+  )
+    .bind(
+      sessionId,
+      input.direction,
+      messageText,
+      input.sentimentScore ?? null,
+      input.sentimentLabel ?? null,
+      safeString(input.aiModel),
+      input.metadata ? JSON.stringify(input.metadata) : null
+    )
+    .run()
+
+  const message = await env.DB.prepare(
+    `SELECT *
+     FROM newsletter_conversation_messages
+     WHERE session_id = ?
+     ORDER BY id DESC
+     LIMIT 1`
+  )
+    .bind(sessionId)
+    .first<NewsletterConversationMessageRecord>()
+
+  return message ?? null
+}
+
+export async function listNewsletterConversationMessages(
+  env: Bindings,
+  sessionId: string,
+  limit = 100
+): Promise<NewsletterConversationMessageRecord[]> {
+  const boundedLimit = Math.max(1, Math.min(500, Math.floor(limit)))
+  try {
+    const result = await env.DB.prepare(
+      `SELECT *
+       FROM newsletter_conversation_messages
+       WHERE session_id = ?
+       ORDER BY created_at ASC, id ASC
+       LIMIT ?`
+    )
+      .bind(sessionId, boundedLimit)
+      .all<NewsletterConversationMessageRecord>()
+
+    return result.results ?? []
+  } catch (error) {
+    if (isMissingNewsletterTableError(error)) return []
+    throw error
+  }
+}
+
+export async function listNewsletterAgentRecentSessions(
+  env: Bindings,
+  limit = 30
+): Promise<NewsletterAgentRecentSession[]> {
+  const boundedLimit = Math.max(1, Math.min(200, Math.floor(limit)))
+  try {
+    const result = await env.DB.prepare(
+      `SELECT s.id,
+              s.user_id,
+              u.name AS user_name,
+              s.source_contact,
+              s.status,
+              s.sentiment_score,
+              s.sentiment_label,
+              s.feedback_rating,
+              s.last_message_at,
+              (
+                SELECT COUNT(*)
+                FROM newsletter_conversation_messages m
+                WHERE m.session_id = s.id
+              ) AS message_count
+       FROM newsletter_conversation_sessions s
+       LEFT JOIN users u ON u.id = s.user_id
+       ORDER BY COALESCE(s.last_message_at, s.updated_at, s.created_at) DESC
+       LIMIT ?`
+    )
+      .bind(boundedLimit)
+      .all<{
+        id: string
+        user_id: string | null
+        user_name: string | null
+        source_contact: string
+        status: NewsletterConversationStatus
+        sentiment_score: number | null
+        sentiment_label: NewsletterSentimentLabel | null
+        feedback_rating: number | null
+        last_message_at: string | null
+        message_count: number
+      }>()
+
+    return (result.results ?? []).map((row) => ({
+      id: row.id,
+      userId: row.user_id,
+      userName: row.user_name,
+      sourceContact: row.source_contact,
+      status: row.status,
+      sentimentScore: row.sentiment_score,
+      sentimentLabel: row.sentiment_label,
+      feedbackRating: row.feedback_rating,
+      lastMessageAt: row.last_message_at,
+      messageCount: toNumber(row.message_count),
+    }))
+  } catch (error) {
+    if (isMissingNewsletterTableError(error)) return []
+    throw error
+  }
+}
+
+export async function getNewsletterAgentOverview(
+  env: Bindings,
+  recentLimit = 30
+): Promise<NewsletterAgentOverview> {
+  try {
+    const totalsRow = await env.DB.prepare(
+      `SELECT COUNT(*) AS total_sessions,
+              SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active_sessions,
+              SUM(CASE WHEN status = 'converted' THEN 1 ELSE 0 END) AS converted_sessions,
+              SUM(CASE WHEN status = 'opt_out' THEN 1 ELSE 0 END) AS opt_out_sessions,
+              AVG(sentiment_score) AS avg_sentiment,
+              AVG(feedback_rating) AS avg_feedback
+       FROM newsletter_conversation_sessions`
+    ).first<{
+      total_sessions: number
+      active_sessions: number
+      converted_sessions: number
+      opt_out_sessions: number
+      avg_sentiment: number | null
+      avg_feedback: number | null
+    }>()
+
+    const bucketsRow = await env.DB.prepare(
+      `SELECT SUM(CASE WHEN sentiment_label = 'positive' THEN 1 ELSE 0 END) AS positive,
+              SUM(CASE WHEN sentiment_label = 'neutral' THEN 1 ELSE 0 END) AS neutral,
+              SUM(CASE WHEN sentiment_label = 'negative' THEN 1 ELSE 0 END) AS negative
+       FROM newsletter_conversation_sessions`
+    ).first<{ positive: number; neutral: number; negative: number }>()
+
+    const recentSessions = await listNewsletterAgentRecentSessions(env, recentLimit)
+
+    return {
+      generatedAt: new Date().toISOString(),
+      totals: {
+        totalSessions: toNumber(totalsRow?.total_sessions),
+        activeSessions: toNumber(totalsRow?.active_sessions),
+        convertedSessions: toNumber(totalsRow?.converted_sessions),
+        optOutSessions: toNumber(totalsRow?.opt_out_sessions),
+        averageSentiment: Number(totalsRow?.avg_sentiment ?? 0),
+        averageFeedback: Number(totalsRow?.avg_feedback ?? 0),
+      },
+      sentimentBuckets: {
+        positive: toNumber(bucketsRow?.positive),
+        neutral: toNumber(bucketsRow?.neutral),
+        negative: toNumber(bucketsRow?.negative),
+      },
+      recentSessions,
+    }
+  } catch (error) {
+    if (!isMissingNewsletterTableError(error)) throw error
+    return {
+      generatedAt: new Date().toISOString(),
+      totals: {
+        totalSessions: 0,
+        activeSessions: 0,
+        convertedSessions: 0,
+        optOutSessions: 0,
+        averageSentiment: 0,
+        averageFeedback: 0,
+      },
+      sentimentBuckets: {
+        positive: 0,
+        neutral: 0,
+        negative: 0,
+      },
+      recentSessions: [],
+    }
+  }
 }
 

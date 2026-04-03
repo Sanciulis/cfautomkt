@@ -39,7 +39,26 @@ class MockD1Database {
     this.interactions = seed.interactions ?? []
     this.agentDecisions = seed.agentDecisions ?? []
     this.journeys = seed.journeys ?? []
+    this.personas = seed.personas ?? []
+    this.products = seed.products ?? []
     this.journeyEnrollments = seed.journeyEnrollments ?? []
+    this.newsletterConversationSessions = seed.newsletterConversationSessions ?? []
+    this.newsletterConversationMessages = seed.newsletterConversationMessages ?? []
+  }
+
+  hydrateJourney(journey) {
+    if (!journey) return null
+    const persona = this.personas.find((p) => p.id === journey.persona_id)
+    const product = this.products.find((p) => p.id === journey.product_id)
+    return {
+      ...journey,
+      persona_name: persona?.name ?? null,
+      system_prompt: persona?.system_prompt ?? null,
+      base_tone: persona?.base_tone ?? null,
+      product_name: product?.name ?? null,
+      objective: product?.description ?? null,
+      conversion_url: product?.conversion_url ?? null,
+    }
   }
 
   prepare(sql) {
@@ -100,11 +119,62 @@ class MockD1Database {
       return this.users.find((user) => user.referral_code === referralCode) ?? null
     }
 
+    if (normalized === 'select * from newsletter_conversation_sessions where id = ?') {
+      const [sessionId] = params
+      return this.newsletterConversationSessions.find((session) => session.id === sessionId) ?? null
+    }
+
+    if (
+      normalized.includes('count(*) as total_sessions') &&
+      normalized.includes('from newsletter_conversation_sessions')
+    ) {
+      const sessions = this.newsletterConversationSessions
+      const avgSentiment = sessions.length
+        ? sessions.reduce((sum, item) => sum + Number(item.sentiment_score ?? 0), 0) / sessions.length
+        : null
+      const withFeedback = sessions.filter((item) => Number.isFinite(Number(item.feedback_rating)))
+      const avgFeedback = withFeedback.length
+        ? withFeedback.reduce((sum, item) => sum + Number(item.feedback_rating ?? 0), 0) / withFeedback.length
+        : null
+
+      return {
+        total_sessions: sessions.length,
+        active_sessions: sessions.filter((item) => item.status === 'active').length,
+        converted_sessions: sessions.filter((item) => item.status === 'converted').length,
+        opt_out_sessions: sessions.filter((item) => item.status === 'opt_out').length,
+        avg_sentiment: avgSentiment,
+        avg_feedback: avgFeedback,
+      }
+    }
+
+    if (
+      normalized.includes("sum(case when sentiment_label = 'positive' then 1 else 0 end) as positive") &&
+      normalized.includes('from newsletter_conversation_sessions')
+    ) {
+      const sessions = this.newsletterConversationSessions
+      return {
+        positive: sessions.filter((item) => item.sentiment_label === 'positive').length,
+        neutral: sessions.filter((item) => item.sentiment_label === 'neutral').length,
+        negative: sessions.filter((item) => item.sentiment_label === 'negative').length,
+      }
+    }
+
     throw new Error(`Unhandled first() query in test mock: ${sql}`)
   }
 
   async all(sql, params) {
     const normalized = normalizeSql(sql)
+
+    if (
+      normalized.includes(
+        'from journeys j left join personas pe on j.persona_id = pe.id left join products pr on j.product_id = pr.id order by j.created_at desc limit 50'
+      )
+    ) {
+      return [...this.journeys]
+        .sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')))
+        .slice(0, 50)
+        .map((journey) => this.hydrateJourney(journey))
+    }
 
     if (
       normalized ===
@@ -202,6 +272,55 @@ class MockD1Database {
     ) {
       const [journeyId] = params
       return this.journeyEnrollments.filter((e) => e.journey_id === journeyId)
+    }
+
+    if (
+      normalized.includes('from newsletter_conversation_sessions s') &&
+      normalized.includes('left join users u on u.id = s.user_id')
+    ) {
+      const [limitRaw] = params
+      const limit = Number(limitRaw) || 0
+      return [...this.newsletterConversationSessions]
+        .sort((a, b) =>
+          String(b.last_message_at ?? b.updated_at ?? b.created_at ?? '').localeCompare(
+            String(a.last_message_at ?? a.updated_at ?? a.created_at ?? '')
+          )
+        )
+        .slice(0, limit)
+        .map((session) => {
+          const user = this.users.find((row) => row.id === session.user_id)
+          const messageCount = this.newsletterConversationMessages.filter(
+            (message) => message.session_id === session.id
+          ).length
+
+          return {
+            id: session.id,
+            user_id: session.user_id,
+            user_name: user?.name ?? null,
+            source_contact: session.source_contact,
+            status: session.status,
+            sentiment_score: session.sentiment_score,
+            sentiment_label: session.sentiment_label,
+            feedback_rating: session.feedback_rating,
+            last_message_at: session.last_message_at,
+            message_count: messageCount,
+          }
+        })
+    }
+
+    if (
+      normalized ===
+      'select * from newsletter_conversation_messages where session_id = ? order by created_at asc, id asc limit ?'
+    ) {
+      const [sessionId, limitRaw] = params
+      const limit = Number(limitRaw) || 0
+      return this.newsletterConversationMessages
+        .filter((message) => message.session_id === sessionId)
+        .sort((a, b) =>
+          String(a.created_at ?? '').localeCompare(String(b.created_at ?? '')) ||
+          Number(a.id ?? 0) - Number(b.id ?? 0)
+        )
+        .slice(0, limit)
     }
 
     throw new Error(`Unhandled all() query in test mock: ${sql}`)

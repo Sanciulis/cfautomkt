@@ -39,7 +39,24 @@ class MockD1Database {
     this.interactions = seed.interactions ?? []
     this.agentDecisions = seed.agentDecisions ?? []
     this.journeys = seed.journeys ?? []
+    this.personas = seed.personas ?? []
+    this.products = seed.products ?? []
     this.journeyEnrollments = seed.journeyEnrollments ?? []
+  }
+
+  hydrateJourney(journey) {
+    if (!journey) return null
+    const persona = this.personas.find((p) => p.id === journey.persona_id)
+    const product = this.products.find((p) => p.id === journey.product_id)
+    return {
+      ...journey,
+      persona_name: persona?.name ?? null,
+      system_prompt: persona?.system_prompt ?? null,
+      base_tone: persona?.base_tone ?? null,
+      product_name: product?.name ?? null,
+      objective: product?.description ?? null,
+      conversion_url: product?.conversion_url ?? null,
+    }
   }
 
   prepare(sql) {
@@ -73,6 +90,16 @@ class MockD1Database {
       return { value: this.campaigns.filter((c) => c.status === 'active').length }
     }
 
+    if (
+      normalized.includes(
+        'from journeys j left join personas pe on j.persona_id = pe.id left join products pr on j.product_id = pr.id where j.id = ?'
+      )
+    ) {
+      const [id] = params
+      const journey = this.journeys.find((j) => j.id === id)
+      return this.hydrateJourney(journey)
+    }
+
     if (normalized.startsWith('select * from journeys where id = ?')) {
       const [id] = params
       return this.journeys.find((j) => j.id === id) ?? null
@@ -95,6 +122,17 @@ class MockD1Database {
 
   async all(sql, params) {
     const normalized = normalizeSql(sql)
+
+    if (
+      normalized.includes(
+        'from journeys j left join personas pe on j.persona_id = pe.id left join products pr on j.product_id = pr.id order by j.created_at desc limit 50'
+      )
+    ) {
+      return [...this.journeys]
+        .sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')))
+        .slice(0, 50)
+        .map((journey) => this.hydrateJourney(journey))
+    }
 
     if (normalized === 'select * from journeys order by created_at desc limit 50') {
       return [...this.journeys].sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? ''))).slice(0, 50)
@@ -127,12 +165,37 @@ class MockD1Database {
   run(sql, params) {
     const normalized = normalizeSql(sql)
 
+    if (normalized.startsWith('insert into personas')) {
+      this.personas.push({
+        id: params[0],
+        name: params[1],
+        base_tone: params[2],
+        system_prompt: params[3],
+        interaction_constraints: params[4],
+        created_at: new Date().toISOString(),
+      })
+      return
+    }
+
+    if (normalized.startsWith('insert into products')) {
+      this.products.push({
+        id: params[0],
+        name: params[1],
+        description: params[2],
+        pricing_details: params[3],
+        conversion_url: params[4],
+        metadata: params[5],
+        created_at: new Date().toISOString(),
+      })
+      return
+    }
+
     if (normalized.startsWith('insert into journeys')) {
       this.journeys.push({
         id: params[0],
         name: params[1],
-        objective: params[2],
-        system_prompt: params[3],
+        persona_id: params[2],
+        product_id: params[3],
         status: 'active',
         created_at: new Date().toISOString(),
       })
@@ -190,13 +253,13 @@ class MockD1Database {
       return
     }
 
-    if (normalized.startsWith('update journeys set name = ?')) {
-      const [name, objective, systemPrompt, journeyId] = params
+    if (normalized.startsWith('update journeys set name = ?, persona_id = ?, product_id = ? where id = ?')) {
+      const [name, personaId, productId, journeyId] = params
       const j = this.journeys.find((j) => j.id === journeyId)
       if (j) {
         j.name = name
-        j.objective = objective
-        j.system_prompt = systemPrompt
+        j.persona_id = personaId
+        j.product_id = productId
       }
       return
     }
@@ -220,6 +283,10 @@ class MockD1Database {
         event_type: params[3],
         metadata: params[4],
       })
+      return
+    }
+
+    if (normalized.startsWith('insert into ai_inference_logs')) {
       return
     }
 
@@ -287,6 +354,27 @@ async function invokeWorker(path, init, env) {
 
 function createJourneyDbSeed() {
   return new MockD1Database({
+    personas: [
+      {
+        id: 'persona-onboarding',
+        name: 'Ana Consultora',
+        base_tone: 'consultiva',
+        system_prompt: 'Você é a Ana, consultora de marketing com 5 anos de experiência.',
+        interaction_constraints: null,
+        created_at: '2026-03-30 00:00:00',
+      },
+    ],
+    products: [
+      {
+        id: 'product-onboarding',
+        name: 'Programa Premium',
+        description: 'Converter leads frios em clientes pagantes',
+        pricing_details: null,
+        conversion_url: null,
+        metadata: null,
+        created_at: '2026-03-30 00:00:00',
+      },
+    ],
     users: [
       {
         id: 'u-lead-001',
@@ -308,8 +396,8 @@ function createJourneyDbSeed() {
       {
         id: 'j-onboarding',
         name: 'Onboarding Premium',
-        objective: 'Converter leads frios em clientes pagantes',
-        system_prompt: 'Você é a Ana, consultora de marketing com 5 anos de experiência.',
+        persona_id: 'persona-onboarding',
+        product_id: 'product-onboarding',
         status: 'active',
         created_at: '2026-03-30 00:00:00',
       },

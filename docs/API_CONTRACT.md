@@ -441,6 +441,49 @@ Rotas do painel:
 - `POST /admin/actions/journey/toggle` (alterna status da jornada)
 - `POST /admin/actions/journey/enroll` (inscreve lead em jornada)
 
+## Agente de Newsletter (WhatsApp Conversacional)
+
+### Inbound Webhook
+`POST /webhooks/whatsapp/inbound`
+
+Autenticacao:
+- Header `Authorization: Bearer <DISPATCH_BEARER_TOKEN>`
+
+Request (exemplo):
+```json
+{
+  "sourceContact": "5511999990001@s.whatsapp.net",
+  "message": "quero assinar",
+  "messageId": "ABCD1234",
+  "timestamp": "1712091100",
+  "user": {
+    "name": "Ana"
+  }
+}
+```
+
+Comportamento:
+- cria/atualiza sessao em `newsletter_conversation_sessions`
+- registra mensagens em `newsletter_conversation_messages`
+- aplica classificacao de sentimento e intencao
+- envia resposta automatica via gateway WhatsApp
+- atualiza consentimento quando houver conversao (`subscribe`) ou opt-out
+
+### Acoes no painel Admin (tela Agente Newsletter)
+- `POST /admin/actions/newsletter-agent/start`
+ - inicia abordagem por contato informado na tela
+ - cria sessao se necessario e envia mensagem inicial
+- `POST /admin/actions/newsletter-agent/reply`
+ - envia resposta manual para sessao existente
+- `POST /admin/actions/newsletter-agent/feedback`
+ - atualiza nota, feedback textual e status da sessao
+
+### APIs de auditoria no painel Admin
+- `GET /admin/api/newsletter-agent/overview`
+ - visao consolidada de sessoes, conversoes e sentimento
+- `GET /admin/api/newsletter-agent/sessions/:sessionId/messages`
+ - retorna sessao e historico completo de mensagens
+
 ## Erros comuns
 - `400`: payload invalido
 - `404`: usuario/campanha/jornada nao encontrado

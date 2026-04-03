@@ -52,9 +52,49 @@ function requireToken(expectedTokens) {
 }
 
 const logger = pino({ level: config.logLevel })
+
+async function forwardInboundMessage(payload) {
+  const targetUrl = config.inboundWebhook?.url
+  const token = config.inboundWebhook?.token
+
+  if (!targetUrl) return
+
+  const response = await fetch(targetUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+
+  if (!response.ok) {
+    const responseText = await response.text().catch(() => '')
+    throw new Error(
+      `Inbound webhook forwarding failed (${response.status}): ${responseText.slice(0, 300)}`
+    )
+  }
+}
+
 const waClient = new WhatsAppClient({
   config,
   logger: logger.child({ service: 'whatsapp-client' }),
+  onInboundMessage: async (inbound) => {
+    if (!config.inboundWebhook?.url) return
+
+    await forwardInboundMessage({
+      sourceContact: inbound.sourceContact,
+      message: inbound.message,
+      messageId: inbound.messageId,
+      timestamp: inbound.timestamp,
+      user: {
+        name: inbound.pushName,
+      },
+      metadata: {
+        source: 'baileys_gateway',
+      },
+    })
+  },
 })
 
 const app = express()

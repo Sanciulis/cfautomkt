@@ -210,6 +210,71 @@ export type JourneyConversationMessage = {
   timestamp?: string
 }
 
+export type NewsletterConversationStatus = 'active' | 'converted' | 'opt_out' | 'closed'
+
+export type NewsletterSentimentLabel = 'positive' | 'neutral' | 'negative'
+
+export type NewsletterConversationDirection = 'inbound' | 'agent' | 'system'
+
+export type NewsletterConversationSessionRecord = {
+  id: string
+  user_id: string | null
+  source_channel: string
+  source_contact: string
+  status: NewsletterConversationStatus
+  sentiment_score: number | null
+  sentiment_label: NewsletterSentimentLabel | null
+  feedback_rating: number | null
+  feedback_text: string | null
+  converted_at: string | null
+  last_message_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type NewsletterConversationMessageRecord = {
+  id: number
+  session_id: string
+  direction: NewsletterConversationDirection
+  message_text: string
+  sentiment_score: number | null
+  sentiment_label: NewsletterSentimentLabel | null
+  ai_model: string | null
+  metadata: string | null
+  created_at: string
+}
+
+export type NewsletterAgentRecentSession = {
+  id: string
+  userId: string | null
+  userName: string | null
+  sourceContact: string
+  status: NewsletterConversationStatus
+  sentimentScore: number | null
+  sentimentLabel: NewsletterSentimentLabel | null
+  feedbackRating: number | null
+  lastMessageAt: string | null
+  messageCount: number
+}
+
+export type NewsletterAgentOverview = {
+  generatedAt: string
+  totals: {
+    totalSessions: number
+    activeSessions: number
+    convertedSessions: number
+    optOutSessions: number
+    averageSentiment: number
+    averageFeedback: number
+  }
+  sentimentBuckets: {
+    positive: number
+    neutral: number
+    negative: number
+  }
+  recentSessions: NewsletterAgentRecentSession[]
+}
+
 export type JourneyCreateInput = {
   id?: string | null
   name: string

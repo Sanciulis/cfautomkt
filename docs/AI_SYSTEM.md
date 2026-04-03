@@ -167,7 +167,35 @@ Simulação isolada de conversas para testes e debugging sem persistir dados.
 
 ---
 
-### 3. AI Learning Loop (`src/scheduled.ts`)
+### 3. Agente Conversacional de Newsletter (`src/newsletter-agent.ts` + `src/routes/api.ts`)
+
+**Propósito**:
+Executar conversas de WhatsApp orientadas a conversão para newsletter semanal com rastreabilidade completa no painel admin.
+
+**Capacidades**:
+- Detecção de intenção (`subscribe`, `opt_out`, `feedback`, `question`, `other`)
+- Análise de sentimento por mensagem (`positive`, `neutral`, `negative`)
+- Geração de resposta automatizada com fallback seguro
+- Atualização de consentimento em cenários de conversão e opt-out
+
+**Persistência dedicada**:
+- `newsletter_conversation_sessions`
+- `newsletter_conversation_messages`
+
+**Operação no painel**:
+- Início manual da abordagem por contato (`/admin/actions/newsletter-agent/start`)
+- Resposta manual (`/admin/actions/newsletter-agent/reply`)
+- Atualização de feedback e status (`/admin/actions/newsletter-agent/feedback`)
+- Auditoria por sessão com histórico completo
+
+**Integração inbound**:
+- Endpoint `POST /webhooks/whatsapp/inbound`
+- Autenticação com `DISPATCH_BEARER_TOKEN`
+- Encaminhamento via gateway Baileys quando `INBOUND_WEBHOOK_URL` estiver configurado
+
+---
+
+### 4. AI Learning Loop (`src/scheduled.ts`)
 
 **Localização**: `src/scheduled.ts:140-175`
 

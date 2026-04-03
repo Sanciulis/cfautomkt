@@ -90,10 +90,40 @@ function extractDisconnectStatusCode(lastDisconnectError) {
   return Number.isFinite(maybeStatusCode) ? maybeStatusCode : null
 }
 
+function extractMessageText(payload) {
+  if (!payload || typeof payload !== 'object') return null
+
+  const message = payload.message
+  if (!message || typeof message !== 'object') return null
+
+  const conversation = message.conversation
+  if (typeof conversation === 'string' && conversation.trim().length > 0) {
+    return conversation.trim()
+  }
+
+  const extendedText = message.extendedTextMessage?.text
+  if (typeof extendedText === 'string' && extendedText.trim().length > 0) {
+    return extendedText.trim()
+  }
+
+  const imageCaption = message.imageMessage?.caption
+  if (typeof imageCaption === 'string' && imageCaption.trim().length > 0) {
+    return imageCaption.trim()
+  }
+
+  const videoCaption = message.videoMessage?.caption
+  if (typeof videoCaption === 'string' && videoCaption.trim().length > 0) {
+    return videoCaption.trim()
+  }
+
+  return null
+}
+
 export class WhatsAppClient {
-  constructor({ config, logger }) {
+  constructor({ config, logger, onInboundMessage }) {
     this.config = config
     this.logger = logger
+    this.onInboundMessage = typeof onInboundMessage === 'function' ? onInboundMessage : null
 
     this.socket = null
     this.connecting = false
@@ -155,6 +185,45 @@ export class WhatsAppClient {
     socket.ev.on('connection.update', (update) => {
       this.handleConnectionUpdate(update)
     })
+    socket.ev.on('messages.upsert', (event) => {
+      this.handleMessagesUpsert(event)
+    })
+  }
+
+  async handleMessagesUpsert(event) {
+    if (!this.onInboundMessage || !event || !Array.isArray(event.messages)) {
+      return
+    }
+
+    for (const entry of event.messages) {
+      if (entry?.key?.fromMe) continue
+
+      const remoteJid = entry?.key?.remoteJid
+      if (typeof remoteJid !== 'string' || remoteJid.endsWith('@g.us')) {
+        continue
+      }
+
+      const messageText = extractMessageText(entry)
+      if (!messageText) continue
+
+      try {
+        await this.onInboundMessage({
+          sourceContact: remoteJid,
+          message: messageText,
+          messageId: entry?.key?.id ?? null,
+          timestamp: entry?.messageTimestamp ? String(entry.messageTimestamp) : null,
+          pushName: typeof entry?.pushName === 'string' ? entry.pushName : null,
+        })
+      } catch (error) {
+        this.logger.error(
+          {
+            error: String(error),
+            sourceContact: remoteJid,
+          },
+          'Failed to process inbound message callback'
+        )
+      }
+    }
   }
 
   handleConnectionUpdate(update) {

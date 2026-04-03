@@ -92,6 +92,61 @@ export function renderAdminDashboardPage(data: {
       }>
     } | null
   }
+  newsletterAgent: {
+    generatedAt: string
+    totals: {
+      totalSessions: number
+      activeSessions: number
+      convertedSessions: number
+      optOutSessions: number
+      averageSentiment: number
+      averageFeedback: number
+    }
+    sentimentBuckets: {
+      positive: number
+      neutral: number
+      negative: number
+    }
+    recentSessions: Array<{
+      id: string
+      userId: string | null
+      userName: string | null
+      sourceContact: string
+      status: string
+      sentimentScore: number | null
+      sentimentLabel: string | null
+      feedbackRating: number | null
+      lastMessageAt: string | null
+      messageCount: number
+    }>
+  }
+  newsletterAgentSession: {
+    selectedSessionId: string | null
+    selectedSession: {
+      id: string
+      userId: string | null
+      userName: string | null
+      sourceContact: string
+      sourceChannel: string
+      status: string
+      sentimentScore: number | null
+      sentimentLabel: string | null
+      feedbackRating: number | null
+      feedbackText: string | null
+      convertedAt: string | null
+      lastMessageAt: string | null
+    } | null
+    selectedMessages: Array<{
+      id: number
+      direction: string
+      messageText: string
+      sentimentScore: number | null
+      sentimentLabel: string | null
+      aiModel: string | null
+      metadata: string | null
+      createdAt: string
+    }>
+  }
 }): string {
   const noticeHtml =
     data.notice && data.noticeKind
@@ -458,6 +513,69 @@ export function renderAdminDashboardPage(data: {
   const telegramUpdatedAtLabel = data.telegramIntegration.updatedAt
     ? `Atualizado: ${new Date(data.telegramIntegration.updatedAt).toLocaleString('pt-BR')}`
     : 'Aguardando configuração'
+
+  const selectedNewsletterSession = data.newsletterAgentSession.selectedSession
+  const selectedNewsletterMessages = data.newsletterAgentSession.selectedMessages
+
+  const buildNewsletterSessionHref = (sessionId: string): string => {
+    const params = new URLSearchParams()
+    params.set('newsletterSessionId', sessionId)
+    return `/admin?${params.toString()}#newsletter-agent`
+  }
+
+  const resolveNewsletterStatusClass = (status: string): string => {
+    if (status === 'converted') return 'badge-success'
+    if (status === 'opt_out') return 'badge-warn'
+    if (status === 'closed') return 'badge-outline'
+    return 'badge-glass'
+  }
+
+  const newsletterRecentSessionsHtml = data.newsletterAgent.recentSessions
+    .map((session) => {
+      const href = buildNewsletterSessionHref(session.id)
+      const isActive = data.newsletterAgentSession.selectedSessionId === session.id
+      const sessionLabel = escapeHtml(session.userName || session.sourceContact)
+      const lastMessageLabel = session.lastMessageAt
+        ? new Date(session.lastMessageAt).toLocaleString('pt-BR')
+        : '-'
+      return `<a href="${href}" class="control-entity-item ${isActive ? 'active' : ''}">
+        <div>
+          <div class="font-bold">${sessionLabel}</div>
+          <div class="text-xs opacity-60">${escapeHtml(session.sourceContact)} • ${session.messageCount} msgs • ${escapeHtml(lastMessageLabel)}</div>
+        </div>
+        <div class="flex items-center" style="gap:8px;">
+          <span class="badge ${resolveNewsletterStatusClass(session.status)}">${escapeHtml(session.status)}</span>
+        </div>
+      </a>`
+    })
+    .join('')
+
+  const newsletterMessageRowsHtml = selectedNewsletterMessages
+    .map((message) => {
+      const directionBadgeClass =
+        message.direction === 'inbound'
+          ? 'badge-outline'
+          : message.direction === 'agent'
+            ? 'badge-success'
+            : 'badge-glass'
+      const sentimentLabel = message.sentimentLabel ? ` • ${message.sentimentLabel}` : ''
+      const aiLabel = message.aiModel ? ` • ${message.aiModel}` : ''
+      return `<tr>
+        <td><span class="badge ${directionBadgeClass}">${escapeHtml(message.direction)}</span></td>
+        <td><span class="text-sm">${escapeHtml(message.messageText)}</span></td>
+        <td><span class="text-xs opacity-60">${escapeHtml(new Date(message.createdAt).toLocaleString('pt-BR'))}${escapeHtml(sentimentLabel)}${escapeHtml(aiLabel)}</span></td>
+      </tr>`
+    })
+    .join('')
+
+  const newsletterSelectedStatusClass = resolveNewsletterStatusClass(selectedNewsletterSession?.status || 'active')
+  const newsletterSentimentLabel = selectedNewsletterSession?.sentimentLabel
+    ? `${selectedNewsletterSession.sentimentLabel} (${Number(selectedNewsletterSession.sentimentScore ?? 0).toFixed(2)})`
+    : '-'
+  const newsletterFeedbackLabel = selectedNewsletterSession?.feedbackRating
+    ? `${selectedNewsletterSession.feedbackRating}/5`
+    : '-'
+  const newsletterContactPrefill = escapeHtml(selectedNewsletterSession?.sourceContact || '')
 
   return `<!doctype html>
 <html lang="pt-BR">
@@ -1058,6 +1176,10 @@ export function renderAdminDashboardPage(data: {
         <svg fill="currentColor" viewBox="0 0 20 20"><path d="M4 3a1 1 0 00-1 1v3a1 1 0 001 1h3a1 1 0 001-1V4a1 1 0 00-1-1H4zM13 3a1 1 0 00-1 1v3a1 1 0 001 1h3a1 1 0 001-1V4a1 1 0 00-1-1h-3zM4 12a1 1 0 00-1 1v3a1 1 0 001 1h3a1 1 0 001-1v-3a1 1 0 00-1-1H4zM13 12a1 1 0 00-1 1v3a1 1 0 001 1h3a1 1 0 001-1v-3a1 1 0 00-1-1h-3z"></path></svg>
         <span>Control Room</span>
       </a>
+      <a class="nav-item" data-view="newsletter-agent">
+        <svg fill="currentColor" viewBox="0 0 20 20"><path d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-3.441-.684L2 17l.739-3.147A6.807 6.807 0 012 10c0-3.866 3.582-7 8-7s8 3.134 8 7z"></path></svg>
+        <span>Agente Newsletter</span>
+      </a>
       <a class="nav-item" data-view="journeys">
         <svg fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 0l-2 2a1 1 0 101.414 1.414L8 10.414l1.293 1.293a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
         <span>Jornadas AI</span>
@@ -1585,6 +1707,143 @@ export function renderAdminDashboardPage(data: {
       </div>
     </div>
 
+    <!-- VIEW: Newsletter Agent -->
+    <div id="view-newsletter-agent" class="view-content">
+      <section class="stats-grid" style="margin-bottom: 24px;">
+        <div class="stat-card">
+          <span class="stat-label">Sessoes Totais</span>
+          <span class="stat-value">${data.newsletterAgent.totals.totalSessions}</span>
+          <div class="stat-accent"></div>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Conversoes</span>
+          <span class="stat-value">${data.newsletterAgent.totals.convertedSessions}</span>
+          <div class="stat-accent" style="background:var(--secondary)"></div>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Sentimento Medio</span>
+          <span class="stat-value">${Number(data.newsletterAgent.totals.averageSentiment).toFixed(2)}</span>
+          <div class="stat-accent"></div>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">Feedback Medio</span>
+          <span class="stat-value">${Number(data.newsletterAgent.totals.averageFeedback).toFixed(2)}</span>
+          <div class="stat-accent" style="background:var(--secondary)"></div>
+        </div>
+      </section>
+
+      <div class="panel-grid" style="grid-template-columns: 1fr 1fr;">
+        <section class="panel">
+          <div class="panel-header">
+            <h3 class="panel-title">Iniciar Abordagem por Contato</h3>
+            <span class="badge badge-glass">manual start</span>
+          </div>
+          <p class="text-sm opacity-60 mb-6">Use esta tela para iniciar o agente com um contato especifico e registrar o historico automaticamente.</p>
+          <form method="post" action="/admin/actions/newsletter-agent/start">
+            <div class="form-group">
+              <label class="input-label">Contato WhatsApp (telefone ou JID)</label>
+              <input class="input-control" name="contact" value="${newsletterContactPrefill}" placeholder="5511999990001 ou 5511999990001@s.whatsapp.net" required />
+            </div>
+            <div class="form-group">
+              <label class="input-label">Nome (opcional)</label>
+              <input class="input-control" name="contactName" placeholder="Ex: Ana" />
+            </div>
+            <div class="form-group">
+              <label class="input-label">Mensagem inicial customizada (opcional)</label>
+              <textarea class="input-control" name="openingMessage" rows="4" placeholder="Se vazio, o sistema gera uma abertura com IA."></textarea>
+            </div>
+            <button type="submit" class="btn btn-primary">Iniciar Conversa</button>
+          </form>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h3 class="panel-title">Distribuicao de Sentimento</h3>
+            <span class="badge badge-outline">Atualizado ${escapeHtml(new Date(data.newsletterAgent.generatedAt).toLocaleTimeString('pt-BR'))}</span>
+          </div>
+          <div class="mini-stat-grid">
+            <div class="mini-stat-card"><span class="text-xs opacity-60">Positivo</span><strong>${data.newsletterAgent.sentimentBuckets.positive}</strong></div>
+            <div class="mini-stat-card"><span class="text-xs opacity-60">Neutro</span><strong>${data.newsletterAgent.sentimentBuckets.neutral}</strong></div>
+            <div class="mini-stat-card"><span class="text-xs opacity-60">Negativo</span><strong>${data.newsletterAgent.sentimentBuckets.negative}</strong></div>
+            <div class="mini-stat-card"><span class="text-xs opacity-60">Opt-out</span><strong>${data.newsletterAgent.totals.optOutSessions}</strong></div>
+          </div>
+          <p class="text-xs opacity-60" style="margin-top: 12px;">As mensagens inbound entram por webhook e atualizam esta tela em tempo real operacional.</p>
+        </section>
+      </div>
+
+      <div class="panel-grid" style="margin-top:24px; grid-template-columns: minmax(280px, 0.9fr) 1.4fr;">
+        <section class="panel">
+          <div class="panel-header">
+            <h3 class="panel-title">Sessoes Recentes</h3>
+            <span class="badge badge-outline">${data.newsletterAgent.recentSessions.length}</span>
+          </div>
+          <div class="control-entity-list">
+            ${newsletterRecentSessionsHtml || '<div class="timeline-content"><span class="text-sm opacity-60">Nenhuma sessao registrada ainda.</span></div>'}
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h3 class="panel-title">Sessao Selecionada</h3>
+            <span class="badge ${newsletterSelectedStatusClass}">${escapeHtml(selectedNewsletterSession?.status || 'sem_sessao')}</span>
+          </div>
+
+          ${selectedNewsletterSession ? `
+            <div class="mini-stat-grid" style="margin-bottom: 16px;">
+              <div class="mini-stat-card"><span class="text-xs opacity-60">Contato</span><strong>${escapeHtml(selectedNewsletterSession.sourceContact)}</strong></div>
+              <div class="mini-stat-card"><span class="text-xs opacity-60">Sentimento</span><strong>${escapeHtml(newsletterSentimentLabel)}</strong></div>
+              <div class="mini-stat-card"><span class="text-xs opacity-60">Feedback</span><strong>${escapeHtml(newsletterFeedbackLabel)}</strong></div>
+              <div class="mini-stat-card"><span class="text-xs opacity-60">Ultima msg</span><strong>${escapeHtml(selectedNewsletterSession.lastMessageAt ? new Date(selectedNewsletterSession.lastMessageAt).toLocaleString('pt-BR') : '-')}</strong></div>
+            </div>
+
+            <div class="table-container" style="max-height: 280px; overflow-y: auto;">
+              <table>
+                <thead>
+                  <tr><th>Direcao</th><th>Mensagem</th><th>Meta</th></tr>
+                </thead>
+                <tbody>
+                  ${newsletterMessageRowsHtml || '<tr><td colspan="3" class="opacity-40 text-center py-8">Sem mensagens nesta sessao.</td></tr>'}
+                </tbody>
+              </table>
+            </div>
+
+            <form method="post" action="/admin/actions/newsletter-agent/reply" class="control-form-block" style="margin-top: 14px;">
+              <input type="hidden" name="sessionId" value="${escapeHtml(selectedNewsletterSession.id)}" />
+              <div class="form-group">
+                <label class="input-label">Enviar resposta manual</label>
+                <textarea class="input-control" name="replyMessage" rows="3" placeholder="Mensagem manual para o contato" required></textarea>
+              </div>
+              <button type="submit" class="btn btn-glass" style="width:auto;">Enviar Mensagem</button>
+            </form>
+
+            <form method="post" action="/admin/actions/newsletter-agent/feedback" class="control-form-block" style="margin-top: 12px;">
+              <input type="hidden" name="sessionId" value="${escapeHtml(selectedNewsletterSession.id)}" />
+              <div class="inline-form-grid">
+                <div class="form-group">
+                  <label class="input-label">Status</label>
+                  <select class="input-control" name="status">
+                    <option value="active" ${selectedNewsletterSession.status === 'active' ? 'selected' : ''}>active</option>
+                    <option value="converted" ${selectedNewsletterSession.status === 'converted' ? 'selected' : ''}>converted</option>
+                    <option value="opt_out" ${selectedNewsletterSession.status === 'opt_out' ? 'selected' : ''}>opt_out</option>
+                    <option value="closed" ${selectedNewsletterSession.status === 'closed' ? 'selected' : ''}>closed</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="input-label">Nota (1-5)</label>
+                  <input class="input-control" name="feedbackRating" type="number" min="1" max="5" value="${escapeHtml(selectedNewsletterSession.feedbackRating ? String(selectedNewsletterSession.feedbackRating) : '')}" />
+                </div>
+                <div class="form-group" style="grid-column:1 / -1;">
+                  <label class="input-label">Feedback</label>
+                  <textarea class="input-control" name="feedbackText" rows="3">${escapeHtml(selectedNewsletterSession.feedbackText || '')}</textarea>
+                </div>
+              </div>
+              <button type="submit" class="btn btn-glass" style="width:auto;">Salvar Feedback</button>
+            </form>
+          ` : '<div class="timeline-content"><span class="text-sm opacity-60">Selecione uma sessao para auditar historico, sentimento e feedback.</span></div>'}
+        </section>
+      </div>
+    </div>
+
     <!-- VIEW: Playground AI -->
     <div id="view-playground" class="view-content">
       <div class="panel-grid" style="grid-template-columns: 1fr 2fr; align-items: start;">
@@ -1929,6 +2188,7 @@ export function renderAdminDashboardPage(data: {
       'wa-groups': { title: 'Explorador de Grupos', subtitle: 'Extração e captura de audiência via grupos de WhatsApp.' },
       'integrations': { title: 'Integrações de Canais', subtitle: 'Configure webhooks e gateways de entrega multicanal.' },
       'control-room': { title: 'Control Room', subtitle: 'Selecione campanha ou jornada, visualize diagrama e execute ações em tempo real.' },
+      'newsletter-agent': { title: 'Agente Newsletter', subtitle: 'Inicie abordagens por contato e audite histórico, sentimento e feedback em uma única tela.' },
       'journeys': { title: 'Jornadas AI', subtitle: 'Crie e gerencie jornadas conversacionais com persona AI inteligente.' },
       'ai-prompts': { title: 'Engenharia de Prompt', subtitle: 'Versionamento, Rollback e Auditoria Oficial.' },
       'playground': { title: 'Playground AI', subtitle: 'Ambiente seguro para simular e calibrar o funil de IA.' },

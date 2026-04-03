@@ -30,6 +30,9 @@ if (!dispatchBearerToken) {
 }
 
 const gatewayAdminToken = normalizeString(process.env.GATEWAY_ADMIN_TOKEN) ?? dispatchBearerToken
+const inboundWebhookUrl = normalizeString(process.env.INBOUND_WEBHOOK_URL)
+const inboundWebhookToken =
+  normalizeString(process.env.INBOUND_WEBHOOK_TOKEN) ?? dispatchBearerToken
 
 export const config = {
   host: normalizeString(process.env.HOST) ?? '0.0.0.0',
@@ -37,6 +40,10 @@ export const config = {
   logLevel: normalizeString(process.env.LOG_LEVEL) ?? 'info',
   dispatchBearerToken,
   gatewayAdminToken,
+  inboundWebhook: {
+    url: inboundWebhookUrl,
+    token: inboundWebhookToken,
+  },
   baileys: {
     sessionDir: path.resolve(
       process.cwd(),

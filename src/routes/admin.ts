@@ -1,7 +1,20 @@
 import { Hono } from 'hono'
 import type { Bindings, JourneyPhase, JourneyConversationMessage, JourneyRecord, SegmentCriteria } from '../types'
-import { DEFAULT_WHATSAPP_TEST_MESSAGE, DEFAULT_EMAIL_TEST_MESSAGE, DEFAULT_TELEGRAM_TEST_MESSAGE } from '../constants'
-import { safeString, toNumber, toBoolean, resolveConsentSource, buildAdminRedirect, constantTimeEqual } from '../utils'
+import {
+  DEFAULT_WHATSAPP_TEST_MESSAGE,
+  DEFAULT_EMAIL_TEST_MESSAGE,
+  DEFAULT_TELEGRAM_TEST_MESSAGE,
+  DEFAULT_AI_MODEL,
+} from '../constants'
+import {
+  safeString,
+  toNumber,
+  toBoolean,
+  resolveConsentSource,
+  buildAdminRedirect,
+  constantTimeEqual,
+  resolveDispatchUrl,
+} from '../utils'
 import {
   hasValidAdminSession,
   ensureAdminSession,
@@ -15,7 +28,27 @@ import {
   recordAdminLoginFailure,
   clearAdminLoginThrottle,
 } from '../auth'
-import { createUserRecord, createCampaignRecord, getOverviewMetrics, getAIInferenceOverview, createJourneyRecord, listJourneys, getJourneyById, updateJourneyStatus, enrollUserInJourney, listJourneyEnrollments, createPersonaRecord, createProductRecord } from '../db'
+import {
+  createUserRecord,
+  createCampaignRecord,
+  getOverviewMetrics,
+  getAIInferenceOverview,
+  createJourneyRecord,
+  listJourneys,
+  getJourneyById,
+  updateJourneyStatus,
+  enrollUserInJourney,
+  listJourneyEnrollments,
+  createPersonaRecord,
+  createProductRecord,
+  getNewsletterAgentOverview,
+  getNewsletterConversationSessionById,
+  listNewsletterConversationMessages,
+  updateNewsletterConversationSession,
+  getLatestNewsletterConversationSessionByContact,
+  createNewsletterConversationSession,
+  appendNewsletterConversationMessage,
+} from '../db'
 import { setUserMarketingConsent } from '../consent'
 import { simulatePersonaConversation } from '../persona'
 import {
@@ -33,6 +66,7 @@ import { createSegment, listSegments, getSegmentById, updateSegment, deleteSegme
 import { createFreezingRule, getFreezingRules, getFreezingRuleById, updateFreezingRule, deleteFreezingRule, createDefaultFreezingRules } from '../freezing-rules'
 import { runPromptEvaluation } from '../ai-eval'
 import { getPromptHistory, publishPromptVersion, getActivePrompt } from '../prompt-manager'
+import { analyzeNewsletterSentiment, generateNewsletterOpeningMessage } from '../newsletter-agent'
 
 const admin = new Hono<{ Bindings: Bindings }>()
 
@@ -105,6 +139,138 @@ function buildAdminControlRedirect(
   return `/admin?${params.toString()}#control-room`
 }
 
+function buildAdminNewsletterRedirect(
+  notice: string,
+  kind: 'success' | 'error',
+  sessionId?: string | null
+): string {
+  const params = new URLSearchParams()
+  params.set('notice', notice)
+  params.set('kind', kind)
+  if (sessionId) params.set('newsletterSessionId', sessionId)
+  return `/admin?${params.toString()}#newsletter-agent`
+}
+
+function normalizeNewsletterContact(value: unknown): string | null {
+  const raw = safeString(value)
+  if (!raw) return null
+
+  const normalized = raw.toLowerCase()
+  const atIndex = normalized.indexOf('@')
+  if (atIndex > 0) {
+    const localPart = normalized.slice(0, atIndex).trim()
+    const domainPart = normalized.slice(atIndex + 1).trim()
+    if (!localPart || !domainPart) return null
+
+    if (domainPart === 's.whatsapp.net' || domainPart === 'c.us' || domainPart === 'lid') {
+      return `${localPart}@${domainPart}`
+    }
+
+    return null
+  }
+
+  const digits = normalized.replace(/[^0-9]/g, '')
+  if (digits.length < 10 || digits.length > 15) return null
+  return digits
+}
+
+function buildNewsletterContactCandidates(contact: string): string[] {
+  const candidates = new Set<string>()
+  const normalized = contact.toLowerCase()
+  candidates.add(normalized)
+
+  const atIndex = normalized.indexOf('@')
+  if (atIndex > 0) {
+    const localPart = normalized.slice(0, atIndex)
+    const digits = localPart.split(':')[0].replace(/[^0-9]/g, '')
+    if (digits.length >= 10 && digits.length <= 15) {
+      candidates.add(digits)
+      candidates.add(`+${digits}`)
+      candidates.add(`${digits}@s.whatsapp.net`)
+      candidates.add(`${digits}@c.us`)
+    }
+  } else {
+    const digits = normalized.replace(/[^0-9]/g, '')
+    if (digits.length >= 10 && digits.length <= 15) {
+      candidates.add(digits)
+      candidates.add(`+${digits}`)
+      candidates.add(`${digits}@s.whatsapp.net`)
+      candidates.add(`${digits}@c.us`)
+    }
+  }
+
+  return Array.from(candidates)
+}
+
+async function findUserByNewsletterContact(env: Bindings, contact: string) {
+  const candidates = buildNewsletterContactCandidates(contact)
+  if (!candidates.length) return null
+
+  const placeholders = candidates.map(() => '?').join(', ')
+  const query = `SELECT id, name, phone, marketing_opt_in FROM users WHERE phone IN (${placeholders}) ORDER BY created_at DESC LIMIT 1`
+  const user = await env.DB.prepare(query).bind(...candidates).first<{
+    id: string
+    name: string | null
+    phone: string | null
+    marketing_opt_in: number | null
+  }>()
+
+  return user ?? null
+}
+
+async function sendNewsletterAgentWhatsAppMessage(
+  env: Bindings,
+  destinationContact: string,
+  message: string,
+  sessionId: string,
+  source: 'manual_start' | 'manual_reply'
+): Promise<{ ok: boolean; status: number; responsePreview: string }> {
+  const dispatchUrl = await resolveDispatchUrl('whatsapp', env)
+  const dispatchToken = safeString(env.DISPATCH_BEARER_TOKEN)
+
+  if (!dispatchUrl || !dispatchToken) {
+    return {
+      ok: false,
+      status: 500,
+      responsePreview: 'WhatsApp dispatch is not configured for newsletter agent.',
+    }
+  }
+
+  const payload = {
+    channel: 'whatsapp',
+    campaign: {
+      id: 'newsletter-agent',
+      name: 'Newsletter Conversational Agent',
+    },
+    user: {
+      id: `newsletter-session-${sessionId}`,
+      phone: destinationContact,
+      preferredChannel: 'whatsapp',
+    },
+    message,
+    metadata: {
+      source,
+      sessionId,
+    },
+  }
+
+  const response = await fetch(dispatchUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${dispatchToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+
+  const responseText = await response.text()
+  return {
+    ok: response.ok,
+    status: response.status,
+    responsePreview: responseText.slice(0, 500),
+  }
+}
+
 // Login Page
 admin.get('/login', async (c) => {
   const hasSession = await hasValidAdminSession(c)
@@ -159,7 +325,7 @@ admin.get('/', async (c) => {
   const unauthorized = await ensureAdminSession(c)
   if (unauthorized) return c.redirect('/admin/login', 302)
 
-  const [overview, campaigns, decisions, users, whatsappIntegration, emailIntegration, telegramIntegration, journeys] = await Promise.all([
+  const [overview, campaigns, decisions, users, whatsappIntegration, emailIntegration, telegramIntegration, journeys, newsletterOverview] = await Promise.all([
     getOverviewMetrics(c.env),
     c.env.DB.prepare(
       'SELECT id, name, channel, status, updated_at FROM campaigns ORDER BY updated_at DESC LIMIT 30'
@@ -174,6 +340,7 @@ admin.get('/', async (c) => {
     getAdminEmailIntegrationConfig(c.env),
     getAdminTelegramIntegrationConfig(c.env),
     listJourneys(c.env),
+    getNewsletterAgentOverview(c.env, 20),
   ])
 
   // Fetch enrollment counts for each journey
@@ -392,6 +559,72 @@ admin.get('/', async (c) => {
 
   const activeControlId = selectedCampaign?.id ?? selectedJourney?.id ?? null
 
+  const requestedNewsletterSessionId = safeString(c.req.query('newsletterSessionId'))
+  const defaultNewsletterSessionId = newsletterOverview.recentSessions[0]?.id ?? null
+  const focusedNewsletterSessionId = requestedNewsletterSessionId ?? defaultNewsletterSessionId
+
+  let focusedNewsletterSession: {
+    id: string
+    userId: string | null
+    userName: string | null
+    sourceContact: string
+    sourceChannel: string
+    status: string
+    sentimentScore: number | null
+    sentimentLabel: string | null
+    feedbackRating: number | null
+    feedbackText: string | null
+    convertedAt: string | null
+    lastMessageAt: string | null
+  } | null = null
+
+  let focusedNewsletterMessages: Array<{
+    id: number
+    direction: string
+    messageText: string
+    sentimentScore: number | null
+    sentimentLabel: string | null
+    aiModel: string | null
+    metadata: string | null
+    createdAt: string
+  }> = []
+
+  if (focusedNewsletterSessionId) {
+    const [sessionRecord, messageRows] = await Promise.all([
+      getNewsletterConversationSessionById(c.env, focusedNewsletterSessionId),
+      listNewsletterConversationMessages(c.env, focusedNewsletterSessionId, 120),
+    ])
+
+    if (sessionRecord) {
+      const referencedUser = users.results?.find((entry) => entry.id === sessionRecord.user_id) ?? null
+      focusedNewsletterSession = {
+        id: sessionRecord.id,
+        userId: sessionRecord.user_id,
+        userName: referencedUser?.name ?? null,
+        sourceContact: sessionRecord.source_contact,
+        sourceChannel: sessionRecord.source_channel,
+        status: sessionRecord.status,
+        sentimentScore: sessionRecord.sentiment_score,
+        sentimentLabel: sessionRecord.sentiment_label,
+        feedbackRating: sessionRecord.feedback_rating,
+        feedbackText: sessionRecord.feedback_text,
+        convertedAt: sessionRecord.converted_at,
+        lastMessageAt: sessionRecord.last_message_at,
+      }
+    }
+
+    focusedNewsletterMessages = messageRows.map((message) => ({
+      id: message.id,
+      direction: message.direction,
+      messageText: message.message_text,
+      sentimentScore: message.sentiment_score,
+      sentimentLabel: message.sentiment_label,
+      aiModel: message.ai_model,
+      metadata: message.metadata,
+      createdAt: message.created_at,
+    }))
+  }
+
   const notice = safeString(c.req.query('notice'))
   const noticeKind = safeString(c.req.query('kind'))
 
@@ -434,6 +667,12 @@ admin.get('/', async (c) => {
         journeys: journeysWithCounts,
         selectedCampaign,
         selectedJourney,
+      },
+      newsletterAgent: newsletterOverview,
+      newsletterAgentSession: {
+        selectedSessionId: focusedNewsletterSessionId,
+        selectedSession: focusedNewsletterSession,
+        selectedMessages: focusedNewsletterMessages,
       },
     })
   )
@@ -608,6 +847,289 @@ admin.post('/actions/user/optout', async (c) => {
     return c.redirect(buildAdminRedirect(`Opt-out aplicado: ${consentResult.user.id}`), 302)
   } catch (error) {
     return c.redirect(buildAdminRedirect(`Falha no opt-out: ${String(error)}`, 'error'), 302)
+  }
+})
+
+// Action - Start Newsletter Agent conversation from admin screen
+admin.post('/actions/newsletter-agent/start', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    const form = await c.req.parseBody()
+    const normalizedContact = normalizeNewsletterContact(
+      typeof form.contact === 'string' ? form.contact : null
+    )
+    if (!normalizedContact) {
+      return c.redirect(
+        buildAdminNewsletterRedirect('Contato invalido. Use telefone ou JID WhatsApp valido.', 'error'),
+        302
+      )
+    }
+
+    const providedName = safeString(typeof form.contactName === 'string' ? form.contactName : null)
+    const customOpeningMessage = safeString(
+      typeof form.openingMessage === 'string' ? form.openingMessage : null
+    )
+
+    let linkedUser = await findUserByNewsletterContact(c.env, normalizedContact)
+
+    if (linkedUser && toNumber(linkedUser.marketing_opt_in) === 0) {
+      return c.redirect(
+        buildAdminNewsletterRedirect('Este contato esta em opt-out. Reative consentimento antes de iniciar.', 'error'),
+        302
+      )
+    }
+
+    if (!linkedUser) {
+      await createUserRecord(c.env, {
+        name: providedName ?? `Lead ${normalizedContact}`,
+        phone: normalizedContact,
+        preferredChannel: 'whatsapp',
+        marketingOptIn: true,
+        consentSource: 'newsletter_admin_start',
+      })
+      linkedUser = await findUserByNewsletterContact(c.env, normalizedContact)
+    }
+
+    let session = await getLatestNewsletterConversationSessionByContact(c.env, normalizedContact)
+    if (!session) {
+      session = await createNewsletterConversationSession(c.env, {
+        userId: linkedUser?.id ?? null,
+        sourceChannel: 'whatsapp',
+        sourceContact: normalizedContact,
+        status: 'active',
+      })
+    }
+
+    const openingMessage =
+      customOpeningMessage ??
+      (await generateNewsletterOpeningMessage(c.env, {
+        customerName: providedName ?? linkedUser?.name ?? null,
+        contextHint: 'Abordagem inicial pelo painel administrativo.',
+      }))
+
+    const dispatchResult = await sendNewsletterAgentWhatsAppMessage(
+      c.env,
+      normalizedContact,
+      openingMessage,
+      session.id,
+      'manual_start'
+    )
+
+    if (!dispatchResult.ok) {
+      await appendNewsletterConversationMessage(c.env, {
+        sessionId: session.id,
+        direction: 'system',
+        messageText: `Falha ao iniciar abordagem (HTTP ${dispatchResult.status}).`,
+        metadata: {
+          source: 'admin_manual_start',
+          responsePreview: dispatchResult.responsePreview,
+        },
+      })
+
+      return c.redirect(
+        buildAdminNewsletterRedirect(
+          `Nao foi possivel iniciar o contato (HTTP ${dispatchResult.status}).`,
+          'error',
+          session.id
+        ),
+        302
+      )
+    }
+
+    const sentiment = analyzeNewsletterSentiment(openingMessage)
+    await appendNewsletterConversationMessage(c.env, {
+      sessionId: session.id,
+      direction: 'agent',
+      messageText: openingMessage,
+      sentimentScore: sentiment.score,
+      sentimentLabel: sentiment.label,
+      aiModel: customOpeningMessage ? null : DEFAULT_AI_MODEL,
+      metadata: {
+        source: 'admin_manual_start',
+      },
+    })
+
+    await updateNewsletterConversationSession(c.env, session.id, {
+      userId: session.user_id ?? linkedUser?.id ?? null,
+      status: 'active',
+      sentimentScore: sentiment.score,
+      sentimentLabel: sentiment.label,
+      lastMessageAt: new Date().toISOString(),
+    })
+
+    return c.redirect(
+      buildAdminNewsletterRedirect('Abordagem inicial enviada com sucesso.', 'success', session.id),
+      302
+    )
+  } catch (error) {
+    return c.redirect(
+      buildAdminNewsletterRedirect(`Falha ao iniciar abordagem: ${String(error)}`, 'error'),
+      302
+    )
+  }
+})
+
+// Action - Send manual reply on an existing newsletter session
+admin.post('/actions/newsletter-agent/reply', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    const form = await c.req.parseBody()
+    const sessionId = safeString(typeof form.sessionId === 'string' ? form.sessionId : null)
+    const replyMessage = safeString(typeof form.replyMessage === 'string' ? form.replyMessage : null)
+
+    if (!sessionId || !replyMessage) {
+      return c.redirect(
+        buildAdminNewsletterRedirect('Informe sessao e mensagem para envio manual.', 'error', sessionId),
+        302
+      )
+    }
+
+    const session = await getNewsletterConversationSessionById(c.env, sessionId)
+    if (!session) {
+      return c.redirect(buildAdminNewsletterRedirect('Sessao nao encontrada.', 'error'), 302)
+    }
+
+    const dispatchResult = await sendNewsletterAgentWhatsAppMessage(
+      c.env,
+      session.source_contact,
+      replyMessage,
+      session.id,
+      'manual_reply'
+    )
+
+    if (!dispatchResult.ok) {
+      return c.redirect(
+        buildAdminNewsletterRedirect(
+          `Falha ao enviar resposta manual (HTTP ${dispatchResult.status}).`,
+          'error',
+          session.id
+        ),
+        302
+      )
+    }
+
+    const sentiment = analyzeNewsletterSentiment(replyMessage)
+    await appendNewsletterConversationMessage(c.env, {
+      sessionId: session.id,
+      direction: 'agent',
+      messageText: replyMessage,
+      sentimentScore: sentiment.score,
+      sentimentLabel: sentiment.label,
+      metadata: {
+        source: 'admin_manual_reply',
+      },
+    })
+
+    await updateNewsletterConversationSession(c.env, session.id, {
+      sentimentScore: sentiment.score,
+      sentimentLabel: sentiment.label,
+      lastMessageAt: new Date().toISOString(),
+    })
+
+    return c.redirect(
+      buildAdminNewsletterRedirect('Resposta manual enviada com sucesso.', 'success', session.id),
+      302
+    )
+  } catch (error) {
+    return c.redirect(
+      buildAdminNewsletterRedirect(`Falha ao enviar resposta manual: ${String(error)}`, 'error'),
+      302
+    )
+  }
+})
+
+// Action - Update feedback/status for newsletter session
+admin.post('/actions/newsletter-agent/feedback', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    const form = await c.req.parseBody()
+    const sessionId = safeString(typeof form.sessionId === 'string' ? form.sessionId : null)
+    if (!sessionId) {
+      return c.redirect(buildAdminNewsletterRedirect('Sessao nao informada.', 'error'), 302)
+    }
+
+    const feedbackRatingRaw = safeString(typeof form.feedbackRating === 'string' ? form.feedbackRating : null)
+    const feedbackText = safeString(typeof form.feedbackText === 'string' ? form.feedbackText : null)
+    const statusCandidate = safeString(typeof form.status === 'string' ? form.status : null)
+
+    let feedbackRating: number | null = null
+    if (feedbackRatingRaw) {
+      const parsed = toNumber(feedbackRatingRaw)
+      if (parsed < 1 || parsed > 5) {
+        return c.redirect(
+          buildAdminNewsletterRedirect('Feedback deve ser uma nota entre 1 e 5.', 'error', sessionId),
+          302
+        )
+      }
+      feedbackRating = Math.floor(parsed)
+    }
+
+    const nextStatus =
+      statusCandidate === 'active' ||
+      statusCandidate === 'converted' ||
+      statusCandidate === 'opt_out' ||
+      statusCandidate === 'closed'
+        ? statusCandidate
+        : undefined
+
+    const updated = await updateNewsletterConversationSession(c.env, sessionId, {
+      feedbackRating,
+      feedbackText,
+      status: nextStatus,
+    })
+
+    if (!updated) {
+      return c.redirect(buildAdminNewsletterRedirect('Sessao nao encontrada.', 'error', sessionId), 302)
+    }
+
+    return c.redirect(
+      buildAdminNewsletterRedirect('Feedback da sessao atualizado.', 'success', sessionId),
+      302
+    )
+  } catch (error) {
+    return c.redirect(
+      buildAdminNewsletterRedirect(`Falha ao atualizar feedback: ${String(error)}`, 'error'),
+      302
+    )
+  }
+})
+
+// API - Newsletter overview
+admin.get('/api/newsletter-agent/overview', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.json({ error: 'Unauthorized' }, 401)
+
+  try {
+    const overview = await getNewsletterAgentOverview(c.env, 40)
+    return c.json(overview)
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
+// API - Newsletter session messages
+admin.get('/api/newsletter-agent/sessions/:sessionId/messages', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.json({ error: 'Unauthorized' }, 401)
+
+  try {
+    const sessionId = c.req.param('sessionId')
+    const session = await getNewsletterConversationSessionById(c.env, sessionId)
+    if (!session) return c.json({ error: 'Session not found' }, 404)
+
+    const messages = await listNewsletterConversationMessages(c.env, sessionId, 200)
+    return c.json({
+      session,
+      messages,
+    })
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
   }
 })
 

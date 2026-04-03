@@ -1,7 +1,15 @@
 import { Hono } from 'hono'
 import type { Bindings, InteractionPayload, CampaignRecord, DispatchRequestBody, JourneyPhase, JourneyConversationMessage } from '../types'
 import { DEFAULT_AI_MODEL } from '../constants'
-import { safeString, toNumber, toBoolean, isInteractionEvent, resolveConsentSource } from '../utils'
+import {
+  safeString,
+  toNumber,
+  toBoolean,
+  isInteractionEvent,
+  resolveConsentSource,
+  resolveDispatchUrl,
+  constantTimeEqual,
+} from '../utils'
 import { ensureAdminAccess } from '../auth'
 import {
   getUserById,
@@ -21,13 +29,144 @@ import {
   parseConversationHistory,
   createPersonaRecord,
   createProductRecord,
+  getLatestNewsletterConversationSessionByContact,
+  createNewsletterConversationSession,
+  updateNewsletterConversationSession,
+  appendNewsletterConversationMessage,
+  listNewsletterConversationMessages,
 } from '../db'
 import { setUserMarketingConsent } from '../consent'
 import { generatePersonalizedMessage } from '../ai'
 import { executeCampaignDispatch } from '../dispatch'
 import { runPersonaConversation, generateJourneyOpeningMessage, simulatePersonaConversation } from '../persona'
+import { generateNewsletterAgentReply } from '../newsletter-agent'
 
 const api = new Hono<{ Bindings: Bindings }>()
+
+function extractBearerToken(headerValue: string | null): string | null {
+  if (!headerValue) return null
+  const match = headerValue.match(/^Bearer\s+(.+)$/i)
+  if (!match?.[1]) return null
+  return safeString(match[1])
+}
+
+function normalizeWhatsAppInboundContact(value: unknown): string | null {
+  const raw = safeString(value)
+  if (!raw) return null
+
+  const normalized = raw.toLowerCase()
+  const atIndex = normalized.indexOf('@')
+  if (atIndex > 0) {
+    const localPart = normalized.slice(0, atIndex).trim()
+    const domainPart = normalized.slice(atIndex + 1).trim()
+    if (!localPart || !domainPart) return null
+
+    if (domainPart === 's.whatsapp.net' || domainPart === 'c.us' || domainPart === 'lid') {
+      return `${localPart}@${domainPart}`
+    }
+
+    return null
+  }
+
+  const digits = normalized.replace(/[^0-9]/g, '')
+  if (digits.length < 10 || digits.length > 15) return null
+  return digits
+}
+
+function buildInboundContactCandidates(contact: string): string[] {
+  const candidates = new Set<string>()
+  const normalized = contact.toLowerCase()
+  candidates.add(normalized)
+
+  const atIndex = normalized.indexOf('@')
+  if (atIndex > 0) {
+    const localPart = normalized.slice(0, atIndex)
+    const digits = localPart.split(':')[0].replace(/[^0-9]/g, '')
+    if (digits.length >= 10 && digits.length <= 15) {
+      candidates.add(digits)
+      candidates.add(`+${digits}`)
+      candidates.add(`${digits}@s.whatsapp.net`)
+      candidates.add(`${digits}@c.us`)
+    }
+  } else {
+    const digits = normalized.replace(/[^0-9]/g, '')
+    if (digits.length >= 10 && digits.length <= 15) {
+      candidates.add(digits)
+      candidates.add(`+${digits}`)
+      candidates.add(`${digits}@s.whatsapp.net`)
+      candidates.add(`${digits}@c.us`)
+    }
+  }
+
+  return Array.from(candidates)
+}
+
+async function resolveInboundUserByContact(env: Bindings, contact: string) {
+  const candidates = buildInboundContactCandidates(contact)
+  if (!candidates.length) return null
+
+  const placeholders = candidates.map(() => '?').join(', ')
+  const query = `SELECT * FROM users WHERE phone IN (${placeholders}) ORDER BY created_at DESC LIMIT 1`
+  const user = await env.DB.prepare(query).bind(...candidates).first<{
+    id: string
+    name: string | null
+    phone: string | null
+    marketing_opt_in?: number | null
+  }>()
+  return user ?? null
+}
+
+async function sendNewsletterAgentWhatsAppReply(
+  env: Bindings,
+  destinationContact: string,
+  message: string,
+  sessionId: string
+): Promise<{ ok: boolean; status: number; responsePreview: string }> {
+  const dispatchUrl = await resolveDispatchUrl('whatsapp', env)
+  const dispatchToken = safeString(env.DISPATCH_BEARER_TOKEN)
+
+  if (!dispatchUrl || !dispatchToken) {
+    return {
+      ok: false,
+      status: 500,
+      responsePreview: 'WhatsApp dispatch is not configured for newsletter agent.',
+    }
+  }
+
+  const payload = {
+    channel: 'whatsapp',
+    campaign: {
+      id: 'newsletter-agent',
+      name: 'Newsletter Conversational Agent',
+    },
+    user: {
+      id: `newsletter-session-${sessionId}`,
+      phone: destinationContact,
+      preferredChannel: 'whatsapp',
+    },
+    message,
+    metadata: {
+      source: 'newsletter_conversation_agent',
+      sessionId,
+    },
+  }
+
+  const response = await fetch(dispatchUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${dispatchToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+
+  const responseText = await response.text()
+  return {
+    ok: response.ok,
+    status: response.status,
+    responsePreview: responseText.slice(0, 500),
+  }
+}
 
 // Create User
 api.post('/user', async (c) => {
@@ -260,6 +399,186 @@ api.get('/test-fetch-ip', async (c) => {
   } catch (e) {
     return c.json({ error: String(e) }, 500)
   }
+})
+
+// WhatsApp inbound webhook for newsletter conversational agent
+api.post('/webhooks/whatsapp/inbound', async (c) => {
+  const configuredToken = safeString(c.env.DISPATCH_BEARER_TOKEN)
+  if (!configuredToken) {
+    return c.json({ error: 'DISPATCH_BEARER_TOKEN is not configured.' }, 500)
+  }
+
+  const providedToken = extractBearerToken(c.req.header('authorization') ?? null)
+  if (!providedToken || !constantTimeEqual(providedToken, configuredToken)) {
+    return c.json({ error: 'Unauthorized' }, 401)
+  }
+
+  const body = (await c.req.json().catch(() => null)) as
+    | Partial<{
+        sourceContact: string
+        from: string
+        contact: string
+        message: string
+        text: string
+        user: {
+          phone?: string
+          name?: string
+          id?: string
+        }
+        messageId: string
+        timestamp: string
+      }>
+    | null
+
+  if (!body) return c.json({ error: 'Invalid JSON body' }, 400)
+
+  const inboundMessage = safeString(body.message ?? body.text)
+  const normalizedContact = normalizeWhatsAppInboundContact(
+    body.sourceContact ?? body.from ?? body.contact ?? body.user?.phone
+  )
+
+  if (!normalizedContact) {
+    return c.json({ error: 'Missing or invalid source contact.' }, 400)
+  }
+
+  if (!inboundMessage) {
+    return c.json({ error: 'Missing inbound message text.' }, 400)
+  }
+
+  const inboundUser = await resolveInboundUserByContact(c.env, normalizedContact)
+  const customerName = safeString(body.user?.name) ?? safeString(inboundUser?.name)
+
+  let session = await getLatestNewsletterConversationSessionByContact(c.env, normalizedContact)
+  if (!session) {
+    session = await createNewsletterConversationSession(c.env, {
+      userId: inboundUser?.id ?? null,
+      sourceChannel: 'whatsapp',
+      sourceContact: normalizedContact,
+      status: 'active',
+    })
+  } else if (!session.user_id && inboundUser?.id) {
+    const updatedSession = await updateNewsletterConversationSession(c.env, session.id, {
+      userId: inboundUser.id,
+    })
+    if (updatedSession) session = updatedSession
+  }
+
+  const history = await listNewsletterConversationMessages(c.env, session.id, 30)
+  const agentReply = await generateNewsletterAgentReply(c.env, {
+    customerName,
+    inboundMessage,
+    history,
+  })
+
+  const nowIso = new Date().toISOString()
+
+  await appendNewsletterConversationMessage(c.env, {
+    sessionId: session.id,
+    direction: 'inbound',
+    messageText: inboundMessage,
+    sentimentScore: agentReply.sentiment.score,
+    sentimentLabel: agentReply.sentiment.label,
+    metadata: {
+      source: 'gateway_inbound',
+      messageId: safeString(body.messageId),
+      timestamp: safeString(body.timestamp),
+    },
+  })
+
+  let sessionStatus = session.status
+  if (agentReply.shouldOptOut) {
+    sessionStatus = 'opt_out'
+  } else if (agentReply.shouldConvert) {
+    sessionStatus = 'converted'
+  } else if (sessionStatus !== 'opt_out' && sessionStatus !== 'converted') {
+    sessionStatus = 'active'
+  }
+
+  const feedbackRating = agentReply.feedbackRating ?? session.feedback_rating
+  const convertedAt =
+    sessionStatus === 'converted' ? safeString(session.converted_at) ?? nowIso : safeString(session.converted_at)
+
+  const updatedAfterInbound = await updateNewsletterConversationSession(c.env, session.id, {
+    userId: session.user_id ?? inboundUser?.id ?? null,
+    status: sessionStatus,
+    sentimentScore: agentReply.sentiment.score,
+    sentimentLabel: agentReply.sentiment.label,
+    feedbackRating,
+    convertedAt,
+    lastMessageAt: nowIso,
+  })
+  if (updatedAfterInbound) session = updatedAfterInbound
+
+  if (inboundUser?.id) {
+    if (sessionStatus === 'converted') {
+      await setUserMarketingConsent(c.env, inboundUser.id, true, 'newsletter_agent_convert')
+    }
+    if (sessionStatus === 'opt_out') {
+      await setUserMarketingConsent(c.env, inboundUser.id, false, 'newsletter_agent_optout')
+    }
+  }
+
+  const dispatchResult = await sendNewsletterAgentWhatsAppReply(
+    c.env,
+    normalizedContact,
+    agentReply.replyText,
+    session.id
+  )
+
+  if (!dispatchResult.ok) {
+    await appendNewsletterConversationMessage(c.env, {
+      sessionId: session.id,
+      direction: 'system',
+      messageText: `Falha ao enviar resposta do agente (HTTP ${dispatchResult.status}).`,
+      metadata: {
+        responsePreview: dispatchResult.responsePreview,
+      },
+    })
+
+    return c.json(
+      {
+        error: 'Failed to dispatch newsletter agent response.',
+        statusCode: dispatchResult.status,
+        details: dispatchResult.responsePreview,
+        sessionId: session.id,
+      },
+      502
+    )
+  }
+
+  await appendNewsletterConversationMessage(c.env, {
+    sessionId: session.id,
+    direction: 'agent',
+    messageText: agentReply.replyText,
+    aiModel: DEFAULT_AI_MODEL,
+    metadata: {
+      intent: agentReply.intent,
+      feedbackRating: agentReply.feedbackRating,
+      dispatchStatus: dispatchResult.status,
+    },
+  })
+
+  await updateNewsletterConversationSession(c.env, session.id, {
+    status: sessionStatus,
+    sentimentScore: agentReply.sentiment.score,
+    sentimentLabel: agentReply.sentiment.label,
+    feedbackRating,
+    convertedAt,
+    lastMessageAt: nowIso,
+  })
+
+  const storedMessages = await listNewsletterConversationMessages(c.env, session.id, 100)
+
+  return c.json({
+    status: 'success',
+    sessionId: session.id,
+    sessionStatus,
+    intent: agentReply.intent,
+    sentiment: agentReply.sentiment,
+    feedbackRating,
+    reply: agentReply.replyText,
+    messagesStored: storedMessages.length,
+  })
 })
 
 export { api }
