@@ -2360,8 +2360,6 @@ export function renderAdminDashboardPage(data: {
                     <option value="flow:newsletter_agent_reply">flow:newsletter_agent_reply</option>
                     <option value="flow:service_agent_opening_message">flow:service_agent_opening_message</option>
                     <option value="flow:service_agent_reply">flow:service_agent_reply</option>
-                    <option value="flow:simulate_persona">flow:simulate_persona</option>
-                    <option value="flow:journey_opening">flow:journey_opening</option>
                  </select>
                  <button id="btn-prompt-load" class="btn btn-outline" style="width: auto;">Carregar</button>
              </div>
@@ -2978,9 +2976,24 @@ export function renderAdminDashboardPage(data: {
                   body: JSON.stringify({ targetId, promptText, model, changeReason })
                });
                const data = await res.json();
-               if(data.error) throw new Error(data.error);
+               if(!res.ok || data.error) {
+                 const validationErrors = Array.isArray(data?.validation?.errors) ? data.validation.errors : [];
+                 const validationWarnings = Array.isArray(data?.validation?.warnings) ? data.validation.warnings : [];
+                 const messageParts = [data.error || 'Falha ao publicar prompt.'];
+                 if (validationErrors.length) {
+                   messageParts.push('Erros: ' + validationErrors.join(' | '));
+                 }
+                 if (validationWarnings.length) {
+                   messageParts.push('Avisos: ' + validationWarnings.join(' | '));
+                 }
+                 throw new Error(messageParts.join('\n'));
+               }
 
-               alert('Publicado com sucesso!');
+               const warnings = Array.isArray(data.warnings) ? data.warnings : [];
+               const successMessage = warnings.length
+                 ? 'Publicado com sucesso!\n\nAvisos: ' + warnings.join(' | ')
+                 : 'Publicado com sucesso!';
+               alert(successMessage);
                await loadPromptData(); // refresh UI
             } catch (e) {
                alert('Falha ao publicar: ' + e.message);

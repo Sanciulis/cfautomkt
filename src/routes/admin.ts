@@ -88,7 +88,13 @@ import { renderAdminLoginPage, renderAdminDashboardPage } from '../templates'
 import { createSegment, listSegments, getSegmentById, updateSegment, deleteSegment, getUsersInSegment, refreshUserSegments } from '../segmentation'
 import { createFreezingRule, getFreezingRules, getFreezingRuleById, updateFreezingRule, deleteFreezingRule, createDefaultFreezingRules } from '../freezing-rules'
 import { runPromptEvaluation } from '../ai-eval'
-import { getPromptHistory, publishPromptVersion, getActivePrompt } from '../prompt-manager'
+import {
+  getPromptHistory,
+  publishPromptVersion,
+  SUPPORTED_PROMPT_TARGETS,
+  isSupportedPromptTarget,
+  validatePromptForTarget,
+} from '../prompt-manager'
 import { analyzeNewsletterSentiment, generateNewsletterOpeningMessage } from '../newsletter-agent'
 import {
   analyzeServiceSentiment,
@@ -3079,7 +3085,16 @@ admin.get('/api/ai/prompts/:targetId', async (c) => {
   if (unauthorized) return c.json({ error: 'Unauthorized' }, 401)
 
   try {
-    const targetId = c.req.param('targetId')
+    const targetId = safeString(c.req.param('targetId'))
+    if (!targetId || !isSupportedPromptTarget(targetId)) {
+      return c.json(
+        {
+          error: 'Unsupported targetId.',
+          supportedTargets: SUPPORTED_PROMPT_TARGETS,
+        },
+        400
+      )
+    }
     
     const DEFAULT_PROMPTS: Record<string, string> = {
       'flow:generate_personalized_message': `Você é um Especialista Sênior em Copywriting de Resposta Direta e Marketing Viral atuando no Brasil.
@@ -3225,14 +3240,39 @@ admin.post('/api/ai/prompts', async (c) => {
 
   try {
     const body = await c.req.json()
-    const { targetId, promptText, model, changeReason } = body
+    const targetIdRaw = safeString(body.targetId)
+    const promptTextRaw = typeof body.promptText === 'string' ? body.promptText : ''
+    const model = safeString(body.model) ?? DEFAULT_AI_MODEL
+    const changeReason = safeString(body.changeReason) ?? 'Ajustes via Painel Admin'
 
-    if (!targetId || !promptText) return c.json({ error: 'Missing targetId or prompt text' }, 400)
+    const validation = validatePromptForTarget(targetIdRaw ?? '', promptTextRaw)
+    if (!validation.valid) {
+      return c.json(
+        {
+          error: 'Invalid prompt payload.',
+          validation,
+          supportedTargets: SUPPORTED_PROMPT_TARGETS,
+        },
+        400
+      )
+    }
 
     // The user's identity could be fetched from the session, but we use 'admin' by default right now.
-    await publishPromptVersion(c.env, targetId, promptText, model || '@cf/meta/llama-3-8b-instruct', 'admin', changeReason)
+    await publishPromptVersion(
+      c.env,
+      validation.normalizedTargetId,
+      promptTextRaw.trim(),
+      model,
+      'admin',
+      changeReason
+    )
 
-    return c.json({ success: true })
+    return c.json({
+      success: true,
+      targetId: validation.normalizedTargetId,
+      warnings: validation.warnings,
+      detectedPlaceholders: validation.detectedPlaceholders,
+    })
   } catch (error) {
     return c.json({ error: String(error) }, 500)
   }

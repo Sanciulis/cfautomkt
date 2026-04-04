@@ -416,6 +416,11 @@ Conversas:
 - Compatibilidade retroativa mantida para targets legados:
    - `flow:simulate_persona`
    - `flow:journey_opening`
+- Publicacao via Admin com validacao de governanca:
+   - bloqueio de `targetId` fora da lista suportada
+   - validacao de tamanho minimo/maximo do prompt
+   - validacao de placeholders por target quando aplicavel
+   - retorno de warnings operacionais para revisão antes de rollout
 
 ### Debugging
 - Playground AI no painel admin

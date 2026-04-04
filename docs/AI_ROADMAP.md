@@ -468,6 +468,29 @@ Proximos passos:
 - Adicionar validacao de placeholders esperados no momento da publicacao de prompt.
 - Introduzir rollout gradual por percentual/segmento antes de promover para 100%.
 
+### 2026-04-03 - Guardrails de publicacao de prompt no Admin
+Data da atualizacao: 2026-04-03
+Responsavel: Engenharia
+Entrega realizada:
+- API de prompts passou a validar `targetId` contra lista suportada antes de carregar/publicar.
+- Publicacao agora valida payload de prompt (tamanho minimo/maximo e placeholders por target quando aplicavel).
+- Painel Admin passou a exibir erros/warnings de validacao diretamente no fluxo de publicacao.
+- Lista visual de targets no painel foi alinhada para foco em targets canonicos.
+Fluxos impactados:
+- Governanca de prompt no painel admin
+- Rollout de prompts para fluxos com IA
+Metricas antes:
+- Publicacao aceitava target arbitrario e texto sem validacao de estrutura.
+Metricas depois:
+- Erros de target e inconsistencias basicas de prompt sao bloqueados antes do deploy logico.
+Riscos identificados:
+- Regras de placeholder podem exigir ajuste quando novos fluxos forem adicionados.
+Acoes corretivas:
+- Manter mapa de targets/placeholders versionado no `prompt-manager.ts` junto da evolucao dos fluxos.
+Proximos passos:
+- Adicionar simulacao/preview de prompt por target antes de publicar.
+- Implementar rollout gradual por cohort/segmento para prompts criticos.
+
 ## Definicao de Sucesso do Programa
 O programa sera considerado bem-sucedido quando:
 1. Houver melhoria consistente de qualidade e conversao com evidencias.

@@ -7,6 +7,42 @@ const PROMPT_TARGET_ALIAS_FALLBACKS: Record<string, string[]> = {
   'flow:generate_journey_opening_message': ['flow:journey_opening'],
 }
 
+export const SUPPORTED_PROMPT_TARGETS = [
+  'flow:generate_personalized_message',
+  'flow:run_persona_conversation',
+  'flow:simulate_persona_conversation',
+  'flow:generate_journey_opening_message',
+  'flow:newsletter_agent_opening_message',
+  'flow:newsletter_agent_reply',
+  'flow:service_agent_opening_message',
+  'flow:service_agent_reply',
+  // Legacy targets kept for compatibility with existing prompt history.
+  'flow:simulate_persona',
+  'flow:journey_opening',
+] as const
+
+const SUPPORTED_PROMPT_TARGET_SET = new Set<string>(SUPPORTED_PROMPT_TARGETS)
+const PLACEHOLDER_TOKEN_PATTERN = /\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g
+
+const PROMPT_ALLOWED_PLACEHOLDERS: Record<string, Set<string>> = {
+  'flow:generate_personalized_message': new Set([
+    'channel',
+    'psychological_profile',
+    'engagement_score',
+    'viral_points',
+    'baseCopy',
+  ]),
+  'flow:run_persona_conversation': new Set(['journey_phase', 'conversation_history', 'last_user_message']),
+  'flow:simulate_persona_conversation': new Set([
+    'journey_phase',
+    'conversation_history',
+    'last_user_message',
+  ]),
+  'flow:simulate_persona': new Set(['journey_phase', 'conversation_history', 'last_user_message']),
+  'flow:generate_journey_opening_message': new Set(['user_name']),
+  'flow:journey_opening': new Set(['user_name']),
+}
+
 export type PromptVersion = {
   id: number
   target_id: string
@@ -15,6 +51,87 @@ export type PromptVersion = {
   updated_by: string
   change_reason: string
   created_at: string
+}
+
+export type PromptValidationResult = {
+  valid: boolean
+  errors: string[]
+  warnings: string[]
+  normalizedTargetId: string
+  detectedPlaceholders: string[]
+}
+
+export function isSupportedPromptTarget(targetId: string): boolean {
+  return SUPPORTED_PROMPT_TARGET_SET.has(targetId)
+}
+
+function extractPromptPlaceholders(promptText: string): string[] {
+  const placeholders = new Set<string>()
+  let match: RegExpExecArray | null = PLACEHOLDER_TOKEN_PATTERN.exec(promptText)
+
+  while (match?.[1]) {
+    placeholders.add(match[1])
+    match = PLACEHOLDER_TOKEN_PATTERN.exec(promptText)
+  }
+
+  PLACEHOLDER_TOKEN_PATTERN.lastIndex = 0
+  return Array.from(placeholders)
+}
+
+export function validatePromptForTarget(targetId: string, promptText: string): PromptValidationResult {
+  const normalizedTargetId = targetId.trim()
+  const normalizedPromptText = promptText.trim()
+  const errors: string[] = []
+  const warnings: string[] = []
+
+  if (!normalizedTargetId) {
+    errors.push('targetId is required.')
+  } else if (!isSupportedPromptTarget(normalizedTargetId)) {
+    errors.push(`Unsupported targetId: ${normalizedTargetId}`)
+  }
+
+  if (!normalizedPromptText) {
+    errors.push('Prompt text is required.')
+  } else {
+    if (normalizedPromptText.length < 40) {
+      errors.push('Prompt text is too short. Use at least 40 characters.')
+    }
+    if (normalizedPromptText.length > 12000) {
+      errors.push('Prompt text is too long. Limit to 12000 characters.')
+    }
+  }
+
+  const detectedPlaceholders = extractPromptPlaceholders(normalizedPromptText)
+  const allowedPlaceholders = PROMPT_ALLOWED_PLACEHOLDERS[normalizedTargetId] ?? new Set<string>()
+
+  if (detectedPlaceholders.length > 0 && allowedPlaceholders.size === 0) {
+    warnings.push(
+      'Detected template placeholders in a target that usually does not require placeholders. Review before publishing.'
+    )
+  }
+
+  if (detectedPlaceholders.length > 0 && allowedPlaceholders.size > 0) {
+    const unsupportedPlaceholders = detectedPlaceholders.filter((placeholder) => !allowedPlaceholders.has(placeholder))
+    if (unsupportedPlaceholders.length > 0) {
+      errors.push(
+        `Unsupported placeholders for target ${normalizedTargetId}: ${unsupportedPlaceholders.join(', ')}`
+      )
+    }
+  }
+
+  if (detectedPlaceholders.length === 0 && allowedPlaceholders.size > 0) {
+    warnings.push(
+      `No template placeholders detected. This target usually references: ${Array.from(allowedPlaceholders).join(', ')}`
+    )
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+    normalizedTargetId,
+    detectedPlaceholders,
+  }
 }
 
 /**
