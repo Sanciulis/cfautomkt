@@ -813,6 +813,7 @@ export function renderAdminDashboardPage(data: {
       --glass: rgba(30, 41, 59, 0.7);
       --glass-bright: rgba(255, 255, 255, 0.03);
       --sidebar-width: 260px;
+      --content-gutter: clamp(12px, 2.5vw, 48px);
     }
 
     * { box-sizing: border-box; }
@@ -826,6 +827,7 @@ export function renderAdminDashboardPage(data: {
       font-family: 'Outfit', sans-serif;
       min-height: 100vh;
       display: flex;
+      overflow-x: hidden;
     }
 
     /* Sidebar Layout */
@@ -843,18 +845,25 @@ export function renderAdminDashboardPage(data: {
       z-index: 50;
       padding: 0;
       transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      overflow-y: auto;
+      overscroll-behavior: contain;
     }
 
-    @media (max-width: 768px) {
+    .sidebar-overlay {
+      display: none;
+    }
+
+    @media (max-width: 1100px) {
       .sidebar {
         transform: translateX(-100%);
-        width: 280px;
+        width: min(320px, 86vw);
         box-shadow: 10px 0 30px rgba(0,0,0,0.5);
       }
       .sidebar.open {
         transform: translateX(0);
       }
       .sidebar-overlay {
+        display: block;
         position: fixed;
         inset: 0;
         background: rgba(0,0,0,0.5);
@@ -948,14 +957,15 @@ export function renderAdminDashboardPage(data: {
     .main-canvas {
       margin-left: var(--sidebar-width);
       width: calc(100% - var(--sidebar-width));
-      padding: 32px 48px;
+      min-width: 0;
+      padding: 28px var(--content-gutter);
     }
 
-    @media (max-width: 768px) {
+    @media (max-width: 1100px) {
       .main-canvas {
         margin-left: 0;
         width: 100%;
-        padding: 24px 16px;
+        padding: 24px clamp(12px, 2.4vw, 24px);
       }
     }
 
@@ -967,7 +977,7 @@ export function renderAdminDashboardPage(data: {
       gap: 16px;
     }
     
-    @media (max-width: 768px) {
+    @media (max-width: 1100px) {
       .header-bar {
         align-items: flex-start;
         flex-direction: column;
@@ -1303,21 +1313,85 @@ export function renderAdminDashboardPage(data: {
     }
 
     /* Utility */
+    .hidden { display: none !important; }
+    .block { display: block; }
+    .grid { display: grid; }
+    .grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .flex-col { flex-direction: column; }
+    .text-center { text-align: center; }
+    .text-sm { font-size: 0.9rem; }
     .font-bold { font-weight: 700; }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
     .text-xs { font-size: 0.75rem; }
+    .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .opacity-60 { opacity: 0.6; }
     .opacity-40 { opacity: 0.4; }
     .opacity-30 { opacity: 0.3; }
     .flex { display: flex; }
+    .gap-2 { gap: 8px; }
+    .gap-4 { gap: 16px; }
     .justify-between { justify-content: space-between; }
     .items-center { align-items: center; }
+    .p-4 { padding: 16px; }
+    .border { border: 1px solid var(--border); }
+    .border-border { border-color: var(--border); }
+    .rounded-xl { border-radius: 12px; }
+    .bg-glass-bright { background: var(--glass-bright); }
     .mb-1 { margin-bottom: 4px; }
+    .mb-4 { margin-bottom: 16px; }
+    .mb-6 { margin-bottom: 24px; }
+    .mb-8 { margin-bottom: 32px; }
+    .mt-4 { margin-top: 16px; }
+    .mt-6 { margin-top: 24px; }
+    .mt-8 { margin-top: 32px; }
     .mt-2 { margin-top: 8px; }
+    .ml-1 { margin-left: 4px; }
+    .ml-2 { margin-left: 8px; }
+    .mr-2 { margin-right: 8px; }
+    .py-4 { padding-top: 16px; padding-bottom: 16px; }
+    .py-8 { padding-top: 32px; padding-bottom: 32px; }
+    .pr-2 { padding-right: 8px; }
+    .overflow-y-auto { overflow-y: auto; }
+    .cursor-pointer { cursor: pointer; }
+    .space-y-4 > * + * { margin-top: 16px; }
+    .max-h-\[400px\] { max-height: 400px; }
+    .max-w-\[200px\] { max-width: 200px; }
+    .max-w-\[150px\] { max-width: 150px; }
+    .text-error { color: #f87171; }
     .uppercase { text-transform: uppercase; }
     .tracking-tighter { letter-spacing: -0.05em; }
 
     @media (max-width: 1024px) {
       .stats-grid { grid-template-columns: 1fr 1fr; }
+    }
+
+    @media (max-width: 1100px) {
+      .panel-grid[style*="grid-template-columns"] {
+        grid-template-columns: 1fr !important;
+      }
+      .grid-cols-2 {
+        grid-template-columns: 1fr;
+      }
+      .table-container {
+        margin: 0 -18px;
+        padding: 0 18px;
+        -webkit-overflow-scrolling: touch;
+      }
+      table {
+        min-width: 640px;
+      }
+      .header-bar .badge {
+        font-size: 0.65rem;
+      }
+      .panel {
+        padding: 24px 20px;
+      }
+      .flow-rail {
+        gap: 6px;
+      }
+      .flow-node {
+        min-width: 100px;
+      }
     }
 
     .mobile-toggle {
@@ -1337,8 +1411,11 @@ export function renderAdminDashboardPage(data: {
       gap: 12px;
     }
 
-    @media (max-width: 768px) {
+    @media (max-width: 1100px) {
       .mobile-toggle { display: block; }
+    }
+
+    @media (max-width: 768px) {
       .stats-grid { grid-template-columns: 1fr; }
       
       /* Reset conflicting tablet rules */
@@ -2880,15 +2957,43 @@ export function renderAdminDashboardPage(data: {
     const mobileBtn = document.getElementById('mobile-menu-btn');
     const sidebar = document.getElementById('sidebar');
     const overlay = document.getElementById('sidebar-overlay');
+    const responsiveSidebarBreakpoint = window.matchMedia('(max-width: 1100px)');
+
+    function closeSidebar() {
+      if (!sidebar || !overlay) return;
+      sidebar.classList.remove('open');
+      overlay.classList.remove('open');
+      document.body.style.overflow = '';
+    }
+
+    function openSidebar() {
+      if (!sidebar || !overlay) return;
+      sidebar.classList.add('open');
+      overlay.classList.add('open');
+      document.body.style.overflow = 'hidden';
+    }
+
+    function toggleSidebar() {
+      if (!sidebar || !overlay) return;
+      if (sidebar.classList.contains('open')) {
+        closeSidebar();
+      } else {
+        openSidebar();
+      }
+    }
 
     if (mobileBtn && sidebar && overlay) {
-      function toggleSidebar() {
-        sidebar.classList.toggle('open');
-        overlay.classList.toggle('open');
-        document.body.style.overflow = sidebar.classList.contains('open') ? 'hidden' : '';
-      }
       mobileBtn.addEventListener('click', toggleSidebar);
-      overlay.addEventListener('click', toggleSidebar);
+      overlay.addEventListener('click', closeSidebar);
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') closeSidebar();
+      });
+
+      window.addEventListener('resize', () => {
+        if (!responsiveSidebarBreakpoint.matches) {
+          closeSidebar();
+        }
+      });
     }
 
     // Tab System Logic
@@ -3473,8 +3578,8 @@ export function renderAdminDashboardPage(data: {
         document.getElementById('view-' + targetView).classList.add('active');
 
         // Close sidebar on mobile if open
-        if (sidebar && sidebar.classList.contains('open')) {
-          toggleSidebar();
+        if (responsiveSidebarBreakpoint.matches) {
+          closeSidebar();
         }
 
         // Update Headers
