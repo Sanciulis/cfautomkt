@@ -498,6 +498,7 @@ Entrega realizada:
 - API `POST /admin/api/ai/prompts/preview` adicionada para validar e renderizar prompt antes do publish.
 - Renderizacao usa contexto de exemplo por target e retorna placeholders nao resolvidos.
 - Painel de Prompt Manager ganhou acao `Validar / Preview` com visualizacao do prompt renderizado.
+- Preview ganhou modo dry-run de inferencia para testar resposta real da IA antes da publicacao.
 Fluxos impactados:
 - Governanca de prompt no painel admin
 - Fluxo de revisao pre-rollout

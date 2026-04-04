@@ -20,6 +20,7 @@ import {
   safeString,
   toNumber,
   toBoolean,
+  extractAIText,
   resolveConsentSource,
   buildAdminRedirect,
   constantTimeEqual,
@@ -95,6 +96,7 @@ import {
   isSupportedPromptTarget,
   validatePromptForTarget,
   buildPromptPreview,
+  getPromptPreviewDefaultUserMessage,
 } from '../prompt-manager'
 import { analyzeNewsletterSentiment, generateNewsletterOpeningMessage } from '../newsletter-agent'
 import {
@@ -3289,6 +3291,8 @@ admin.post('/api/ai/prompts/preview', async (c) => {
     const targetIdRaw = safeString(body.targetId) ?? ''
     const promptTextRaw = typeof body.promptText === 'string' ? body.promptText : ''
     const sampleContext = body.sampleContext
+    const model = safeString(body.model) ?? DEFAULT_AI_MODEL
+    const runInference = toBoolean(body.runInference, false)
 
     const preview = buildPromptPreview(targetIdRaw, promptTextRaw, sampleContext)
     if (!preview.validation.valid) {
@@ -3302,9 +3306,63 @@ admin.post('/api/ai/prompts/preview', async (c) => {
       )
     }
 
+    const userMessage =
+      safeString(body.userMessage) ?? getPromptPreviewDefaultUserMessage(preview.validation.normalizedTargetId)
+
+    let dryRunInference: {
+      requested: boolean
+      executed: boolean
+      model: string
+      userMessage: string
+      responseText: string | null
+      fallbackUsed: boolean
+      error: string | null
+    } = {
+      requested: runInference,
+      executed: false,
+      model,
+      userMessage,
+      responseText: null,
+      fallbackUsed: false,
+      error: null,
+    }
+
+    if (runInference) {
+      try {
+        const aiResult = await c.env.AI.run(model, {
+          messages: [
+            { role: 'system', content: preview.renderedPrompt },
+            { role: 'user', content: userMessage },
+          ],
+        })
+
+        const responseText = safeString(extractAIText(aiResult))
+        dryRunInference = {
+          requested: true,
+          executed: true,
+          model,
+          userMessage,
+          responseText,
+          fallbackUsed: !responseText,
+          error: null,
+        }
+      } catch (error) {
+        dryRunInference = {
+          requested: true,
+          executed: false,
+          model,
+          userMessage,
+          responseText: null,
+          fallbackUsed: true,
+          error: String(error),
+        }
+      }
+    }
+
     return c.json({
       success: true,
       preview,
+      dryRunInference,
     })
   } catch (error) {
     return c.json({ error: String(error) }, 500)

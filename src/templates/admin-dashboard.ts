@@ -2382,6 +2382,20 @@ export function renderAdminDashboardPage(data: {
                   </div>
                </div>
 
+               <div class="grid grid-cols-2 gap-4 mt-4">
+                  <div>
+                    <label class="text-xs opacity-60">Mensagem de Teste (dry-run)</label>
+                    <input id="prompt-preview-user-message" class="input-control mt-2" type="text" placeholder="Mensagem usada para simular inferência de preview" />
+                  </div>
+                  <div>
+                    <label class="text-xs opacity-60">Dry-run de Inferência</label>
+                    <label class="input-control mt-2" style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                      <input id="prompt-preview-run-inference" type="checkbox" style="width:16px; height:16px;" checked />
+                      <span style="font-size:0.85rem;">Executar chamada real da IA no preview</span>
+                    </label>
+                  </div>
+               </div>
+
                <div class="flex justify-between mt-6" style="gap: 8px; flex-wrap: wrap;">
                  <button id="btn-prompt-preview" class="btn btn-outline">Validar / Preview</button>
                  <button id="btn-prompt-publish" class="btn btn-primary">Publicar Nova Versão (Ir para Prod)</button>
@@ -2902,6 +2916,8 @@ export function renderAdminDashboardPage(data: {
     const promptPreviewBox = document.getElementById('prompt-preview-box');
     const promptPreviewMeta = document.getElementById('prompt-preview-meta');
     const promptPreviewOutput = document.getElementById('prompt-preview-output');
+    const promptPreviewRunInference = document.getElementById('prompt-preview-run-inference');
+    const promptPreviewUserMessageInput = document.getElementById('prompt-preview-user-message');
 
     function hidePromptPreview() {
       if (promptPreviewBox) promptPreviewBox.classList.add('hidden');
@@ -2909,7 +2925,7 @@ export function renderAdminDashboardPage(data: {
       if (promptPreviewOutput) promptPreviewOutput.textContent = '';
     }
 
-    function showPromptPreview(preview) {
+    function showPromptPreview(preview, dryRunInference) {
       if (!promptPreviewBox || !promptPreviewMeta || !promptPreviewOutput) return;
 
       const warnings = Array.isArray(preview?.validation?.warnings) ? preview.validation.warnings : [];
@@ -2926,8 +2942,37 @@ export function renderAdminDashboardPage(data: {
         statusParts.push('Nao resolvidos: ' + unresolved.join(', '));
       }
 
+      if (dryRunInference?.requested) {
+        if (dryRunInference.error) {
+          statusParts.push('Dry-run: erro na inferencia');
+        } else if (dryRunInference.executed) {
+          statusParts.push('Dry-run: inferencia executada');
+        }
+      }
+
       promptPreviewMeta.textContent = statusParts.join(' • ');
-      promptPreviewOutput.textContent = String(preview?.renderedPrompt || '');
+
+      const renderedPromptText = String(preview?.renderedPrompt || '');
+      const outputBlocks = ['=== Prompt Renderizado ===\n' + renderedPromptText];
+
+      if (dryRunInference?.requested) {
+        const dryRunLines = [
+          '=== Dry-run de Inferencia ===',
+          'Modelo: ' + String(dryRunInference.model || '-'),
+          'Mensagem de teste: ' + String(dryRunInference.userMessage || '-'),
+        ];
+
+        if (dryRunInference.error) {
+          dryRunLines.push('Erro: ' + String(dryRunInference.error));
+        } else {
+          dryRunLines.push('Resposta: ' + String(dryRunInference.responseText || '[vazio]'));
+          dryRunLines.push('Fallback usado: ' + (dryRunInference.fallbackUsed ? 'sim' : 'nao'));
+        }
+
+        outputBlocks.push(dryRunLines.join('\n'));
+      }
+
+      promptPreviewOutput.textContent = outputBlocks.join('\n\n');
       promptPreviewBox.classList.remove('hidden');
     }
 
@@ -3000,6 +3045,9 @@ export function renderAdminDashboardPage(data: {
       btnPromptPreview.addEventListener('click', async () => {
         const targetId = promptTargetSelect.value;
         const promptText = document.getElementById('prompt-editor-text').value;
+        const model = document.getElementById('prompt-editor-model').value;
+        const runInference = Boolean(promptPreviewRunInference && promptPreviewRunInference.checked);
+        const userMessage = promptPreviewUserMessageInput ? promptPreviewUserMessageInput.value : '';
 
         if (!promptText) return alert('Prompt base é obrigatório.');
 
@@ -3011,11 +3059,12 @@ export function renderAdminDashboardPage(data: {
           const res = await fetch('/admin/api/ai/prompts/preview', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ targetId, promptText })
+            body: JSON.stringify({ targetId, promptText, model, runInference, userMessage })
           });
 
           const data = await res.json();
           const preview = data.preview;
+          const dryRunInference = data.dryRunInference;
           if (!res.ok || data.error || !preview) {
             const validationErrors = Array.isArray(data?.preview?.validation?.errors)
               ? data.preview.validation.errors
@@ -3027,7 +3076,7 @@ export function renderAdminDashboardPage(data: {
             throw new Error(messageParts.join('\n'));
           }
 
-          showPromptPreview(preview);
+          showPromptPreview(preview, dryRunInference);
         } catch (e) {
           hidePromptPreview();
           alert('Falha no preview: ' + e.message);

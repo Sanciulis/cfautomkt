@@ -425,6 +425,7 @@ Conversas:
    - endpoint `POST /admin/api/ai/prompts/preview`
    - renderizacao de placeholders com contexto de exemplo por target
    - exibicao de placeholders nao resolvidos para revisão preventiva
+   - opcao de dry-run com inferencia real (system prompt renderizado + mensagem de teste)
 
 ### Debugging
 - Playground AI no painel admin

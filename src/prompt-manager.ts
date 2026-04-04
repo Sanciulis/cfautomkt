@@ -55,6 +55,25 @@ const PROMPT_PREVIEW_DEFAULT_CONTEXT: Record<string, Record<string, string>> = {
   },
 }
 
+const PROMPT_PREVIEW_DEFAULT_USER_MESSAGES: Record<string, string> = {
+  'flow:generate_personalized_message':
+    'Reescreva a base copy para WhatsApp com urgencia e CTA unico, mantendo naturalidade.',
+  'flow:run_persona_conversation': 'Quero entender melhor como funciona e qual seria o primeiro passo.',
+  'flow:simulate_persona_conversation':
+    'Tenho interesse, mas quero saber prazo e o que muda no meu resultado.',
+  'flow:simulate_persona': 'Tenho interesse, mas quero saber prazo e o que muda no meu resultado.',
+  'flow:generate_journey_opening_message':
+    'Crie uma primeira mensagem curta para reativar um lead inativo sem parecer venda direta.',
+  'flow:journey_opening':
+    'Crie uma primeira mensagem curta para reativar um lead inativo sem parecer venda direta.',
+  'flow:newsletter_agent_opening_message':
+    'Gere uma abertura curta para convidar para newsletter semanal com CTA claro.',
+  'flow:newsletter_agent_reply': 'A pessoa perguntou se o conteudo realmente ajuda no dia a dia.',
+  'flow:service_agent_opening_message':
+    'Crie abertura para atendimento comercial oferecendo agendamento e orcamento.',
+  'flow:service_agent_reply': 'Quero saber valores e prazo para implementar isso no meu negocio.',
+}
+
 const PROMPT_ALLOWED_PLACEHOLDERS: Record<string, Set<string>> = {
   'flow:generate_personalized_message': new Set([
     'channel',
@@ -97,6 +116,14 @@ export type PromptPreviewResult = {
   sampleContext: Record<string, string>
   renderedPrompt: string
   unresolvedPlaceholders: string[]
+}
+
+export function getPromptPreviewDefaultUserMessage(targetId: string): string {
+  const normalizedTargetId = targetId.trim()
+  return (
+    PROMPT_PREVIEW_DEFAULT_USER_MESSAGES[normalizedTargetId] ??
+    'Avalie este prompt e gere uma resposta curta em portugues brasileiro.'
+  )
 }
 
 export function isSupportedPromptTarget(targetId: string): boolean {
