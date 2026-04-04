@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import type { Bindings, InteractionPayload, CampaignRecord, DispatchRequestBody, JourneyPhase, JourneyConversationMessage } from '../types'
+import type { Bindings, InteractionPayload, CampaignRecord, DispatchRequestBody, JourneyPhase, JourneyConversationMessage, TelegramWebhookUpdate } from '../types'
 import { DEFAULT_AI_MODEL } from '../constants'
 import {
   safeString,
@@ -53,6 +53,8 @@ import {
   generateServiceAgentReply,
 } from '../service-agent'
 import { getAdminServiceAgentConfig } from '../integration'
+import { handleTelegramWebhook, sendTelegramMessage } from '../telegram-agent'
+import { getAdminTelegramIntegrationConfig } from '../integration'
 
 const api = new Hono<{ Bindings: Bindings }>()
 
@@ -1130,3 +1132,49 @@ api.post('/journey/:journeyId/user/:userId/open', async (c) => {
 })
 
 // ── Playground API Routes ───────────────────────────────────────
+
+// -- Telegram Webhook for Conversational Agent -----------------------------
+
+api.post('/webhooks/telegram/inbound', async (c) => {
+  const body = (await c.req.json().catch(() => null)) as TelegramWebhookUpdate | null
+
+  if (!body) return c.json({ error: 'Invalid JSON body' }, 400)
+
+  // Get Telegram configuration
+  const telegramConfig = await getAdminTelegramIntegrationConfig(c.env)
+
+  if (!telegramConfig.conversationEnabled) {
+    return c.json({ status: 'conversations_disabled' }, 200)
+  }
+
+  // Handle the webhook
+  const result = await handleTelegramWebhook(c.env, body, {
+    aiModel: telegramConfig.aiModel,
+    maxReplyChars: telegramConfig.maxReplyChars,
+    conversationEnabled: telegramConfig.conversationEnabled,
+  })
+
+  if (!result.shouldReply || !result.replyText) {
+    return c.json({ status: 'no_reply_needed' }, 200)
+  }
+
+  // Send reply via Telegram API
+  const chatId = body.message?.chat.id.toString()
+  if (!chatId) {
+    return c.json({ error: 'Missing chat ID' }, 400)
+  }
+
+  const sendResult = await sendTelegramMessage(c.env, chatId, result.replyText)
+
+  if (!sendResult) {
+    return c.json({ error: 'Failed to send Telegram message' }, 502)
+  }
+
+  return c.json({
+    status: 'success',
+    sessionId: result.sessionId,
+    reply: result.replyText,
+  })
+})
+
+// -- Playground API Routes ------------------------------------------------

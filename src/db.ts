@@ -33,6 +33,10 @@ import type {
   ServiceQuoteStatus,
   ServiceAgentOverview,
   ServiceAgentRecentSession,
+  TelegramConversationSessionRecord,
+  TelegramConversationMessageRecord,
+  TelegramConversationDirection,
+  TelegramConversationStatus,
 } from './types'
 import { JOURNEY_PHASES } from './types'
 import { EVENT_WEIGHTS } from './constants'
@@ -1537,6 +1541,255 @@ export async function getServiceAgentOverview(
       },
       recentSessions: [],
     }
+  }
+}
+
+// ── Telegram Conversational Agent ─────────────────────────────
+
+function isMissingTelegramTableError(error: unknown): boolean {
+  const text = String(error || '').toLowerCase()
+  return (
+    text.includes('no such table') &&
+    (text.includes('telegram_conversation_sessions') ||
+      text.includes('telegram_conversation_messages'))
+  )
+}
+
+export async function getTelegramConversationSessionById(
+  env: Bindings,
+  sessionId: string
+): Promise<TelegramConversationSessionRecord | null> {
+  try {
+    const session = await env.DB.prepare(
+      'SELECT * FROM telegram_conversation_sessions WHERE id = ?'
+    )
+      .bind(sessionId)
+      .first<TelegramConversationSessionRecord>()
+    return session ?? null
+  } catch (error) {
+    if (isMissingTelegramTableError(error)) return null
+    throw error
+  }
+}
+
+export async function getLatestTelegramConversationSessionByChatId(
+  env: Bindings,
+  chatId: string
+): Promise<TelegramConversationSessionRecord | null> {
+  const normalizedChatId = safeString(chatId)
+  if (!normalizedChatId) return null
+
+  try {
+    const session = await env.DB.prepare(
+      `SELECT *
+       FROM telegram_conversation_sessions
+       WHERE chat_id = ?
+       ORDER BY COALESCE(last_message_at, updated_at, created_at) DESC
+       LIMIT 1`
+    )
+      .bind(normalizedChatId)
+      .first<TelegramConversationSessionRecord>()
+
+    return session ?? null
+  } catch (error) {
+    if (isMissingTelegramTableError(error)) return null
+    throw error
+  }
+}
+
+export async function createTelegramConversationSession(
+  env: Bindings,
+  input: {
+    userId?: string | null
+    chatId: string
+    username?: string | null
+    firstName?: string | null
+    lastName?: string | null
+  }
+): Promise<TelegramConversationSessionRecord> {
+  const sessionId = crypto.randomUUID()
+
+  try {
+    await env.DB.prepare(
+      `INSERT INTO telegram_conversation_sessions (
+        id,
+        user_id,
+        chat_id,
+        username,
+        first_name,
+        last_name,
+        status,
+        sentiment_score,
+        sentiment_label,
+        last_message_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
+    )
+      .bind(
+        sessionId,
+        input.userId ?? null,
+        safeString(input.chatId),
+        safeString(input.username),
+        safeString(input.firstName),
+        safeString(input.lastName),
+        'active',
+        null,
+        null,
+        new Date().toISOString()
+      )
+      .run()
+
+    const session = await getTelegramConversationSessionById(env, sessionId)
+    if (!session) throw new Error('Failed to create Telegram conversation session')
+    return session
+  } catch (error) {
+    if (isMissingTelegramTableError(error)) {
+      throw new Error('Telegram conversation tables not found. Please run database migrations.')
+    }
+    throw error
+  }
+}
+
+export async function updateTelegramConversationSession(
+  env: Bindings,
+  sessionId: string,
+  updates: Partial<{
+    status: string
+    sentimentScore: number | null
+    sentimentLabel: string | null
+    userId: string | null
+  }>
+): Promise<boolean> {
+  try {
+    const setParts: string[] = []
+    const values: unknown[] = []
+
+    if (updates.status !== undefined) {
+      setParts.push('status = ?')
+      values.push(updates.status)
+    }
+
+    if (updates.sentimentScore !== undefined) {
+      setParts.push('sentiment_score = ?')
+      values.push(updates.sentimentScore)
+    }
+
+    if (updates.sentimentLabel !== undefined) {
+      setParts.push('sentiment_label = ?')
+      values.push(updates.sentimentLabel)
+    }
+
+    if (updates.userId !== undefined) {
+      setParts.push('user_id = ?')
+      values.push(updates.userId)
+    }
+
+    if (setParts.length === 0) return true
+
+    setParts.push('updated_at = CURRENT_TIMESTAMP')
+    values.push(sessionId)
+
+    await env.DB.prepare(
+      `UPDATE telegram_conversation_sessions
+       SET ${setParts.join(', ')}
+       WHERE id = ?`
+    )
+      .bind(...values)
+      .run()
+
+    return true
+  } catch (error) {
+    if (isMissingTelegramTableError(error)) return false
+    throw error
+  }
+}
+
+export async function appendTelegramConversationMessage(
+  env: Bindings,
+  sessionId: string,
+  input: {
+    direction: string
+    messageText: string
+    messageId: number
+    sentimentScore?: number | null
+    sentimentLabel?: string | null
+    aiModel?: string | null
+    metadata?: unknown
+  }
+): Promise<TelegramConversationMessageRecord | null> {
+  const messageText = safeString(input.messageText)
+  if (!messageText) return null
+
+  try {
+    await env.DB.prepare(
+      `INSERT INTO telegram_conversation_messages (
+        session_id,
+        direction,
+        message_text,
+        message_id,
+        sentiment_score,
+        sentiment_label,
+        ai_model,
+        metadata
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        sessionId,
+        input.direction,
+        messageText,
+        input.messageId,
+        input.sentimentScore ?? null,
+        input.sentimentLabel ?? null,
+        safeString(input.aiModel),
+        input.metadata ? JSON.stringify(input.metadata) : null
+      )
+      .run()
+
+    // Update session last_message_at
+    await env.DB.prepare(
+      'UPDATE telegram_conversation_sessions SET last_message_at = CURRENT_TIMESTAMP WHERE id = ?'
+    )
+      .bind(sessionId)
+      .run()
+
+    const message = await env.DB.prepare(
+      `SELECT *
+       FROM telegram_conversation_messages
+       WHERE session_id = ?
+       ORDER BY id DESC
+       LIMIT 1`
+    )
+      .bind(sessionId)
+      .first<TelegramConversationMessageRecord>()
+
+    return message ?? null
+  } catch (error) {
+    if (isMissingTelegramTableError(error)) return null
+    throw error
+  }
+}
+
+export async function listTelegramConversationMessages(
+  env: Bindings,
+  sessionId: string,
+  limit = 100
+): Promise<TelegramConversationMessageRecord[]> {
+  const boundedLimit = Math.max(1, Math.min(500, Math.floor(limit)))
+
+  try {
+    const result = await env.DB.prepare(
+      `SELECT *
+       FROM telegram_conversation_messages
+       WHERE session_id = ?
+       ORDER BY created_at ASC, id ASC
+       LIMIT ?`
+    )
+      .bind(sessionId, boundedLimit)
+      .all<TelegramConversationMessageRecord>()
+
+    return result.results ?? []
+  } catch (error) {
+    if (isMissingTelegramTableError(error)) return []
+    throw error
   }
 }
 

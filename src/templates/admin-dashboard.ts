@@ -36,6 +36,9 @@ export function renderAdminDashboardPage(data: {
     testChatId: string | null
     testMessage: string | null
     updatedAt: string | null
+    conversationEnabled: boolean
+    aiModel: string
+    maxReplyChars: number
   }
   users: Array<{ id: string; name: string | null; email: string | null; phone: string | null; preferred_channel: string; created_at: string }>
   campaigns: Array<{ id: string; name: string; channel: string; status: string; updated_at: string }>
@@ -611,6 +614,9 @@ export function renderAdminDashboardPage(data: {
   const telegramUpdatedAtLabel = data.telegramIntegration.updatedAt
     ? `Atualizado: ${new Date(data.telegramIntegration.updatedAt).toLocaleString('pt-BR')}`
     : 'Aguardando configuração'
+  const telegramConversationEnabled = data.telegramIntegration.conversationEnabled
+  const telegramAiModel = escapeHtml(data.telegramIntegration.aiModel ?? DEFAULT_AI_MODEL)
+  const telegramMaxReplyChars = data.telegramIntegration.maxReplyChars
 
   const selectedNewsletterSession = data.newsletterAgentSession.selectedSession
   const selectedNewsletterMessages = data.newsletterAgentSession.selectedMessages
@@ -1764,7 +1770,34 @@ export function renderAdminDashboardPage(data: {
               <div class="form-group"><label class="input-label">Status Link</label><input class="input-control" value="${escapeHtml(telegramUpdatedAtLabel)}" readonly /></div>
             </div>
             <div class="form-group"><label class="input-label">Mensagem de Boas-vindas (Teste)</label><textarea class="input-control" name="testMessage">${telegramTestMessage}</textarea></div>
-            <div class="flex items-center gap-3" style="margin-top:8px;">
+            
+            <div class="panel" style="margin-top:24px; background: rgba(99,102,241,0.05); border: 1px solid rgba(99,102,241,0.2);">
+              <h4 class="panel-title" style="font-size: 1rem; margin-bottom: 16px;">Configurações de Conversação AI</h4>
+              <div class="form-group">
+                <label class="checkbox-label">
+                  <input type="checkbox" name="conversationEnabled" ${telegramConversationEnabled ? 'checked' : ''} />
+                  <span>Habilitar conversação AI</span>
+                </label>
+                <p class="text-xs opacity-60" style="margin-top: 4px;">Permite que o bot responda automaticamente às mensagens recebidas</p>
+              </div>
+              <div class="panel-grid" style="grid-template-columns: 1fr 1fr; gap:16px; margin-top: 16px;">
+                <div class="form-group">
+                  <label class="input-label">Modelo de IA</label>
+                  <select class="input-control" name="aiModel">
+                    <option value="llama2-7b-chat" ${telegramAiModel === 'llama2-7b-chat' ? 'selected' : ''}>Llama 2 7B Chat</option>
+                    <option value="llama2-13b-chat" ${telegramAiModel === 'llama2-13b-chat' ? 'selected' : ''}>Llama 2 13B Chat</option>
+                    <option value="llama2-70b-chat" ${telegramAiModel === 'llama2-70b-chat' ? 'selected' : ''}>Llama 2 70B Chat</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="input-label">Máximo de Caracteres por Resposta</label>
+                  <input type="number" class="input-control" name="maxReplyChars" value="${telegramMaxReplyChars || 1000}" min="100" max="4000" />
+                  <p class="text-xs opacity-60" style="margin-top: 4px;">Limite de caracteres para respostas do bot</p>
+                </div>
+              </div>
+            </div>
+            
+            <div class="flex items-center gap-3" style="margin-top:24px;">
               <button type="submit" class="btn btn-primary">Salvar Configuração do Telegram</button>
               <button type="submit" formaction="/admin/actions/integration/telegram/test" formmethod="post" class="btn btn-glass">Salvar e Testar Telegram</button>
             </div>

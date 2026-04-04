@@ -201,6 +201,9 @@ export function normalizeTelegramIntegrationConfig(
       testChatId: null,
       testMessage: DEFAULT_TELEGRAM_TEST_MESSAGE,
       updatedAt: null,
+      conversationEnabled: false,
+      aiModel: DEFAULT_AI_MODEL,
+      maxReplyChars: 4000,
     }
   }
 
@@ -214,6 +217,9 @@ export function normalizeTelegramIntegrationConfig(
     testChatId: safeTestChatId,
     testMessage: safeString(parsed.testMessage) ?? DEFAULT_TELEGRAM_TEST_MESSAGE,
     updatedAt: safeString(parsed.updatedAt),
+    conversationEnabled: parseBoolean(parsed.conversationEnabled, false),
+    aiModel: safeString(parsed.aiModel) ?? DEFAULT_AI_MODEL,
+    maxReplyChars: clampNumber(parsed.maxReplyChars, 4000, 160, 4000),
   }
 }
 

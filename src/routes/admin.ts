@@ -868,6 +868,9 @@ admin.get('/', async (c) => {
         testChatId: telegramIntegration.testChatId,
         testMessage: telegramIntegration.testMessage,
         updatedAt: telegramIntegration.updatedAt,
+        conversationEnabled: telegramIntegration.conversationEnabled,
+        aiModel: telegramIntegration.aiModel,
+        maxReplyChars: telegramIntegration.maxReplyChars,
       },
       users: users.results ?? [],
       campaigns: campaignRows,
@@ -2196,11 +2199,18 @@ admin.post('/actions/integration/telegram/save', async (c) => {
       currentConfig.testMessage ??
       DEFAULT_TELEGRAM_TEST_MESSAGE
 
+    const conversationEnabled = toBoolean(form.conversationEnabled)
+    const aiModel = safeString(typeof form.aiModel === 'string' ? form.aiModel : null) ?? DEFAULT_AI_MODEL
+    const maxReplyChars = toNumber(typeof form.maxReplyChars === 'string' ? form.maxReplyChars : null) ?? 1000
+
     const config = {
       webhookUrl: validation.normalizedUrl,
       testChatId,
       testMessage,
       updatedAt: new Date().toISOString(),
+      conversationEnabled,
+      aiModel,
+      maxReplyChars,
     }
     await saveAdminTelegramIntegrationConfig(c.env, config)
 
@@ -2263,11 +2273,18 @@ admin.post('/actions/integration/telegram/test', async (c) => {
       currentConfig.testMessage ??
       DEFAULT_TELEGRAM_TEST_MESSAGE
 
+    const conversationEnabled = toBoolean(form.conversationEnabled ?? currentConfig.conversationEnabled)
+    const aiModel = safeString(typeof form.aiModel === 'string' ? form.aiModel : null) ?? currentConfig.aiModel ?? DEFAULT_AI_MODEL
+    const maxReplyChars = toNumber(typeof form.maxReplyChars === 'string' ? form.maxReplyChars : null) ?? currentConfig.maxReplyChars ?? 1000
+
     const config = {
       webhookUrl: validation.normalizedUrl,
       testChatId,
       testMessage,
       updatedAt: new Date().toISOString(),
+      conversationEnabled,
+      aiModel,
+      maxReplyChars,
     }
     await saveAdminTelegramIntegrationConfig(c.env, config)
 

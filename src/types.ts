@@ -391,6 +391,67 @@ export type ServiceAgentOverview = {
   recentSessions: ServiceAgentRecentSession[]
 }
 
+export type TelegramConversationStatus = 'active' | 'opt_out' | 'closed'
+
+export type TelegramConversationDirection = 'inbound' | 'agent' | 'system'
+
+export type TelegramConversationSessionRecord = {
+  id: string
+  user_id: string | null
+  chat_id: string
+  username: string | null
+  first_name: string | null
+  last_name: string | null
+  status: TelegramConversationStatus
+  sentiment_score: number | null
+  sentiment_label: NewsletterSentimentLabel | null
+  last_message_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type TelegramConversationMessageRecord = {
+  id: number
+  session_id: string
+  direction: TelegramConversationDirection
+  message_text: string
+  message_id: number
+  sentiment_score: number | null
+  sentiment_label: NewsletterSentimentLabel | null
+  ai_model: string | null
+  metadata: string | null
+  created_at: string
+}
+
+export type TelegramWebhookUpdate = {
+  update_id: number
+  message?: {
+    message_id: number
+    from: {
+      id: number
+      is_bot: boolean
+      first_name: string
+      last_name?: string
+      username?: string
+      language_code?: string
+    }
+    chat: {
+      id: number
+      first_name?: string
+      last_name?: string
+      username?: string
+      type: 'private' | 'group' | 'supergroup' | 'channel'
+    }
+    date: number
+    text?: string
+    entities?: Array<{
+      offset: number
+      length: number
+      type: string
+    }>
+  }
+}
+
 export type JourneyCreateInput = {
   id?: string | null
   name: string
@@ -490,6 +551,9 @@ export type AdminTelegramIntegrationConfig = {
   testChatId: string | null
   testMessage: string | null
   updatedAt: string | null
+  conversationEnabled: boolean
+  aiModel: string
+  maxReplyChars: number
 }
 
 export type AdminServiceAgentConfig = {
