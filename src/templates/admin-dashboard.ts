@@ -1354,9 +1354,9 @@ export function renderAdminDashboardPage(data: {
     .overflow-y-auto { overflow-y: auto; }
     .cursor-pointer { cursor: pointer; }
     .space-y-4 > * + * { margin-top: 16px; }
-    .max-h-\[400px\] { max-height: 400px; }
-    .max-w-\[200px\] { max-width: 200px; }
-    .max-w-\[150px\] { max-width: 150px; }
+    [class~="max-h-[400px]"] { max-height: 400px; }
+    [class~="max-w-[200px]"] { max-width: 200px; }
+    [class~="max-w-[150px]"] { max-width: 150px; }
     .text-error { color: #f87171; }
     .uppercase { text-transform: uppercase; }
     .tracking-tighter { letter-spacing: -0.05em; }
@@ -3565,36 +3565,51 @@ export function renderAdminDashboardPage(data: {
       });
     }
 
+    function activateView(targetView) {
+      if (!targetView) return;
+
+      const viewElement = document.getElementById('view-' + targetView);
+      const metadata = viewMeta[targetView];
+      if (!viewElement || !metadata) {
+        console.warn('Unknown admin view:', targetView);
+        return;
+      }
+
+      // Update Nav
+      navItems.forEach(i => i.classList.remove('active'));
+      const activeNav = document.querySelector('[data-view="' + targetView + '"]');
+      if (activeNav) activeNav.classList.add('active');
+
+      // Update Content
+      views.forEach(v => v.classList.remove('active'));
+      viewElement.classList.add('active');
+
+      // Close sidebar on mobile if open
+      if (responsiveSidebarBreakpoint.matches) {
+        closeSidebar();
+      }
+
+      // Update Headers
+      if (viewTitle) viewTitle.innerText = metadata.title;
+      if (viewSubtitle) viewSubtitle.innerText = metadata.subtitle;
+
+      // Remember state
+      history.replaceState(null, null, '#' + targetView);
+    }
+
     navItems.forEach(item => {
-      item.addEventListener('click', () => {
-        const targetView = item.getAttribute('data-view');
-        
-        // Update Nav
-        navItems.forEach(i => i.classList.remove('active'));
-        item.classList.add('active');
-
-        // Update Content
-        views.forEach(v => v.classList.remove('active'));
-        document.getElementById('view-' + targetView).classList.add('active');
-
-        // Close sidebar on mobile if open
-        if (responsiveSidebarBreakpoint.matches) {
-          closeSidebar();
-        }
-
-        // Update Headers
-        viewTitle.innerText = viewMeta[targetView].title;
-        viewSubtitle.innerText = viewMeta[targetView].subtitle;
-
-        // Remember state (optional)
-        history.replaceState(null, null, '#' + targetView);
+      item.addEventListener('click', (event) => {
+        event.preventDefault();
+        activateView(item.getAttribute('data-view'));
       });
     });
 
-    // Handle initial hash
+    // Handle initial hash and fallback
     const initialView = window.location.hash.substring(1);
-    if(initialView && document.querySelector('[data-view="' + initialView + '"]')) {
-      document.querySelector('[data-view="' + initialView + '"]').click();
+    if (initialView && document.querySelector('[data-view="' + initialView + '"]')) {
+      activateView(initialView);
+    } else {
+      activateView('dashboard');
     }
 
     // WA Groups — calls same-origin Worker proxy (no CORS, token stays server-side)
