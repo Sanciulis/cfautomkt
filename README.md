@@ -118,14 +118,17 @@ npx wrangler deploy --env preview --minify
 ## Migracao de banco legado (producao)
 Se o banco de producao foi criado com o schema antigo, aplique:
 ```bash
-npx wrangler d1 execute martech_db --remote --file=./migrations/20260329_expand_legacy_schema.sql
+npx wrangler d1 execute martech_db --remote --file=./migrations/legacy/20260329_expand_legacy_schema.sql
 ```
 
 Para habilitar campos de consentimento LGPD em bancos ja existentes:
 ```bash
-npx wrangler d1 execute martech_db --remote --file=./migrations/20260329_add_user_consent_columns.sql
-npx wrangler d1 execute martech_db_preview --remote --env preview --file=./migrations/20260329_add_user_consent_columns.sql
+npx wrangler d1 execute martech_db --remote --file=./migrations/legacy/20260329_add_user_consent_columns.sql
+npx wrangler d1 execute martech_db_preview --remote --env preview --file=./migrations/legacy/20260329_add_user_consent_columns.sql
 ```
+
+Observacao:
+- As migrations em `migrations/legacy/` sao one-shot para bancos antigos e nao fazem parte do fluxo automatico de `wrangler d1 migrations apply` no CI/CD.
 
 ## CI/CD (GitHub Actions)
 Arquivo: `.github/workflows/deploy.yml`

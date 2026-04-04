@@ -37,7 +37,7 @@ Use `schema.sql`.
 ### Banco legado (producao antiga)
 Use migracao dedicada:
 ```bash
-npx wrangler d1 execute martech_db --remote --file=./migrations/20260329_expand_legacy_schema.sql
+npx wrangler d1 execute martech_db --remote --file=./migrations/legacy/20260329_expand_legacy_schema.sql
 ```
 
 Depois reaplique schema para garantir indexes e tabelas:
@@ -48,9 +48,12 @@ npx wrangler d1 execute martech_db --remote --file=./schema.sql
 ### Migracao de consentimento (LGPD)
 Aplicar uma vez por ambiente:
 ```bash
-npx wrangler d1 execute martech_db --remote --file=./migrations/20260329_add_user_consent_columns.sql
-npx wrangler d1 execute martech_db_preview --remote --env preview --file=./migrations/20260329_add_user_consent_columns.sql
+npx wrangler d1 execute martech_db --remote --file=./migrations/legacy/20260329_add_user_consent_columns.sql
+npx wrangler d1 execute martech_db_preview --remote --env preview --file=./migrations/legacy/20260329_add_user_consent_columns.sql
 ```
+
+Observacao:
+- Arquivos em `migrations/legacy/` sao migracoes de banco antigo e devem ser executados manualmente quando necessario.
 
 ## 4) Deploy
 
@@ -270,6 +273,7 @@ Checklist:
 1. Confirmar que `POST /user/:id/consent` retornou `marketingOptIn=false`.
 2. Confirmar se o usuario foi selecionado por `userIds` e se apareceu como `skipped` no retorno do dispatch.
 3. Verificar se a migration `20260329_add_user_consent_columns.sql` foi aplicada no ambiente.
+ - Referencia: `migrations/legacy/20260329_add_user_consent_columns.sql`.
 
 ### Login admin retorna erro
 Checklist:
