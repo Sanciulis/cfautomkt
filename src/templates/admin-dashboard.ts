@@ -1326,6 +1326,13 @@ export function renderAdminDashboardPage(data: {
       padding: 8px;
       border-radius: 8px;
       cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .header-title-flex {
+      display: flex;
+      align-items: center;
+      gap: 12px;
     }
 
     @media (max-width: 768px) {
@@ -1336,6 +1343,213 @@ export function renderAdminDashboardPage(data: {
       .brand-name, .nav-label { display: block; }
       .nav-item { justify-content: flex-start; padding: 12px; }
       .brand { padding: 32px 24px; justify-content: flex-start; }
+
+      /* --- PANELS & GRIDS --- */
+      .panel {
+        padding: 18px 14px;
+        border-radius: 18px;
+      }
+      .panel-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .panel-title {
+        font-size: 1rem;
+      }
+
+      /* Force all panel-grid variations to single column */
+      .panel-grid {
+        grid-template-columns: 1fr !important;
+      }
+
+      /* --- STAT CARDS --- */
+      .stat-card {
+        padding: 16px;
+        border-radius: 16px;
+      }
+      .stat-value {
+        font-size: 1.5rem;
+      }
+
+      /* --- TABLES --- */
+      .table-container {
+        margin: 0 -14px;
+        padding: 0 14px;
+        -webkit-overflow-scrolling: touch;
+      }
+      table {
+        min-width: 520px;
+      }
+      th {
+        padding: 10px 12px;
+        font-size: 0.65rem;
+      }
+      td {
+        padding: 12px;
+        font-size: 0.85rem;
+      }
+
+      /* --- FORMS --- */
+      .form-group {
+        margin-bottom: 16px;
+      }
+      .inline-form-grid {
+        grid-template-columns: 1fr !important;
+      }
+      .inline-form-grid .form-group[style*="grid-column"] {
+        grid-column: auto !important;
+      }
+
+      /* --- CONTROL ROOM / ENTITY LISTS --- */
+      .control-entity-list {
+        max-height: 300px;
+      }
+      .control-entity-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 10px 12px;
+      }
+
+      /* --- FLOW RAIL (Campaign Funnel) --- */
+      .flow-rail {
+        flex-direction: column;
+        gap: 4px;
+      }
+      .flow-node {
+        min-width: unset;
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 12px;
+      }
+      .flow-arrow {
+        transform: rotate(90deg);
+        font-size: 0.9rem;
+        min-width: unset;
+        align-self: center;
+      }
+
+      /* --- MINI STAT GRID --- */
+      .mini-stat-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+      .mini-stat-card strong {
+        font-size: 0.95rem;
+        word-break: break-all;
+      }
+
+      /* --- PHASE BARS --- */
+      .phase-bar-item {
+        grid-template-columns: 60px 1fr 28px;
+        gap: 6px;
+      }
+      .phase-label {
+        font-size: 0.65rem;
+      }
+
+      /* --- ACTION ROWS --- */
+      .action-row {
+        flex-direction: column;
+      }
+      .action-row .btn {
+        width: 100% !important;
+      }
+
+      /* --- CHIP ROW --- */
+      .chip-row {
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        -webkit-overflow-scrolling: touch;
+        padding-bottom: 4px;
+      }
+      .chip {
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+
+      /* --- TOASTS --- */
+      .toast {
+        top: 12px;
+        right: 12px;
+        left: 12px;
+        border-radius: 12px;
+      }
+
+      /* --- HEADER ADJUSTMENTS --- */
+      .header-bar .flex {
+        flex-wrap: wrap;
+      }
+
+      /* --- BUTTONS --- */
+      .btn {
+        padding: 10px 16px;
+        font-size: 0.9rem;
+      }
+
+      /* --- PLAYGROUND --- */
+      #view-playground .panel {
+        height: auto !important;
+        min-height: 400px;
+      }
+
+      /* --- SERVICE AGENT CONFIG --- */
+      .panel-grid[style*="1fr 1fr 1fr"],
+      .panel-grid[style*="1.2fr 0.8fr 0.8fr 0.8fr"] {
+        grid-template-columns: 1fr !important;
+      }
+
+      /* --- AIDA FUNNEL CARDS --- */
+      div[style*="flex:1;min-width:120px"] {
+        min-width: 80px !important;
+        padding: 10px !important;
+      }
+
+      /* Flex gap utility */
+      .flex.gap-4, .flex[style*="gap"] {
+        flex-wrap: wrap;
+      }
+
+      /* Buttons inside flex rows */
+      .flex .btn[style*="width:auto"] {
+        flex: 1;
+        min-width: 0;
+      }
+
+      /* Submit buttons full width on mobile */
+      form .btn-primary {
+        width: 100%;
+      }
+      form div[style*="justify-content:flex-end"] {
+        justify-content: stretch !important;
+      }
+    }
+
+    /* Extra small screens (< 400px) */
+    @media (max-width: 400px) {
+      .main-canvas {
+        padding: 16px 10px;
+      }
+      .panel {
+        padding: 14px 10px;
+      }
+      .mini-stat-grid {
+        grid-template-columns: 1fr;
+      }
+      .badge {
+        font-size: 0.65rem;
+        padding: 3px 6px;
+      }
+      .page-title {
+        font-size: 1.25rem;
+      }
+      .page-subtitle {
+        font-size: 0.8rem;
+      }
+      .stat-value {
+        font-size: 1.3rem;
+      }
     }
   </style>
 </head>
