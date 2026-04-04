@@ -129,6 +129,17 @@ function normalizeControlDetailLevel(value: string | null): ControlDetailLevel {
   return 'operations'
 }
 
+function buildDefaultTelegramInboundWebhookUrl(requestUrl: string): string {
+  const origin = new URL(requestUrl).origin
+  return `${origin}/webhooks/telegram/inbound`
+}
+
+function normalizeTelegramMaxReplyChars(value: unknown, fallback: number = 1000): number {
+  const parsed = toNumber(value)
+  const safeBase = parsed > 0 ? parsed : fallback
+  return Math.max(160, Math.min(4000, Math.round(safeBase)))
+}
+
 function normalizeWhatsAppParticipantContact(value: unknown): string | null {
   const raw = safeString(value)
   if (!raw) return null
@@ -841,6 +852,7 @@ admin.get('/', async (c) => {
 
   const notice = safeString(c.req.query('notice'))
   const noticeKind = safeString(c.req.query('kind'))
+  const defaultTelegramInboundWebhookUrl = buildDefaultTelegramInboundWebhookUrl(c.req.url)
 
   return c.html(
     renderAdminDashboardPage({
@@ -865,6 +877,8 @@ admin.get('/', async (c) => {
       },
       telegramIntegration: {
         webhookUrl: telegramIntegration.webhookUrl,
+        inboundWebhookUrl:
+          safeString(telegramIntegration.inboundWebhookUrl) ?? defaultTelegramInboundWebhookUrl,
         testChatId: telegramIntegration.testChatId,
         testMessage: telegramIntegration.testMessage,
         updatedAt: telegramIntegration.updatedAt,
@@ -2172,6 +2186,19 @@ admin.post('/actions/integration/telegram/save', async (c) => {
     const validation = validateAdminIntegrationWebhookUrl(rawWebhookUrl, c.env)
     if (!validation.ok) return c.redirect(buildAdminRedirect(validation.error, 'error'), 302)
 
+    const rawInboundWebhookUrl =
+      safeString(typeof form.inboundWebhookUrl === 'string' ? form.inboundWebhookUrl : null) ??
+      currentConfig.inboundWebhookUrl ??
+      buildDefaultTelegramInboundWebhookUrl(c.req.url)
+    if (!rawInboundWebhookUrl) {
+      return c.redirect(buildAdminRedirect('Webhook inbound e obrigatorio.', 'error'), 302)
+    }
+
+    const inboundValidation = validateAdminIntegrationWebhookUrl(rawInboundWebhookUrl, c.env)
+    if (!inboundValidation.ok) {
+      return c.redirect(buildAdminRedirect(`Webhook inbound invalido: ${inboundValidation.error}`, 'error'), 302)
+    }
+
     const testChatId =
       safeString(typeof form.testChatId === 'string' ? form.testChatId : null) ?? currentConfig.testChatId
     if (testChatId && looksLikeTelegramBotToken(testChatId)) {
@@ -2201,10 +2228,14 @@ admin.post('/actions/integration/telegram/save', async (c) => {
 
     const conversationEnabled = toBoolean(form.conversationEnabled)
     const aiModel = safeString(typeof form.aiModel === 'string' ? form.aiModel : null) ?? DEFAULT_AI_MODEL
-    const maxReplyChars = toNumber(typeof form.maxReplyChars === 'string' ? form.maxReplyChars : null) ?? 1000
+    const maxReplyChars = normalizeTelegramMaxReplyChars(
+      typeof form.maxReplyChars === 'string' ? form.maxReplyChars : currentConfig.maxReplyChars,
+      currentConfig.maxReplyChars || 1000
+    )
 
     const config = {
       webhookUrl: validation.normalizedUrl,
+      inboundWebhookUrl: inboundValidation.normalizedUrl,
       testChatId,
       testMessage,
       updatedAt: new Date().toISOString(),
@@ -2218,6 +2249,86 @@ admin.post('/actions/integration/telegram/save', async (c) => {
   } catch (error) {
     return c.redirect(
       buildAdminRedirect(`Falha ao salvar configuracao do telegram: ${String(error)}`, 'error'),
+      302
+    )
+  }
+})
+
+// Action - Configure Telegram inbound webhook in Telegram Bot API
+admin.post('/actions/integration/telegram/set-webhook', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    const currentConfig = await getAdminTelegramIntegrationConfig(c.env)
+    const form = await c.req.parseBody()
+
+    const rawInboundWebhookUrl =
+      safeString(typeof form.inboundWebhookUrl === 'string' ? form.inboundWebhookUrl : null) ??
+      currentConfig.inboundWebhookUrl ??
+      buildDefaultTelegramInboundWebhookUrl(c.req.url)
+
+    if (!rawInboundWebhookUrl) {
+      return c.redirect(buildAdminRedirect('Webhook inbound e obrigatorio para configuracao.', 'error'), 302)
+    }
+
+    const inboundValidation = validateAdminIntegrationWebhookUrl(rawInboundWebhookUrl, c.env)
+    if (!inboundValidation.ok) {
+      return c.redirect(buildAdminRedirect(`Webhook inbound invalido: ${inboundValidation.error}`, 'error'), 302)
+    }
+
+    const botToken = safeString(c.env.TELEGRAM_BOT_TOKEN)
+    if (!botToken) {
+      return c.redirect(
+        buildAdminRedirect(
+          'TELEGRAM_BOT_TOKEN nao configurado. Defina o secret para registrar o webhook no Telegram.',
+          'error'
+        ),
+        302
+      )
+    }
+
+    const telegramResponse = await fetch(`https://api.telegram.org/bot${botToken}/setWebhook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        url: inboundValidation.normalizedUrl,
+        allowed_updates: ['message'],
+      }),
+    })
+
+    const telegramBody = (await telegramResponse.json().catch(() => ({}))) as {
+      ok?: boolean
+      description?: string
+    }
+
+    if (!telegramResponse.ok || !telegramBody.ok) {
+      const detail = safeString(telegramBody.description)
+      const suffix = detail ? ` - ${detail}` : ''
+      return c.redirect(
+        buildAdminRedirect(
+          `Falha ao configurar webhook inbound no Telegram (HTTP ${telegramResponse.status})${suffix}`,
+          'error'
+        ),
+        302
+      )
+    }
+
+    await saveAdminTelegramIntegrationConfig(c.env, {
+      ...currentConfig,
+      inboundWebhookUrl: inboundValidation.normalizedUrl,
+      updatedAt: new Date().toISOString(),
+    })
+
+    return c.redirect(
+      buildAdminRedirect('Webhook inbound configurado com sucesso no Telegram Bot API.'),
+      302
+    )
+  } catch (error) {
+    return c.redirect(
+      buildAdminRedirect(`Falha ao configurar webhook inbound do Telegram: ${String(error)}`, 'error'),
       302
     )
   }
@@ -2241,6 +2352,19 @@ admin.post('/actions/integration/telegram/test', async (c) => {
 
     const validation = validateAdminIntegrationWebhookUrl(rawWebhookUrl, c.env)
     if (!validation.ok) return c.redirect(buildAdminRedirect(validation.error, 'error'), 302)
+
+    const rawInboundWebhookUrl =
+      safeString(typeof form.inboundWebhookUrl === 'string' ? form.inboundWebhookUrl : null) ??
+      currentConfig.inboundWebhookUrl ??
+      buildDefaultTelegramInboundWebhookUrl(c.req.url)
+    if (!rawInboundWebhookUrl) {
+      return c.redirect(buildAdminRedirect('Webhook inbound e obrigatorio para testar.', 'error'), 302)
+    }
+
+    const inboundValidation = validateAdminIntegrationWebhookUrl(rawInboundWebhookUrl, c.env)
+    if (!inboundValidation.ok) {
+      return c.redirect(buildAdminRedirect(`Webhook inbound invalido: ${inboundValidation.error}`, 'error'), 302)
+    }
 
     const testChatId =
       safeString(typeof form.testChatId === 'string' ? form.testChatId : null) ?? currentConfig.testChatId
@@ -2274,11 +2398,18 @@ admin.post('/actions/integration/telegram/test', async (c) => {
       DEFAULT_TELEGRAM_TEST_MESSAGE
 
     const conversationEnabled = toBoolean(form.conversationEnabled ?? currentConfig.conversationEnabled)
-    const aiModel = safeString(typeof form.aiModel === 'string' ? form.aiModel : null) ?? currentConfig.aiModel ?? DEFAULT_AI_MODEL
-    const maxReplyChars = toNumber(typeof form.maxReplyChars === 'string' ? form.maxReplyChars : null) ?? currentConfig.maxReplyChars ?? 1000
+    const aiModel =
+      safeString(typeof form.aiModel === 'string' ? form.aiModel : null) ??
+      currentConfig.aiModel ??
+      DEFAULT_AI_MODEL
+    const maxReplyChars = normalizeTelegramMaxReplyChars(
+      typeof form.maxReplyChars === 'string' ? form.maxReplyChars : currentConfig.maxReplyChars,
+      currentConfig.maxReplyChars || 1000
+    )
 
     const config = {
       webhookUrl: validation.normalizedUrl,
+      inboundWebhookUrl: inboundValidation.normalizedUrl,
       testChatId,
       testMessage,
       updatedAt: new Date().toISOString(),

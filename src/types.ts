@@ -548,6 +548,7 @@ export type AdminEmailIntegrationConfig = {
 
 export type AdminTelegramIntegrationConfig = {
   webhookUrl: string | null
+  inboundWebhookUrl: string | null
   testChatId: string | null
   testMessage: string | null
   updatedAt: string | null

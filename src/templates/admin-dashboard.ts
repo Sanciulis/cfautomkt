@@ -33,6 +33,7 @@ export function renderAdminDashboardPage(data: {
   }
   telegramIntegration: {
     webhookUrl: string | null
+    inboundWebhookUrl: string | null
     testChatId: string | null
     testMessage: string | null
     updatedAt: string | null
@@ -609,6 +610,7 @@ export function renderAdminDashboardPage(data: {
     : 'Aguardando configuração'
 
   const telegramWebhookUrl = escapeHtml(data.telegramIntegration.webhookUrl ?? '')
+  const telegramInboundWebhookUrl = escapeHtml(data.telegramIntegration.inboundWebhookUrl ?? '')
   const telegramTestChatId = escapeHtml(data.telegramIntegration.testChatId ?? '')
   const telegramTestMessage = escapeHtml(data.telegramIntegration.testMessage ?? DEFAULT_TELEGRAM_TEST_MESSAGE)
   const telegramUpdatedAtLabel = data.telegramIntegration.updatedAt
@@ -1979,6 +1981,7 @@ export function renderAdminDashboardPage(data: {
           <h3 class="panel-title">Configurador Telegram Bot</h3>
           <form method="post" action="/admin/actions/integration/telegram/save" style="margin-top:24px">
             <div class="form-group"><label class="input-label">Endpoint de Entrega (JSON Webhook)</label><input class="input-control" name="webhookUrl" value="${telegramWebhookUrl}" placeholder="https://gw.dominio.com/send/telegram" required /></div>
+            <div class="form-group"><label class="input-label">Webhook Inbound (Telegram -> Plataforma)</label><input class="input-control" name="inboundWebhookUrl" value="${telegramInboundWebhookUrl}" placeholder="https://api.seudominio.com/webhooks/telegram/inbound" required /><p class="text-xs opacity-50" style="margin-top:8px;">Este endpoint recebe mensagens do bot. Use o botão "Configurar Webhook no Telegram" para registrar automaticamente.</p></div>
             <div class="panel-grid" style="grid-template-columns: 1fr 1fr; gap:16px;">
               <div class="form-group"><label class="input-label">Chat ID de Teste</label><input class="input-control" name="testChatId" value="${telegramTestChatId}" /><p class="text-xs opacity-40" style="margin-top:8px;">Use apenas chat ID numerico (ex: 123456789) ou @canal. Nao use token do bot neste campo.</p></div>
               <div class="form-group"><label class="input-label">Status Link</label><input class="input-control" value="${escapeHtml(telegramUpdatedAtLabel)}" readonly /></div>
@@ -2013,6 +2016,7 @@ export function renderAdminDashboardPage(data: {
             
             <div class="flex items-center gap-3" style="margin-top:24px;">
               <button type="submit" class="btn btn-primary">Salvar Configuração do Telegram</button>
+              <button type="submit" formaction="/admin/actions/integration/telegram/set-webhook" formmethod="post" class="btn btn-glass">Configurar Webhook no Telegram</button>
               <button type="submit" formaction="/admin/actions/integration/telegram/test" formmethod="post" class="btn btn-glass">Salvar e Testar Telegram</button>
             </div>
           </form>

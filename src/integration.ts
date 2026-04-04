@@ -198,6 +198,7 @@ export function normalizeTelegramIntegrationConfig(
   if (!input || typeof input !== 'object') {
     return {
       webhookUrl: defaultsWebhook,
+      inboundWebhookUrl: null,
       testChatId: null,
       testMessage: DEFAULT_TELEGRAM_TEST_MESSAGE,
       updatedAt: null,
@@ -214,6 +215,7 @@ export function normalizeTelegramIntegrationConfig(
 
   return {
     webhookUrl: safeString(parsed.webhookUrl) ?? defaultsWebhook,
+    inboundWebhookUrl: safeString(parsed.inboundWebhookUrl),
     testChatId: safeTestChatId,
     testMessage: safeString(parsed.testMessage) ?? DEFAULT_TELEGRAM_TEST_MESSAGE,
     updatedAt: safeString(parsed.updatedAt),
