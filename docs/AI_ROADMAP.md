@@ -413,6 +413,36 @@ Proximos passos:
 - Adicionar dry-run de configuracao para simular resposta do agente antes de publicar mudancas.
 - Versionar historico de mudancas de configuracao por usuario admin.
 
+### 2026-04-03 - Hardening P0 de Autonomia (Freezing + SLO + Seguranca)
+Data da atualizacao: 2026-04-03
+Responsavel: Engenharia
+Entrega realizada:
+- Reforco do modulo de freezing com avaliacao de campanhas baseada em metricas materializadas por janela (sent_count, converted_count, conversion_rate).
+- Inclusao de janela temporal explicita nas regras padrao de congelamento de campanha (7 dias).
+- Bloqueio de update_field para campos permitidos por tipo de regra, reduzindo risco de SQL dinamico inseguro.
+- Definicao centralizada de limites operacionais de IA (warning/critical) e amostra minima de inferencias para avaliar saude.
+- Endpoint admin de metricas de IA passou a retornar estado de saude operacional (`ok`, `warning`, `critical`, `insufficient_data`).
+- Endpoints de debug em API publica passaram a exigir autenticacao admin e so funcionam em ambientes nao-producao.
+Fluxos impactados:
+- Loop autonomo agendado
+- Governanca operacional de IA
+- Seguranca de superficie de API
+Metricas antes:
+- Avaliacao de saude de IA sem criterio de amostra minima.
+- Regras de freezing de campanha sem materializacao dedicada de metricas na avaliacao.
+- Endpoints de debug expostos sem gate de ambiente.
+Metricas depois:
+- Avaliacao de saude com criterio minimo de 25 inferencias por janela.
+- Status de saude operacional padronizado e exposto no endpoint de metricas.
+- Regras de freezing de campanha avaliadas com base em eventos reais de interacao por janela.
+Riscos identificados:
+- Regras customizadas antigas podem usar campos fora da allowlist de update_field.
+Acoes corretivas:
+- Atualizar regras customizadas para campos permitidos e monitorar logs de regras ignoradas por campo nao autorizado.
+Proximos passos:
+- Migrar recomendacoes autonomas para fila executavel com retry/idempotencia.
+- Expandir governanca de prompt versionado para todos os fluxos conversacionais.
+
 ## Definicao de Sucesso do Programa
 O programa sera considerado bem-sucedido quando:
 1. Houver melhoria consistente de qualidade e conversao com evidencias.

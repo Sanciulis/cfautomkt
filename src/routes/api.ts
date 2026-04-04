@@ -114,6 +114,11 @@ function buildInboundContactCandidates(contact: string): string[] {
   return Array.from(candidates)
 }
 
+function isDebugRouteEnabled(env: Bindings): boolean {
+  const appEnv = safeString(env.APP_ENV)?.toLowerCase()
+  return appEnv === 'development' || appEnv === 'dev' || appEnv === 'preview' || appEnv === 'staging'
+}
+
 async function resolveInboundUserByContact(env: Bindings, contact: string) {
   const candidates = buildInboundContactCandidates(contact)
   if (!candidates.length) return null
@@ -447,6 +452,10 @@ api.get('/metrics/overview', async (c) => {
 })
 
 api.get('/test-fetch', async (c) => {
+  const unauthorized = ensureAdminAccess(c)
+  if (unauthorized) return unauthorized
+  if (!isDebugRouteEnabled(c.env)) return c.json({ error: 'Not found' }, 404)
+
   try {
     const res = await fetch('https://wainews.com.br/webhooks/gateway/groups')
     const text = await res.text()
@@ -457,6 +466,10 @@ api.get('/test-fetch', async (c) => {
 })
 
 api.get('/test-fetch-ip', async (c) => {
+  const unauthorized = ensureAdminAccess(c)
+  if (unauthorized) return unauthorized
+  if (!isDebugRouteEnabled(c.env)) return c.json({ error: 'Not found' }, 404)
+
   try {
     const res = await fetch('http://168.231.94.189/health')
     const text = await res.text()

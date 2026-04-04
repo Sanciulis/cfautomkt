@@ -3,6 +3,11 @@ import { toNumber } from './utils'
 import { getAIInferenceOverview, logAgentDecision } from './db'
 import { evaluateFreezingRules } from './freezing-rules'
 import { logAIInference } from './ai-observability'
+import {
+  AI_HEALTH_MIN_INFERENCES,
+  AI_HEALTH_WARNING_THRESHOLDS,
+  AI_HEALTH_CRITICAL_THRESHOLDS,
+} from './constants'
 
 const AI_ALERT_DEDUPE_PREFIX = 'ai_ops_alert'
 const AI_WARNING_DEDUPE_SECONDS = 60 * 60
@@ -61,8 +66,23 @@ async function runAIOperationalHealthCheck(env: Bindings): Promise<void> {
   const overview = await getAIInferenceOverview(env, 24)
   const { errorRate, fallbackRate, latencyP95Ms, total } = overview.totals
 
-  const warning = errorRate > 0.05 || fallbackRate > 0.15 || latencyP95Ms > 2500
-  const critical = errorRate > 0.1 || fallbackRate > 0.25 || latencyP95Ms > 4000
+  if (total < AI_HEALTH_MIN_INFERENCES) {
+    console.log('[AI HEALTH CHECK] skipped due to low sample size', {
+      total,
+      minRequired: AI_HEALTH_MIN_INFERENCES,
+    })
+    return
+  }
+
+  const warning =
+    errorRate > AI_HEALTH_WARNING_THRESHOLDS.errorRate ||
+    fallbackRate > AI_HEALTH_WARNING_THRESHOLDS.fallbackRate ||
+    latencyP95Ms > AI_HEALTH_WARNING_THRESHOLDS.latencyP95Ms
+
+  const critical =
+    errorRate > AI_HEALTH_CRITICAL_THRESHOLDS.errorRate ||
+    fallbackRate > AI_HEALTH_CRITICAL_THRESHOLDS.fallbackRate ||
+    latencyP95Ms > AI_HEALTH_CRITICAL_THRESHOLDS.latencyP95Ms
 
   if (!warning && !critical) return
 
@@ -86,17 +106,10 @@ async function runAIOperationalHealthCheck(env: Bindings): Promise<void> {
       fallbackRate,
       latencyP95Ms,
     },
+    minInferences: AI_HEALTH_MIN_INFERENCES,
     thresholds: {
-      warning: {
-        errorRate: 0.05,
-        fallbackRate: 0.15,
-        latencyP95Ms: 2500,
-      },
-      critical: {
-        errorRate: 0.1,
-        fallbackRate: 0.25,
-        latencyP95Ms: 4000,
-      },
+      warning: AI_HEALTH_WARNING_THRESHOLDS,
+      critical: AI_HEALTH_CRITICAL_THRESHOLDS,
     },
     generatedAt: overview.generatedAt,
   })

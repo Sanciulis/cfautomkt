@@ -12,6 +12,9 @@ import {
   DEFAULT_EMAIL_TEST_MESSAGE,
   DEFAULT_TELEGRAM_TEST_MESSAGE,
   DEFAULT_AI_MODEL,
+  AI_HEALTH_MIN_INFERENCES,
+  AI_HEALTH_WARNING_THRESHOLDS,
+  AI_HEALTH_CRITICAL_THRESHOLDS,
 } from '../constants'
 import {
   safeString,
@@ -2775,11 +2778,35 @@ admin.get('/api/ai/metrics', async (c) => {
     const requestedHours = toNumber(c.req.query('hours'))
     const rangeHours = Number.isFinite(requestedHours) && requestedHours > 0 ? requestedHours : 24
     const data = await getAIInferenceOverview(c.env, rangeHours)
+    const totals = data.totals
+    const hasEnoughData = totals.total >= AI_HEALTH_MIN_INFERENCES
+    const isCritical =
+      hasEnoughData &&
+      (totals.errorRate > AI_HEALTH_CRITICAL_THRESHOLDS.errorRate ||
+        totals.fallbackRate > AI_HEALTH_CRITICAL_THRESHOLDS.fallbackRate ||
+        totals.latencyP95Ms > AI_HEALTH_CRITICAL_THRESHOLDS.latencyP95Ms)
+    const isWarning =
+      hasEnoughData &&
+      (totals.errorRate > AI_HEALTH_WARNING_THRESHOLDS.errorRate ||
+        totals.fallbackRate > AI_HEALTH_WARNING_THRESHOLDS.fallbackRate ||
+        totals.latencyP95Ms > AI_HEALTH_WARNING_THRESHOLDS.latencyP95Ms)
+
+    const healthSeverity = !hasEnoughData ? 'insufficient_data' : isCritical ? 'critical' : isWarning ? 'warning' : 'ok'
+
     return c.json({
       rangeHours: data.rangeHours,
       generatedAt: data.generatedAt,
-      totals: data.totals,
+      totals,
       flows: data.flows,
+      health: {
+        evaluated: hasEnoughData,
+        severity: healthSeverity,
+        minInferences: AI_HEALTH_MIN_INFERENCES,
+        thresholds: {
+          warning: AI_HEALTH_WARNING_THRESHOLDS,
+          critical: AI_HEALTH_CRITICAL_THRESHOLDS,
+        },
+      },
     })
   } catch (error) {
     return c.json({ error: String(error) }, 500)

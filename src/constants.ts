@@ -41,3 +41,17 @@ export const DEFAULT_SERVICE_AGENT_OFF_HOURS_REPLY =
 
 export const DEFAULT_SERVICE_AGENT_QUALIFICATION_SCRIPT =
   'Priorize coletar servico, objetivo, prazo e faixa de investimento antes de sugerir proximo passo.'
+
+export const AI_HEALTH_MIN_INFERENCES = 25
+
+export const AI_HEALTH_WARNING_THRESHOLDS = {
+  errorRate: 0.05,
+  fallbackRate: 0.15,
+  latencyP95Ms: 2500,
+}
+
+export const AI_HEALTH_CRITICAL_THRESHOLDS = {
+  errorRate: 0.1,
+  fallbackRate: 0.25,
+  latencyP95Ms: 4000,
+}

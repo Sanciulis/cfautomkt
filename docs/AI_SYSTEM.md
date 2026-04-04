@@ -333,6 +333,7 @@ Conversas:
 
 ### Health-check agendado (automático)
 - O agente scheduled executa verificação operacional de IA na janela das últimas 24 horas.
+- O alerta só é avaliado quando há amostra mínima de 25 inferências na janela.
 - Regras de severidade aplicadas:
    - warning: erro > 5% ou fallback > 15% ou p95 > 2500ms
    - critical: erro > 10% ou fallback > 25% ou p95 > 4000ms
@@ -355,6 +356,10 @@ Conversas:
    - latência p50
    - latência p95
    - detalhamento por fluxo (`generate_personalized_message`, `run_persona_conversation`, etc.)
+   - bloco `health` com:
+      - `evaluated` (se havia amostra mínima para avaliação)
+      - `severity` (`ok`, `warning`, `critical`, `insufficient_data`)
+      - `minInferences` e thresholds usados na análise
 - Uso recomendado:
    - acompanhamento diário em operação
    - baseline para experimentos de otimização de prompt/modelo
