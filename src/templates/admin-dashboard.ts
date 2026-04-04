@@ -1760,11 +1760,14 @@ export function renderAdminDashboardPage(data: {
           <form method="post" action="/admin/actions/integration/telegram/save" style="margin-top:24px">
             <div class="form-group"><label class="input-label">Endpoint de Entrega (JSON Webhook)</label><input class="input-control" name="webhookUrl" value="${telegramWebhookUrl}" placeholder="https://gw.dominio.com/send/telegram" required /></div>
             <div class="panel-grid" style="grid-template-columns: 1fr 1fr; gap:16px;">
-              <div class="form-group"><label class="input-label">Chat ID de Teste</label><input class="input-control" name="testChatId" value="${telegramTestChatId}" /></div>
+              <div class="form-group"><label class="input-label">Chat ID de Teste</label><input class="input-control" name="testChatId" value="${telegramTestChatId}" /><p class="text-xs opacity-40" style="margin-top:8px;">Use apenas chat ID numerico (ex: 123456789) ou @canal. Nao use token do bot neste campo.</p></div>
               <div class="form-group"><label class="input-label">Status Link</label><input class="input-control" value="${escapeHtml(telegramUpdatedAtLabel)}" readonly /></div>
             </div>
             <div class="form-group"><label class="input-label">Mensagem de Boas-vindas (Teste)</label><textarea class="input-control" name="testMessage">${telegramTestMessage}</textarea></div>
-            <button type="submit" class="btn btn-primary">Salvar Configuração do Telegram</button>
+            <div class="flex items-center gap-3" style="margin-top:8px;">
+              <button type="submit" class="btn btn-primary">Salvar Configuração do Telegram</button>
+              <button type="submit" formaction="/admin/actions/integration/telegram/test" formmethod="post" class="btn btn-glass">Salvar e Testar Telegram</button>
+            </div>
           </form>
         </section>
 

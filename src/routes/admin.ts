@@ -81,6 +81,8 @@ import {
   saveAdminEmailIntegrationConfig,
   getAdminTelegramIntegrationConfig,
   saveAdminTelegramIntegrationConfig,
+  looksLikeTelegramBotToken,
+  isValidTelegramChatId,
   getAdminServiceAgentConfig,
   saveAdminServiceAgentConfig,
 } from '../integration'
@@ -2169,6 +2171,26 @@ admin.post('/actions/integration/telegram/save', async (c) => {
 
     const testChatId =
       safeString(typeof form.testChatId === 'string' ? form.testChatId : null) ?? currentConfig.testChatId
+    if (testChatId && looksLikeTelegramBotToken(testChatId)) {
+      return c.redirect(
+        buildAdminRedirect(
+          'Chat ID invalido: parece um token de bot. Configure TELEGRAM_BOT_TOKEN como secret e informe apenas o chat ID numerico (ou @canal).',
+          'error'
+        ),
+        302
+      )
+    }
+
+    if (testChatId && !isValidTelegramChatId(testChatId)) {
+      return c.redirect(
+        buildAdminRedirect(
+          'Chat ID invalido. Use um valor numerico (ex: 123456789) ou @canal.',
+          'error'
+        ),
+        302
+      )
+    }
+
     const testMessage =
       safeString(typeof form.testMessage === 'string' ? form.testMessage : null) ??
       currentConfig.testMessage ??
@@ -2186,6 +2208,167 @@ admin.post('/actions/integration/telegram/save', async (c) => {
   } catch (error) {
     return c.redirect(
       buildAdminRedirect(`Falha ao salvar configuracao do telegram: ${String(error)}`, 'error'),
+      302
+    )
+  }
+})
+
+// Action - Test Telegram integration
+admin.post('/actions/integration/telegram/test', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    const currentConfig = await getAdminTelegramIntegrationConfig(c.env)
+    const form = await c.req.parseBody()
+
+    const rawWebhookUrl =
+      safeString(typeof form.webhookUrl === 'string' ? form.webhookUrl : null) ??
+      currentConfig.webhookUrl
+    if (!rawWebhookUrl) {
+      return c.redirect(buildAdminRedirect('Webhook URL e obrigatoria para testar.', 'error'), 302)
+    }
+
+    const validation = validateAdminIntegrationWebhookUrl(rawWebhookUrl, c.env)
+    if (!validation.ok) return c.redirect(buildAdminRedirect(validation.error, 'error'), 302)
+
+    const testChatId =
+      safeString(typeof form.testChatId === 'string' ? form.testChatId : null) ?? currentConfig.testChatId
+    if (!testChatId) {
+      return c.redirect(buildAdminRedirect('Informe um chat ID de teste para Telegram.', 'error'), 302)
+    }
+
+    if (looksLikeTelegramBotToken(testChatId)) {
+      return c.redirect(
+        buildAdminRedirect(
+          'Chat ID invalido: parece um token de bot. Use TELEGRAM_BOT_TOKEN como secret e informe um chat ID real para teste.',
+          'error'
+        ),
+        302
+      )
+    }
+
+    if (!isValidTelegramChatId(testChatId)) {
+      return c.redirect(
+        buildAdminRedirect(
+          'Chat ID invalido. Use um valor numerico (ex: 123456789) ou @canal.',
+          'error'
+        ),
+        302
+      )
+    }
+
+    const testMessage =
+      safeString(typeof form.testMessage === 'string' ? form.testMessage : null) ??
+      currentConfig.testMessage ??
+      DEFAULT_TELEGRAM_TEST_MESSAGE
+
+    const config = {
+      webhookUrl: validation.normalizedUrl,
+      testChatId,
+      testMessage,
+      updatedAt: new Date().toISOString(),
+    }
+    await saveAdminTelegramIntegrationConfig(c.env, config)
+
+    const botToken = safeString(c.env.TELEGRAM_BOT_TOKEN)
+    if (botToken) {
+      const telegramResponse = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          chat_id: testChatId,
+          text: testMessage,
+        }),
+      })
+
+      const telegramBody = (await telegramResponse.json().catch(() => ({}))) as {
+        ok?: boolean
+        description?: string
+      }
+
+      if (!telegramResponse.ok || !telegramBody.ok) {
+        const detail = safeString(telegramBody.description)
+        const suffix = detail ? ` - ${detail}` : ''
+        return c.redirect(
+          buildAdminRedirect(
+            `Teste Telegram via Bot API falhou (HTTP ${telegramResponse.status})${suffix}`,
+            'error'
+          ),
+          302
+        )
+      }
+
+      return c.redirect(
+        buildAdminRedirect(
+          `Teste Telegram enviado via Bot API com sucesso (HTTP ${telegramResponse.status}).`
+        ),
+        302
+      )
+    }
+
+    const dispatchToken = safeString(c.env.DISPATCH_BEARER_TOKEN)
+    if (!dispatchToken) {
+      return c.redirect(
+        buildAdminRedirect(
+          'TELEGRAM_BOT_TOKEN nao configurado e DISPATCH_BEARER_TOKEN ausente para fallback webhook.',
+          'error'
+        ),
+        302
+      )
+    }
+
+    const requestOrigin = new URL(c.req.url).origin
+    const payload = {
+      channel: 'telegram',
+      campaign: {
+        id: 'admin-integration-test',
+        name: 'Admin Telegram Integration Test',
+      },
+      user: {
+        id: 'admin-test-user',
+        name: 'Teste Admin',
+        email: null,
+        phone: testChatId,
+        preferredChannel: 'telegram',
+      },
+      message: testMessage,
+      referralUrl: `${requestOrigin}/ref/admin-test`,
+      unsubscribeUrl: `${requestOrigin}/unsubscribe/admin-test`,
+      metadata: {
+        source: 'admin_panel_telegram_integration_test',
+        requestedAt: new Date().toISOString(),
+      },
+    }
+
+    const response = await fetch(validation.normalizedUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${dispatchToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+
+    const responseText = await response.text()
+    const compactPreview = responseText.replace(/\s+/g, ' ').trim().slice(0, 120)
+    if (!response.ok) {
+      const suffix = compactPreview ? ` - ${compactPreview}` : ''
+      return c.redirect(
+        buildAdminRedirect(`Teste Telegram via webhook falhou (HTTP ${response.status})${suffix}`, 'error'),
+        302
+      )
+    }
+
+    return c.redirect(
+      buildAdminRedirect(`Teste Telegram enviado via webhook com sucesso (HTTP ${response.status}).`),
+      302
+    )
+  } catch (error) {
+    return c.redirect(
+      buildAdminRedirect(`Falha ao executar teste da integracao Telegram: ${String(error)}`, 'error'),
       302
     )
   }

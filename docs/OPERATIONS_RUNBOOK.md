@@ -177,6 +177,27 @@ curl -X POST http://localhost:8788/dispatch/whatsapp \
   -d "{\"channel\":\"whatsapp\",\"user\":{\"id\":\"u-001\",\"phone\":\"+5511999990001\"},\"message\":\"Teste gateway\"}"
 ```
 
+### 6.11 Smoke test Telegram
+Checklist:
+1. Defina `TELEGRAM_BOT_TOKEN` no Worker (production e/ou preview).
+2. No Telegram, abra conversa com o bot e envie `/start` pelo menos uma vez.
+3. Configure no painel admin um `Chat ID de Teste` valido (somente numerico ou `@canal`).
+4. Nao use token do bot no campo de chat ID (token tem formato `123456:ABC...`).
+
+Opcional para descobrir chat IDs recentes via Bot API:
+```bash
+curl "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/getUpdates"
+```
+
+Teste direto de envio:
+```bash
+curl -X POST "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/sendMessage" \
+  -H "Content-Type: application/json" \
+  -d '{"chat_id":"<CHAT_ID>","text":"Teste de integracao Martech Telegram"}'
+```
+
+Se retornar `chat not found`, confirme se o chat iniciou conversa com o bot e se o chat ID esta correto.
+
 ### 6.7 Conferir metricas
 ```bash
 curl https://martech-viral-system-preview.bkpdsf.workers.dev/metrics/overview \

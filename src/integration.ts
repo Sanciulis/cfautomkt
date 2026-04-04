@@ -21,6 +21,18 @@ import {
 import { safeString } from './utils'
 
 const BUSINESS_HOUR_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/
+const TELEGRAM_BOT_TOKEN_PATTERN = /^\d{6,20}:[A-Za-z0-9_-]{20,}$/
+const TELEGRAM_CHAT_ID_PATTERN = /^-?\d{6,20}$/
+const TELEGRAM_CHAT_USERNAME_PATTERN = /^@[A-Za-z0-9_]{5,32}$/
+
+export function looksLikeTelegramBotToken(value: string): boolean {
+  return TELEGRAM_BOT_TOKEN_PATTERN.test(value.trim())
+}
+
+export function isValidTelegramChatId(value: string): boolean {
+  const normalized = value.trim()
+  return TELEGRAM_CHAT_ID_PATTERN.test(normalized) || TELEGRAM_CHAT_USERNAME_PATTERN.test(normalized)
+}
 
 function parseBoolean(value: unknown, fallback: boolean): boolean {
   if (typeof value === 'boolean') return value
@@ -193,9 +205,13 @@ export function normalizeTelegramIntegrationConfig(
   }
 
   const parsed = input as Partial<AdminTelegramIntegrationConfig>
+  const rawTestChatId = safeString(parsed.testChatId)
+  const safeTestChatId =
+    rawTestChatId && !looksLikeTelegramBotToken(rawTestChatId) ? rawTestChatId : null
+
   return {
     webhookUrl: safeString(parsed.webhookUrl) ?? defaultsWebhook,
-    testChatId: safeString(parsed.testChatId),
+    testChatId: safeTestChatId,
     testMessage: safeString(parsed.testMessage) ?? DEFAULT_TELEGRAM_TEST_MESSAGE,
     updatedAt: safeString(parsed.updatedAt),
   }
