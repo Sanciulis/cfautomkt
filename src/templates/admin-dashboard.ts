@@ -859,6 +859,7 @@ export function renderAdminDashboardPage(data: {
         width: min(320px, 86vw);
         box-shadow: 10px 0 30px rgba(0,0,0,0.5);
       }
+      body.sidebar-open .sidebar,
       .sidebar.open {
         transform: translateX(0);
       }
@@ -873,6 +874,7 @@ export function renderAdminDashboardPage(data: {
         pointer-events: none;
         transition: opacity 0.3s;
       }
+      body.sidebar-open .sidebar-overlay,
       .sidebar-overlay.open {
         opacity: 1;
         pointer-events: auto;
@@ -2961,6 +2963,7 @@ export function renderAdminDashboardPage(data: {
 
     function closeSidebar() {
       if (!sidebar || !overlay) return;
+      document.body.classList.remove('sidebar-open');
       sidebar.classList.remove('open');
       overlay.classList.remove('open');
       document.body.style.overflow = '';
@@ -2968,6 +2971,7 @@ export function renderAdminDashboardPage(data: {
 
     function openSidebar() {
       if (!sidebar || !overlay) return;
+      document.body.classList.add('sidebar-open');
       sidebar.classList.add('open');
       overlay.classList.add('open');
       document.body.style.overflow = 'hidden';
@@ -2975,7 +2979,7 @@ export function renderAdminDashboardPage(data: {
 
     function toggleSidebar() {
       if (!sidebar || !overlay) return;
-      if (sidebar.classList.contains('open')) {
+      if (document.body.classList.contains('sidebar-open') || sidebar.classList.contains('open')) {
         closeSidebar();
       } else {
         openSidebar();
