@@ -2353,6 +2353,13 @@ export function renderAdminDashboardPage(data: {
              <div class="flex gap-2 mt-2">
                  <select id="prompt-target-select" class="input-control" style="flex:1;">
                     <option value="flow:generate_personalized_message" selected>flow:generate_personalized_message</option>
+                    <option value="flow:run_persona_conversation">flow:run_persona_conversation</option>
+                    <option value="flow:simulate_persona_conversation">flow:simulate_persona_conversation</option>
+                    <option value="flow:generate_journey_opening_message">flow:generate_journey_opening_message</option>
+                    <option value="flow:newsletter_agent_opening_message">flow:newsletter_agent_opening_message</option>
+                    <option value="flow:newsletter_agent_reply">flow:newsletter_agent_reply</option>
+                    <option value="flow:service_agent_opening_message">flow:service_agent_opening_message</option>
+                    <option value="flow:service_agent_reply">flow:service_agent_reply</option>
                     <option value="flow:simulate_persona">flow:simulate_persona</option>
                     <option value="flow:journey_opening">flow:journey_opening</option>
                  </select>

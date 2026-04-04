@@ -3,6 +3,7 @@ import { DEFAULT_AI_MODEL } from './constants'
 import { extractAIText } from './utils'
 import { parseConversationHistory, appendConversationMessage, advanceJourneyPhase, getEnrollment, logAgentDecision } from './db'
 import { logAIInference } from './ai-observability'
+import { getActivePrompt } from './prompt-manager'
 
 /**
  * Phase-specific behavioral instructions for the AI persona.
@@ -49,11 +50,12 @@ const PHASE_DIRECTIVES: Record<JourneyPhase, string> = {
  * Builds a system prompt for the AI persona that is aware of the journey context.
  */
 function buildPersonaSystemPrompt(
+  personaBasePrompt: string,
   journey: JourneyRecord,
   phase: JourneyPhase,
   user: UserRecord
 ): string {
-  return `${journey.system_prompt}
+  return `${personaBasePrompt}
 
 --- CONTEXTO OPERACIONAL (uso interno, NUNCA revele ao lead) ---
 Objetivo da jornada: ${journey.objective}
@@ -147,8 +149,16 @@ export async function runPersonaConversation(
   // 3. Build conversation context for AI
   const updatedEnrollment = await getEnrollment(env, user.id, journey.id)
   const history = parseConversationHistory(updatedEnrollment?.conversation_history)
+  const fallbackPersonaPrompt = journey.system_prompt || 'Voce e um consultor de vendas humanizado para jornadas em WhatsApp.'
+  const activePrompt = await getActivePrompt(
+    env,
+    'flow:run_persona_conversation',
+    fallbackPersonaPrompt,
+    DEFAULT_AI_MODEL
+  )
+  const modelToUse = activePrompt.model
 
-  const systemPrompt = buildPersonaSystemPrompt(journey, activePhase, user)
+  const systemPrompt = buildPersonaSystemPrompt(activePrompt.text, journey, activePhase, user)
 
   // Build messages array: system + last N conversation messages
   const contextWindow = history.slice(-10)
@@ -162,12 +172,12 @@ export async function runPersonaConversation(
   const runConversationPromptSource = `${systemPrompt}\n${contextWindow.map((m) => `${m.role}:${m.content}`).join('\n')}`
   const runConversationStartedAt = Date.now()
   try {
-    const aiResult = await env.AI.run(DEFAULT_AI_MODEL, { messages: aiMessages })
+    const aiResult = await env.AI.run(modelToUse, { messages: aiMessages })
     const generated = extractAIText(aiResult)
     response = generated || 'Opa, me dá um segundo que já te respondo! 😊'
     await logAIInference(env, {
       flow: 'run_persona_conversation',
-      model: DEFAULT_AI_MODEL,
+      model: modelToUse,
       status: 'success',
       latencyMs: Date.now() - runConversationStartedAt,
       fallbackUsed: !generated,
@@ -182,7 +192,7 @@ export async function runPersonaConversation(
     response = 'Opa, tive um probleminha aqui. Já já te respondo! 😊'
     await logAIInference(env, {
       flow: 'run_persona_conversation',
-      model: DEFAULT_AI_MODEL,
+      model: modelToUse,
       status: 'error',
       latencyMs: Date.now() - runConversationStartedAt,
       fallbackUsed: true,
@@ -224,7 +234,15 @@ export async function generateJourneyOpeningMessage(
   journey: JourneyRecord,
   user: UserRecord
 ): Promise<string> {
-  const systemPrompt = buildPersonaSystemPrompt(journey, 'discovery', user)
+  const fallbackPersonaPrompt = journey.system_prompt || 'Voce e um consultor de vendas humanizado para jornadas em WhatsApp.'
+  const activePrompt = await getActivePrompt(
+    env,
+    'flow:generate_journey_opening_message',
+    fallbackPersonaPrompt,
+    DEFAULT_AI_MODEL
+  )
+  const modelToUse = activePrompt.model
+  const systemPrompt = buildPersonaSystemPrompt(activePrompt.text, journey, 'discovery', user)
 
   const prompt = `Gere a primeira mensagem de abordagem para o lead ${user.name || ''}.
 Esta é a PRIMEIRÍSSIMA interação. Seja casual e genuíno.
@@ -234,7 +252,7 @@ Lembre: máximo 400 caracteres, tom de conversa de WhatsApp entre amigos.`
   const openingStartedAt = Date.now()
 
   try {
-    const aiResult = await env.AI.run(DEFAULT_AI_MODEL, {
+    const aiResult = await env.AI.run(modelToUse, {
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: prompt },
@@ -244,7 +262,7 @@ Lembre: máximo 400 caracteres, tom de conversa de WhatsApp entre amigos.`
     const text = extractAIText(aiResult)
     await logAIInference(env, {
       flow: 'generate_journey_opening_message',
-      model: DEFAULT_AI_MODEL,
+      model: modelToUse,
       status: 'success',
       latencyMs: Date.now() - openingStartedAt,
       fallbackUsed: !text,
@@ -261,7 +279,7 @@ Lembre: máximo 400 caracteres, tom de conversa de WhatsApp entre amigos.`
   } catch (error) {
     await logAIInference(env, {
       flow: 'generate_journey_opening_message',
-      model: DEFAULT_AI_MODEL,
+      model: modelToUse,
       status: 'error',
       latencyMs: Date.now() - openingStartedAt,
       fallbackUsed: true,
@@ -311,7 +329,15 @@ export async function simulatePersonaConversation(
   }
 
   // 3. Prompt building
-  const systemPrompt = buildPersonaSystemPrompt(journey, activePhase, user)
+  const fallbackPersonaPrompt = journey.system_prompt || 'Voce e um consultor de vendas humanizado para jornadas em WhatsApp.'
+  const activePrompt = await getActivePrompt(
+    env,
+    'flow:simulate_persona_conversation',
+    fallbackPersonaPrompt,
+    DEFAULT_AI_MODEL
+  )
+  const modelToUse = activePrompt.model
+  const systemPrompt = buildPersonaSystemPrompt(activePrompt.text, journey, activePhase, user)
 
   // 4. Build message array
   const contextWindow = history.slice(-10)
@@ -325,12 +351,12 @@ export async function simulatePersonaConversation(
   const simulationPromptSource = `${systemPrompt}\n${contextWindow.map((m) => `${m.role}:${m.content}`).join('\n')}`
   const simulationStartedAt = Date.now()
   try {
-    const aiResult = await env.AI.run(DEFAULT_AI_MODEL, { messages: aiMessages })
+    const aiResult = await env.AI.run(modelToUse, { messages: aiMessages })
     const generated = extractAIText(aiResult)
     response = generated || '[Simulação] Falha ao gerar resposta.'
     await logAIInference(env, {
       flow: 'simulate_persona_conversation',
-      model: DEFAULT_AI_MODEL,
+      model: modelToUse,
       status: 'success',
       latencyMs: Date.now() - simulationStartedAt,
       fallbackUsed: !generated,
@@ -345,7 +371,7 @@ export async function simulatePersonaConversation(
     response = '[Simulação] Erro ao comunicar com Cloudflare AI.'
     await logAIInference(env, {
       flow: 'simulate_persona_conversation',
-      model: DEFAULT_AI_MODEL,
+      model: modelToUse,
       status: 'error',
       latencyMs: Date.now() - simulationStartedAt,
       fallbackUsed: true,

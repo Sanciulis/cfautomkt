@@ -443,6 +443,31 @@ Proximos passos:
 - Migrar recomendacoes autonomas para fila executavel com retry/idempotencia.
 - Expandir governanca de prompt versionado para todos os fluxos conversacionais.
 
+### 2026-04-03 - Expansao do Prompt Governance para fluxos conversacionais
+Data da atualizacao: 2026-04-03
+Responsavel: Engenharia
+Entrega realizada:
+- Integracao de `getActivePrompt` nos fluxos de persona (`run`, `simulate`, `opening`).
+- Integracao de prompt versionado no newsletter agent (`opening`, `reply`).
+- Integracao de prompt versionado no service agent (`opening`, `reply de duvidas`).
+- Adicionado fallback com compatibilidade para targets legados (`flow:simulate_persona`, `flow:journey_opening`).
+- Painel Admin atualizado com novos target IDs para publicacao/auditoria de prompts.
+Fluxos impactados:
+- Conversas de jornada (AIDA)
+- Conversas de newsletter
+- Conversas de atendimento comercial
+Metricas antes:
+- Prompt versionado aplicado de forma predominante no fluxo de personalizacao.
+Metricas depois:
+- Prompt governance aplicado nos principais fluxos conversacionais com selecao de modelo por target.
+Riscos identificados:
+- Publicacoes em target incorreto podem gerar comportamento inesperado em fluxo diferente.
+Acoes corretivas:
+- Padronizar nomenclatura de target por dominio (`flow:*`) e revisar historico de versoes ativas no painel.
+Proximos passos:
+- Adicionar validacao de placeholders esperados no momento da publicacao de prompt.
+- Introduzir rollout gradual por percentual/segmento antes de promover para 100%.
+
 ## Definicao de Sucesso do Programa
 O programa sera considerado bem-sucedido quando:
 1. Houver melhoria consistente de qualidade e conversao com evidencias.

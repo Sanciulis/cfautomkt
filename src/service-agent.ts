@@ -14,6 +14,7 @@ import {
 } from './constants'
 import { extractAIText, safeString } from './utils'
 import { logAIInference } from './ai-observability'
+import { getActivePrompt } from './prompt-manager'
 
 type ServiceSentiment = {
   score: number
@@ -381,8 +382,17 @@ export async function generateServiceOpeningMessage(
     return runtimeConfig.offHoursAutoReply.slice(0, 260)
   }
 
-  const systemPrompt =
+  const fallbackSystemPrompt =
     'Voce escreve mensagens iniciais para atendimento comercial no WhatsApp com foco em agendamento, orcamento e esclarecimento de duvidas.'
+  const activePrompt = await getActivePrompt(
+    env,
+    'flow:service_agent_opening_message',
+    fallbackSystemPrompt,
+    runtimeConfig.aiModel
+  )
+  const systemPrompt = activePrompt.text
+  const modelToUse = activePrompt.model
+
   const contextHint = safeString(input.contextHint)
   const prompt = [
     'Gere uma mensagem curta de abertura para atendimento comercial via WhatsApp.',
@@ -399,7 +409,7 @@ export async function generateServiceOpeningMessage(
 
   const startedAt = Date.now()
   try {
-    const response = await env.AI.run(runtimeConfig.aiModel, {
+    const response = await env.AI.run(modelToUse, {
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: prompt },
@@ -413,7 +423,7 @@ export async function generateServiceOpeningMessage(
 
     await logAIInference(env, {
       flow: 'service_agent_opening_message',
-      model: runtimeConfig.aiModel,
+      model: modelToUse,
       status: 'success',
       latencyMs: Date.now() - startedAt,
       fallbackUsed: !generated,
@@ -424,7 +434,7 @@ export async function generateServiceOpeningMessage(
   } catch (error) {
     await logAIInference(env, {
       flow: 'service_agent_opening_message',
-      model: runtimeConfig.aiModel,
+      model: modelToUse,
       status: 'error',
       latencyMs: Date.now() - startedAt,
       fallbackUsed: true,
@@ -535,12 +545,20 @@ export async function generateServiceAgentReply(
 
   if (intent === 'question') {
     const conversationContext = buildConversationContext(input.history)
-    const systemPrompt = buildSystemPrompt(input.customerName, runtimeConfig)
+    const fallbackSystemPrompt = buildSystemPrompt(input.customerName, runtimeConfig)
+    const activePrompt = await getActivePrompt(
+      env,
+      'flow:service_agent_reply',
+      fallbackSystemPrompt,
+      runtimeConfig.aiModel
+    )
+    const systemPrompt = activePrompt.text
+    const modelToUse = activePrompt.model
     const promptSource = `${systemPrompt}\n\nHISTORICO:\n${conversationContext}\n\nNOVA_MENSAGEM:${message}`
     const startedAt = Date.now()
 
     try {
-      const response = await env.AI.run(runtimeConfig.aiModel, {
+      const response = await env.AI.run(modelToUse, {
         messages: [
           { role: 'system', content: systemPrompt },
           {
@@ -558,7 +576,7 @@ export async function generateServiceAgentReply(
 
       await logAIInference(env, {
         flow: 'service_agent_reply',
-        model: runtimeConfig.aiModel,
+        model: modelToUse,
         status: 'success',
         latencyMs: Date.now() - startedAt,
         fallbackUsed: !generated,
@@ -583,7 +601,7 @@ export async function generateServiceAgentReply(
     } catch (error) {
       await logAIInference(env, {
         flow: 'service_agent_reply',
-        model: runtimeConfig.aiModel,
+        model: modelToUse,
         status: 'error',
         latencyMs: Date.now() - startedAt,
         fallbackUsed: true,

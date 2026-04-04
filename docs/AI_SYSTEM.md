@@ -404,6 +404,18 @@ Conversas:
 - Localizado em `src/prompt-manager.ts`.
 - Desacopla as strings de Prompts hardcoded conectando nativamente na tabela base `ai_prompt_versions`.
 - Permite histórico linear (Rollback / Auditoria de quem mudou o quê). Função `getActivePrompt` alimenta a `ai.ts` provendo o melhor promt e determinando a versão do Llama a ser usada dinamicamente.
+- Cobertura atual de targets principais:
+   - `flow:generate_personalized_message`
+   - `flow:run_persona_conversation`
+   - `flow:simulate_persona_conversation`
+   - `flow:generate_journey_opening_message`
+   - `flow:newsletter_agent_opening_message`
+   - `flow:newsletter_agent_reply`
+   - `flow:service_agent_opening_message`
+   - `flow:service_agent_reply`
+- Compatibilidade retroativa mantida para targets legados:
+   - `flow:simulate_persona`
+   - `flow:journey_opening`
 
 ### Debugging
 - Playground AI no painel admin

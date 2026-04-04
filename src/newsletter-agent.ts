@@ -6,6 +6,7 @@ import type {
 import { DEFAULT_AI_MODEL } from './constants'
 import { extractAIText, safeString } from './utils'
 import { logAIInference } from './ai-observability'
+import { getActivePrompt } from './prompt-manager'
 
 type NewsletterIntent = 'subscribe' | 'opt_out' | 'feedback' | 'question' | 'other'
 
@@ -221,8 +222,17 @@ export async function generateNewsletterOpeningMessage(
     contextHint?: string | null
   }
 ): Promise<string> {
-  const systemPrompt =
+  const fallbackSystemPrompt =
     'Voce escreve mensagens curtas para abordagem inicial no WhatsApp com foco em inscricao de newsletter semanal.'
+  const activePrompt = await getActivePrompt(
+    env,
+    'flow:newsletter_agent_opening_message',
+    fallbackSystemPrompt,
+    DEFAULT_AI_MODEL
+  )
+  const systemPrompt = activePrompt.text
+  const modelToUse = activePrompt.model
+
   const contextHint = safeString(input.contextHint)
   const prompt = [
     'Gere uma mensagem inicial de abordagem para convidar a pessoa a assinar uma newsletter semanal.',
@@ -236,7 +246,7 @@ export async function generateNewsletterOpeningMessage(
 
   const startedAt = Date.now()
   try {
-    const response = await env.AI.run(DEFAULT_AI_MODEL, {
+    const response = await env.AI.run(modelToUse, {
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: prompt },
@@ -248,7 +258,7 @@ export async function generateNewsletterOpeningMessage(
 
     await logAIInference(env, {
       flow: 'newsletter_agent_opening_message',
-      model: DEFAULT_AI_MODEL,
+      model: modelToUse,
       status: 'success',
       latencyMs: Date.now() - startedAt,
       fallbackUsed: !generated,
@@ -259,7 +269,7 @@ export async function generateNewsletterOpeningMessage(
   } catch (error) {
     await logAIInference(env, {
       flow: 'newsletter_agent_opening_message',
-      model: DEFAULT_AI_MODEL,
+      model: modelToUse,
       status: 'error',
       latencyMs: Date.now() - startedAt,
       fallbackUsed: true,
@@ -301,14 +311,23 @@ export async function generateNewsletterAgentReply(
     customerName: input.customerName,
     sentiment,
   })
+  const activePrompt = await getActivePrompt(
+    env,
+    'flow:newsletter_agent_reply',
+    systemPrompt,
+    DEFAULT_AI_MODEL
+  )
+  const modelToUse = activePrompt.model
+  const resolvedSystemPrompt = activePrompt.text
+
   const conversationContext = buildConversationContext(input.history)
-  const promptSource = `${systemPrompt}\n\nHISTORICO:\n${conversationContext}\n\nNOVA_MENSAGEM:${message}`
+  const promptSource = `${resolvedSystemPrompt}\n\nHISTORICO:\n${conversationContext}\n\nNOVA_MENSAGEM:${message}`
   const startedAt = Date.now()
 
   try {
-    const response = await env.AI.run(DEFAULT_AI_MODEL, {
+    const response = await env.AI.run(modelToUse, {
       messages: [
-        { role: 'system', content: systemPrompt },
+        { role: 'system', content: resolvedSystemPrompt },
         {
           role: 'user',
           content:
@@ -322,7 +341,7 @@ export async function generateNewsletterAgentReply(
 
     await logAIInference(env, {
       flow: 'newsletter_agent_reply',
-      model: DEFAULT_AI_MODEL,
+      model: modelToUse,
       status: 'success',
       latencyMs: Date.now() - startedAt,
       fallbackUsed: !generated,
@@ -344,7 +363,7 @@ export async function generateNewsletterAgentReply(
   } catch (error) {
     await logAIInference(env, {
       flow: 'newsletter_agent_reply',
-      model: DEFAULT_AI_MODEL,
+      model: modelToUse,
       status: 'error',
       latencyMs: Date.now() - startedAt,
       fallbackUsed: true,

@@ -1,6 +1,12 @@
 import type { Bindings } from './types'
 import { DEFAULT_AI_MODEL } from './constants'
 
+const PROMPT_TARGET_ALIAS_FALLBACKS: Record<string, string[]> = {
+  'flow:run_persona_conversation': ['flow:simulate_persona'],
+  'flow:simulate_persona_conversation': ['flow:simulate_persona'],
+  'flow:generate_journey_opening_message': ['flow:journey_opening'],
+}
+
 export type PromptVersion = {
   id: number
   target_id: string
@@ -20,14 +26,25 @@ export async function getActivePrompt(
   fallbackPromptText: string,
   fallbackModel: string = DEFAULT_AI_MODEL
 ): Promise<{ text: string; model: string }> {
-  const row = await env.DB.prepare(
-    'SELECT prompt_text, model FROM ai_prompt_versions WHERE target_id = ? ORDER BY created_at DESC LIMIT 1'
-  )
-    .bind(targetId)
-    .first<{ prompt_text: string; model: string }>()
+  const candidateTargetIds = [targetId, ...(PROMPT_TARGET_ALIAS_FALLBACKS[targetId] ?? [])]
 
-  if (row) {
-    return { text: row.prompt_text, model: row.model ?? fallbackModel }
+  for (const candidate of candidateTargetIds) {
+    try {
+      const row = await env.DB.prepare(
+        'SELECT prompt_text, model FROM ai_prompt_versions WHERE target_id = ? ORDER BY created_at DESC LIMIT 1'
+      )
+        .bind(candidate)
+        .first<{ prompt_text: string; model: string }>()
+
+      if (row) {
+        return { text: row.prompt_text, model: row.model ?? fallbackModel }
+      }
+    } catch (error) {
+      console.warn('Prompt lookup failed. Falling back to bundled prompt.', {
+        targetId: candidate,
+        error: String(error),
+      })
+    }
   }
 
   return { text: fallbackPromptText, model: fallbackModel }
