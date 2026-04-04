@@ -491,6 +491,28 @@ Proximos passos:
 - Adicionar simulacao/preview de prompt por target antes de publicar.
 - Implementar rollout gradual por cohort/segmento para prompts criticos.
 
+### 2026-04-03 - Preview de prompt antes de publicacao
+Data da atualizacao: 2026-04-03
+Responsavel: Engenharia
+Entrega realizada:
+- API `POST /admin/api/ai/prompts/preview` adicionada para validar e renderizar prompt antes do publish.
+- Renderizacao usa contexto de exemplo por target e retorna placeholders nao resolvidos.
+- Painel de Prompt Manager ganhou acao `Validar / Preview` com visualizacao do prompt renderizado.
+Fluxos impactados:
+- Governanca de prompt no painel admin
+- Fluxo de revisao pre-rollout
+Metricas antes:
+- Publicacao dependia de revisao visual manual sem preview estruturado no sistema.
+Metricas depois:
+- Revisao pre-publicacao com detecao de placeholders pendentes e contexto sintetico por target.
+Riscos identificados:
+- Contexto de exemplo pode nao refletir 100% dos cenarios reais de runtime.
+Acoes corretivas:
+- Permitir contexto customizado no endpoint de preview conforme evolucao operacional.
+Proximos passos:
+- Acoplar preview com dry-run de inferencia opcional por target.
+- Implementar rollout gradual por cohort/segmento para prompts criticos.
+
 ## Definicao de Sucesso do Programa
 O programa sera considerado bem-sucedido quando:
 1. Houver melhoria consistente de qualidade e conversao com evidencias.

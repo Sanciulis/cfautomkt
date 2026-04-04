@@ -24,6 +24,37 @@ export const SUPPORTED_PROMPT_TARGETS = [
 const SUPPORTED_PROMPT_TARGET_SET = new Set<string>(SUPPORTED_PROMPT_TARGETS)
 const PLACEHOLDER_TOKEN_PATTERN = /\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g
 
+const PROMPT_PREVIEW_DEFAULT_CONTEXT: Record<string, Record<string, string>> = {
+  'flow:generate_personalized_message': {
+    channel: 'whatsapp',
+    psychological_profile: 'pragmatico',
+    engagement_score: '42',
+    viral_points: '7',
+    baseCopy: 'Oferta especial com prazo limitado para novos clientes.',
+  },
+  'flow:run_persona_conversation': {
+    journey_phase: 'interest',
+    conversation_history: 'Lead perguntou sobre prazo e resultado esperado.',
+    last_user_message: 'Quanto tempo para ver resultado?',
+  },
+  'flow:simulate_persona_conversation': {
+    journey_phase: 'interest',
+    conversation_history: 'Lead perguntou sobre prazo e resultado esperado.',
+    last_user_message: 'Quanto tempo para ver resultado?',
+  },
+  'flow:simulate_persona': {
+    journey_phase: 'interest',
+    conversation_history: 'Lead perguntou sobre prazo e resultado esperado.',
+    last_user_message: 'Quanto tempo para ver resultado?',
+  },
+  'flow:generate_journey_opening_message': {
+    user_name: 'Marina',
+  },
+  'flow:journey_opening': {
+    user_name: 'Marina',
+  },
+}
+
 const PROMPT_ALLOWED_PLACEHOLDERS: Record<string, Set<string>> = {
   'flow:generate_personalized_message': new Set([
     'channel',
@@ -61,6 +92,13 @@ export type PromptValidationResult = {
   detectedPlaceholders: string[]
 }
 
+export type PromptPreviewResult = {
+  validation: PromptValidationResult
+  sampleContext: Record<string, string>
+  renderedPrompt: string
+  unresolvedPlaceholders: string[]
+}
+
 export function isSupportedPromptTarget(targetId: string): boolean {
   return SUPPORTED_PROMPT_TARGET_SET.has(targetId)
 }
@@ -76,6 +114,30 @@ function extractPromptPlaceholders(promptText: string): string[] {
 
   PLACEHOLDER_TOKEN_PATTERN.lastIndex = 0
   return Array.from(placeholders)
+}
+
+function normalizePreviewContext(input: unknown): Record<string, string> {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return {}
+  }
+
+  const context: Record<string, string> = {}
+  for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+    const normalizedKey = key.trim()
+    if (!normalizedKey) continue
+    if (typeof value === 'undefined' || value === null) continue
+    context[normalizedKey] = String(value)
+  }
+  return context
+}
+
+function renderPromptTemplate(promptText: string, context: Record<string, string>): string {
+  return promptText.replace(PLACEHOLDER_TOKEN_PATTERN, (fullMatch: string, tokenName: string) => {
+    if (Object.prototype.hasOwnProperty.call(context, tokenName)) {
+      return context[tokenName]
+    }
+    return fullMatch
+  })
 }
 
 export function validatePromptForTarget(targetId: string, promptText: string): PromptValidationResult {
@@ -131,6 +193,37 @@ export function validatePromptForTarget(targetId: string, promptText: string): P
     warnings,
     normalizedTargetId,
     detectedPlaceholders,
+  }
+}
+
+export function buildPromptPreview(
+  targetId: string,
+  promptText: string,
+  rawContext?: unknown
+): PromptPreviewResult {
+  const validation = validatePromptForTarget(targetId, promptText)
+  const normalizedTargetId = validation.normalizedTargetId
+  const defaultContext = PROMPT_PREVIEW_DEFAULT_CONTEXT[normalizedTargetId] ?? {}
+  const customContext = normalizePreviewContext(rawContext)
+  const sampleContext = {
+    ...defaultContext,
+    ...customContext,
+  }
+
+  const renderedPrompt = renderPromptTemplate(promptText, sampleContext)
+  const unresolvedPlaceholders = extractPromptPlaceholders(renderedPrompt)
+
+  if (validation.valid && unresolvedPlaceholders.length > 0) {
+    validation.warnings.push(
+      `Preview still has unresolved placeholders: ${unresolvedPlaceholders.join(', ')}`
+    )
+  }
+
+  return {
+    validation,
+    sampleContext,
+    renderedPrompt,
+    unresolvedPlaceholders,
   }
 }
 

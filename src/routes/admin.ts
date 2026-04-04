@@ -94,6 +94,7 @@ import {
   SUPPORTED_PROMPT_TARGETS,
   isSupportedPromptTarget,
   validatePromptForTarget,
+  buildPromptPreview,
 } from '../prompt-manager'
 import { analyzeNewsletterSentiment, generateNewsletterOpeningMessage } from '../newsletter-agent'
 import {
@@ -3272,6 +3273,38 @@ admin.post('/api/ai/prompts', async (c) => {
       targetId: validation.normalizedTargetId,
       warnings: validation.warnings,
       detectedPlaceholders: validation.detectedPlaceholders,
+    })
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
+// API - Preview Prompt Rendering and Validation
+admin.post('/api/ai/prompts/preview', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.json({ error: 'Unauthorized' }, 401)
+
+  try {
+    const body = await c.req.json()
+    const targetIdRaw = safeString(body.targetId) ?? ''
+    const promptTextRaw = typeof body.promptText === 'string' ? body.promptText : ''
+    const sampleContext = body.sampleContext
+
+    const preview = buildPromptPreview(targetIdRaw, promptTextRaw, sampleContext)
+    if (!preview.validation.valid) {
+      return c.json(
+        {
+          error: 'Invalid prompt payload.',
+          preview,
+          supportedTargets: SUPPORTED_PROMPT_TARGETS,
+        },
+        400
+      )
+    }
+
+    return c.json({
+      success: true,
+      preview,
     })
   } catch (error) {
     return c.json({ error: String(error) }, 500)

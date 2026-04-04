@@ -2382,8 +2382,14 @@ export function renderAdminDashboardPage(data: {
                   </div>
                </div>
 
-               <div class="flex justify-end mt-6">
+               <div class="flex justify-between mt-6" style="gap: 8px; flex-wrap: wrap;">
+                 <button id="btn-prompt-preview" class="btn btn-outline">Validar / Preview</button>
                  <button id="btn-prompt-publish" class="btn btn-primary">Publicar Nova Versão (Ir para Prod)</button>
+               </div>
+
+               <div id="prompt-preview-box" class="hidden" style="margin-top:16px; border:1px solid var(--border); border-radius:14px; padding:14px; background: var(--glass);">
+                 <div id="prompt-preview-meta" class="text-xs opacity-70" style="margin-bottom:8px;">Preview pronto.</div>
+                 <pre id="prompt-preview-output" style="white-space:pre-wrap; margin:0; font-size:0.78rem; line-height:1.45; max-height:240px; overflow:auto;"></pre>
                </div>
            </div>
          </section>
@@ -2888,10 +2894,42 @@ export function renderAdminDashboardPage(data: {
 
     // AI Prompt Manager / Versioning Logic
     const btnPromptLoad = document.getElementById('btn-prompt-load');
+    const btnPromptPreview = document.getElementById('btn-prompt-preview');
     const btnPromptPublish = document.getElementById('btn-prompt-publish');
     const promptTargetSelect = document.getElementById('prompt-target-select');
     const promptEditorArea = document.getElementById('prompt-editor-area');
     const promptHistoryRows = document.getElementById('prompt-history-rows');
+    const promptPreviewBox = document.getElementById('prompt-preview-box');
+    const promptPreviewMeta = document.getElementById('prompt-preview-meta');
+    const promptPreviewOutput = document.getElementById('prompt-preview-output');
+
+    function hidePromptPreview() {
+      if (promptPreviewBox) promptPreviewBox.classList.add('hidden');
+      if (promptPreviewMeta) promptPreviewMeta.textContent = '';
+      if (promptPreviewOutput) promptPreviewOutput.textContent = '';
+    }
+
+    function showPromptPreview(preview) {
+      if (!promptPreviewBox || !promptPreviewMeta || !promptPreviewOutput) return;
+
+      const warnings = Array.isArray(preview?.validation?.warnings) ? preview.validation.warnings : [];
+      const unresolved = Array.isArray(preview?.unresolvedPlaceholders) ? preview.unresolvedPlaceholders : [];
+      const statusParts = [
+        'Target: ' + String(preview?.validation?.normalizedTargetId || '-'),
+        'Placeholders detectados: ' + String((preview?.validation?.detectedPlaceholders || []).length || 0),
+      ];
+
+      if (warnings.length) {
+        statusParts.push('Avisos: ' + warnings.join(' | '));
+      }
+      if (unresolved.length) {
+        statusParts.push('Nao resolvidos: ' + unresolved.join(', '));
+      }
+
+      promptPreviewMeta.textContent = statusParts.join(' • ');
+      promptPreviewOutput.textContent = String(preview?.renderedPrompt || '');
+      promptPreviewBox.classList.remove('hidden');
+    }
 
     async function loadPromptData() {
       const targetId = promptTargetSelect.value;
@@ -2916,6 +2954,7 @@ export function renderAdminDashboardPage(data: {
         // Habilitar área
         promptEditorArea.style.opacity = '1';
         promptEditorArea.style.pointerEvents = 'auto';
+        hidePromptPreview();
 
         // Preencher Histórico
         const history = data.history || [];
@@ -2955,6 +2994,48 @@ export function renderAdminDashboardPage(data: {
 
     if (btnPromptLoad) {
       btnPromptLoad.addEventListener('click', loadPromptData);
+    }
+
+    if (btnPromptPreview) {
+      btnPromptPreview.addEventListener('click', async () => {
+        const targetId = promptTargetSelect.value;
+        const promptText = document.getElementById('prompt-editor-text').value;
+
+        if (!promptText) return alert('Prompt base é obrigatório.');
+
+        btnPromptPreview.disabled = true;
+        const previousLabel = btnPromptPreview.innerText;
+        btnPromptPreview.innerText = 'Validando...';
+
+        try {
+          const res = await fetch('/admin/api/ai/prompts/preview', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ targetId, promptText })
+          });
+
+          const data = await res.json();
+          const preview = data.preview;
+          if (!res.ok || data.error || !preview) {
+            const validationErrors = Array.isArray(data?.preview?.validation?.errors)
+              ? data.preview.validation.errors
+              : [];
+            const messageParts = [data.error || 'Falha ao validar prompt.'];
+            if (validationErrors.length) {
+              messageParts.push('Erros: ' + validationErrors.join(' | '));
+            }
+            throw new Error(messageParts.join('\n'));
+          }
+
+          showPromptPreview(preview);
+        } catch (e) {
+          hidePromptPreview();
+          alert('Falha no preview: ' + e.message);
+        } finally {
+          btnPromptPreview.disabled = false;
+          btnPromptPreview.innerText = previousLabel;
+        }
+      });
     }
 
     if (btnPromptPublish) {

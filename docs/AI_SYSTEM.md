@@ -421,6 +421,10 @@ Conversas:
    - validacao de tamanho minimo/maximo do prompt
    - validacao de placeholders por target quando aplicavel
    - retorno de warnings operacionais para revisão antes de rollout
+- Preview de prompt antes de publicar:
+   - endpoint `POST /admin/api/ai/prompts/preview`
+   - renderizacao de placeholders com contexto de exemplo por target
+   - exibicao de placeholders nao resolvidos para revisão preventiva
 
 ### Debugging
 - Playground AI no painel admin
