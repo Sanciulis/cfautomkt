@@ -2955,6 +2955,10 @@ export function renderAdminDashboardPage(data: {
   </main>
 
   <script>
+    if (!window.__adminMenuBound) {
+      window.__adminMenuBound = false;
+    }
+
     // Mobile Sidebar Logic
     const mobileBtn = document.getElementById('mobile-menu-btn');
     const sidebar = document.getElementById('sidebar');
@@ -3021,6 +3025,54 @@ export function renderAdminDashboardPage(data: {
       'playground': { title: 'Playground AI', subtitle: 'Ambiente seguro para simular e calibrar o funil de IA.' },
       'ai-agent': { title: 'Agente Autônomo', subtitle: 'Supervisão das decisões tomadas pela IA na Edge.' }
     };
+
+    function activateView(targetView) {
+      if (!targetView) return;
+
+      const viewElement = document.getElementById('view-' + targetView);
+      const metadata = viewMeta[targetView];
+      if (!viewElement || !metadata) {
+        console.warn('Unknown admin view:', targetView);
+        return;
+      }
+
+      navItems.forEach(i => i.classList.remove('active'));
+      const activeNav = document.querySelector('[data-view="' + targetView + '"]');
+      if (activeNav) activeNav.classList.add('active');
+
+      views.forEach(v => v.classList.remove('active'));
+      viewElement.classList.add('active');
+
+      if (responsiveSidebarBreakpoint.matches) {
+        closeSidebar();
+      }
+
+      if (viewTitle) viewTitle.innerText = metadata.title;
+      if (viewSubtitle) viewSubtitle.innerText = metadata.subtitle;
+
+      history.replaceState(null, null, '#' + targetView);
+    }
+
+    function bindAdminNavigation() {
+      if (window.__adminMenuBound) return;
+      window.__adminMenuBound = true;
+
+      navItems.forEach(item => {
+        item.addEventListener('click', (event) => {
+          event.preventDefault();
+          activateView(item.getAttribute('data-view'));
+        });
+      });
+
+      const initialView = window.location.hash.substring(1);
+      if (initialView && document.querySelector('[data-view="' + initialView + '"]')) {
+        activateView(initialView);
+      } else {
+        activateView('dashboard');
+      }
+    }
+
+    bindAdminNavigation();
 
     function formatPct(value) {
       return (Number(value || 0) * 100).toFixed(1) + '%';
@@ -3569,52 +3621,7 @@ export function renderAdminDashboardPage(data: {
       });
     }
 
-    function activateView(targetView) {
-      if (!targetView) return;
-
-      const viewElement = document.getElementById('view-' + targetView);
-      const metadata = viewMeta[targetView];
-      if (!viewElement || !metadata) {
-        console.warn('Unknown admin view:', targetView);
-        return;
-      }
-
-      // Update Nav
-      navItems.forEach(i => i.classList.remove('active'));
-      const activeNav = document.querySelector('[data-view="' + targetView + '"]');
-      if (activeNav) activeNav.classList.add('active');
-
-      // Update Content
-      views.forEach(v => v.classList.remove('active'));
-      viewElement.classList.add('active');
-
-      // Close sidebar on mobile if open
-      if (responsiveSidebarBreakpoint.matches) {
-        closeSidebar();
-      }
-
-      // Update Headers
-      if (viewTitle) viewTitle.innerText = metadata.title;
-      if (viewSubtitle) viewSubtitle.innerText = metadata.subtitle;
-
-      // Remember state
-      history.replaceState(null, null, '#' + targetView);
-    }
-
-    navItems.forEach(item => {
-      item.addEventListener('click', (event) => {
-        event.preventDefault();
-        activateView(item.getAttribute('data-view'));
-      });
-    });
-
-    // Handle initial hash and fallback
-    const initialView = window.location.hash.substring(1);
-    if (initialView && document.querySelector('[data-view="' + initialView + '"]')) {
-      activateView(initialView);
-    } else {
-      activateView('dashboard');
-    }
+    // Navigation binding initialized near the top of this script.
 
     // WA Groups — calls same-origin Worker proxy (no CORS, token stays server-side)
     const btnFetchGroups = document.getElementById('btn-fetch-groups');
