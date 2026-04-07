@@ -1,9 +1,14 @@
 import type {
+  AdminNewsletterAgentConfig,
   Bindings,
   NewsletterConversationMessageRecord,
   NewsletterSentimentLabel,
 } from './types'
-import { DEFAULT_AI_MODEL } from './constants'
+import {
+  DEFAULT_AI_MODEL,
+  DEFAULT_NEWSLETTER_AGENT_CONVERSION_SCRIPT,
+  DEFAULT_NEWSLETTER_AGENT_OPENING_TEMPLATE,
+} from './constants'
 import { extractAIText, safeString } from './utils'
 import { logAIInference } from './ai-observability'
 import { getActivePrompt } from './prompt-manager'
@@ -22,6 +27,13 @@ type NewsletterAgentReply = {
   feedbackRating: number | null
   shouldConvert: boolean
   shouldOptOut: boolean
+}
+
+type ResolvedNewsletterConfig = {
+  openingTemplate: string
+  conversionScript: string
+  aiModel: string
+  maxReplyChars: number
 }
 
 const POSITIVE_HINTS = [
@@ -210,7 +222,32 @@ function fallbackReply(intent: NewsletterIntent): string {
   return 'Posso te enviar um resumo semanal com ideias praticas para melhorar seus resultados? Se topar, responde "quero assinar".'
 }
 
-function fallbackOpeningMessage(customerName: string | null): string {
+function resolveNewsletterConfig(config?: AdminNewsletterAgentConfig | null): ResolvedNewsletterConfig {
+  const maxReplyChars = Number(config?.maxReplyChars)
+  return {
+    openingTemplate:
+      safeString(config?.openingTemplate) ?? DEFAULT_NEWSLETTER_AGENT_OPENING_TEMPLATE,
+    conversionScript:
+      safeString(config?.conversionScript) ?? DEFAULT_NEWSLETTER_AGENT_CONVERSION_SCRIPT,
+    aiModel: safeString(config?.aiModel) ?? DEFAULT_AI_MODEL,
+    maxReplyChars:
+      Number.isFinite(maxReplyChars) && maxReplyChars >= 160 && maxReplyChars <= 700
+        ? Math.round(maxReplyChars)
+        : 320,
+  }
+}
+
+function applyTemplate(template: string, customerName: string | null): string {
+  const customerLabel = safeString(customerName) ?? 'lead'
+  return template
+    .replace(/{{\s*name\s*}}/gi, customerLabel)
+    .replace(/{{\s*optOutHint\s*}}/gi, 'Se quiser parar, e so falar SAIR.')
+}
+
+function fallbackOpeningMessage(customerName: string | null, config: ResolvedNewsletterConfig): string {
+  const templated = applyTemplate(config.openingTemplate, customerName).trim()
+  if (templated) return templated.slice(0, 260)
+
   const nameChunk = customerName ? ` ${customerName}` : ''
   return `Oi${nameChunk}! Eu preparo um resumo semanal com ideias praticas de crescimento em 2 minutos de leitura. Quer que eu te envie a proxima edicao gratuitamente?`
 }
@@ -220,15 +257,17 @@ export async function generateNewsletterOpeningMessage(
   input: {
     customerName: string | null
     contextHint?: string | null
+    config?: AdminNewsletterAgentConfig | null
   }
 ): Promise<string> {
+  const runtimeConfig = resolveNewsletterConfig(input.config)
   const fallbackSystemPrompt =
     'Voce escreve mensagens curtas para abordagem inicial no WhatsApp com foco em inscricao de newsletter semanal.'
   const activePrompt = await getActivePrompt(
     env,
     'flow:newsletter_agent_opening_message',
     fallbackSystemPrompt,
-    DEFAULT_AI_MODEL
+    runtimeConfig.aiModel
   )
   const systemPrompt = activePrompt.text
   const modelToUse = activePrompt.model
@@ -254,7 +293,9 @@ export async function generateNewsletterOpeningMessage(
     })
 
     const generated = safeString(extractAIText(response))
-    const openingMessage = generated ? generated.slice(0, 260) : fallbackOpeningMessage(input.customerName)
+    const openingMessage = generated
+      ? generated.slice(0, 260)
+      : fallbackOpeningMessage(input.customerName, runtimeConfig)
 
     await logAIInference(env, {
       flow: 'newsletter_agent_opening_message',
@@ -276,7 +317,7 @@ export async function generateNewsletterOpeningMessage(
       promptSource: `${systemPrompt}\n${prompt}`,
       errorMessage: String(error),
     })
-    return fallbackOpeningMessage(input.customerName)
+    return fallbackOpeningMessage(input.customerName, runtimeConfig)
   }
 }
 
@@ -286,8 +327,10 @@ export async function generateNewsletterAgentReply(
     customerName: string | null
     inboundMessage: string
     history: NewsletterConversationMessageRecord[]
+    config?: AdminNewsletterAgentConfig | null
   }
 ): Promise<NewsletterAgentReply> {
+  const runtimeConfig = resolveNewsletterConfig(input.config)
   const message = safeString(input.inboundMessage)
   if (!message) {
     throw new Error('inboundMessage is required')
@@ -307,15 +350,19 @@ export async function generateNewsletterAgentReply(
     }
   }
 
-  const systemPrompt = buildSystemPrompt({
+  const systemPrompt = `${buildSystemPrompt({
     customerName: input.customerName,
     sentiment,
-  })
+  })}
+
+Diretriz adicional:
+- ${runtimeConfig.conversionScript}
+- Limite tecnico final: ${runtimeConfig.maxReplyChars} caracteres.`
   const activePrompt = await getActivePrompt(
     env,
     'flow:newsletter_agent_reply',
     systemPrompt,
-    DEFAULT_AI_MODEL
+    runtimeConfig.aiModel
   )
   const modelToUse = activePrompt.model
   const resolvedSystemPrompt = activePrompt.text
@@ -337,7 +384,7 @@ export async function generateNewsletterAgentReply(
     })
 
     const generated = safeString(extractAIText(response))
-    const replyText = generated ? generated.slice(0, 320) : fallbackReply(intent)
+    const replyText = generated ? generated.slice(0, runtimeConfig.maxReplyChars) : fallbackReply(intent)
 
     await logAIInference(env, {
       flow: 'newsletter_agent_reply',

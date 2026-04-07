@@ -124,6 +124,14 @@ export function renderAdminDashboardPage(data: {
       messageCount: number
     }>
   }
+  newsletterAgentConfig: {
+    autoReplyEnabled: boolean
+    openingTemplate: string | null
+    conversionScript: string | null
+    aiModel: string
+    maxReplyChars: number
+    updatedAt: string | null
+  }
   newsletterAgentSession: {
     selectedSessionId: string | null
     selectedSession: {
@@ -769,6 +777,15 @@ export function renderAdminDashboardPage(data: {
     : '-'
   const serviceContactPrefill = escapeHtml(selectedServiceSession?.sourceContact || '')
   const serviceIntentLabel = escapeHtml(selectedServiceSession?.latestIntent || '-')
+  const newsletterAgentConfig = data.newsletterAgentConfig
+  const newsletterConfigUpdatedAtLabel = newsletterAgentConfig.updatedAt
+    ? new Date(newsletterAgentConfig.updatedAt).toLocaleString('pt-BR')
+    : 'nao configurado'
+  const newsletterConfigAutoReplyChecked = newsletterAgentConfig.autoReplyEnabled ? 'checked' : ''
+  const newsletterConfigAiModel = escapeHtml(newsletterAgentConfig.aiModel || DEFAULT_AI_MODEL)
+  const newsletterConfigMaxReplyChars = escapeHtml(String(newsletterAgentConfig.maxReplyChars || 320))
+  const newsletterConfigOpeningTemplate = escapeHtml(newsletterAgentConfig.openingTemplate || '')
+  const newsletterConfigConversionScript = escapeHtml(newsletterAgentConfig.conversionScript || '')
 
   const serviceAgentConfig = data.serviceAgentConfig
   const serviceConfigUpdatedAtLabel = serviceAgentConfig.updatedAt
@@ -2271,6 +2288,46 @@ export function renderAdminDashboardPage(data: {
           <span class="stat-value">${Number(data.newsletterAgent.totals.averageFeedback).toFixed(2)}</span>
           <div class="stat-accent" style="background:var(--secondary)"></div>
         </div>
+      </section>
+
+      <section class="panel" style="margin-bottom: 24px;">
+        <div class="panel-header">
+          <h3 class="panel-title">Configuracao Completa do Newsletter Agent</h3>
+          <span class="badge badge-outline">Atualizado ${escapeHtml(newsletterConfigUpdatedAtLabel)}</span>
+        </div>
+        <p class="text-sm opacity-60 mb-6">Controle total do agente: automacao inbound, modelo, limite de resposta e diretrizes de conversao.</p>
+        <form method="post" action="/admin/actions/newsletter-agent/config/save">
+          <div class="panel-grid" style="grid-template-columns: 1fr 1fr 1fr; gap: 14px;">
+            <label class="input-label" style="display:flex;align-items:center;gap:8px;margin:0;">
+              <input type="checkbox" name="autoReplyEnabled" value="true" ${newsletterConfigAutoReplyChecked} />
+              Auto reply no inbound
+            </label>
+          </div>
+
+          <div class="panel-grid" style="grid-template-columns: 1.2fr 0.8fr; gap: 14px; margin-top: 14px;">
+            <div class="form-group">
+              <label class="input-label">Modelo de IA</label>
+              <input class="input-control" name="aiModel" value="${newsletterConfigAiModel}" placeholder="@cf/meta/llama-3-8b-instruct" />
+            </div>
+            <div class="form-group">
+              <label class="input-label">Max chars por resposta</label>
+              <input class="input-control" name="maxReplyChars" type="number" min="160" max="700" value="${newsletterConfigMaxReplyChars}" />
+            </div>
+          </div>
+
+          <div class="panel-grid" style="grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px;">
+            <div class="form-group">
+              <label class="input-label">Template de abertura</label>
+              <textarea class="input-control" name="openingTemplate" rows="4" placeholder="Use {{name}} para personalizar.">${newsletterConfigOpeningTemplate}</textarea>
+            </div>
+            <div class="form-group">
+              <label class="input-label">Diretriz de conversao</label>
+              <textarea class="input-control" name="conversionScript" rows="4">${newsletterConfigConversionScript}</textarea>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary" style="margin-top: 10px; width:auto;">Salvar Configuracao do Newsletter</button>
+        </form>
       </section>
 
       <div class="panel-grid" style="grid-template-columns: 1fr 1fr;">

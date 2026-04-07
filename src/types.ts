@@ -572,3 +572,12 @@ export type AdminServiceAgentConfig = {
   maxReplyChars: number
   updatedAt: string | null
 }
+
+export type AdminNewsletterAgentConfig = {
+  autoReplyEnabled: boolean
+  openingTemplate: string | null
+  conversionScript: string | null
+  aiModel: string
+  maxReplyChars: number
+  updatedAt: string | null
+}

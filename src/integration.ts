@@ -3,20 +3,24 @@ import type {
   AdminWhatsAppIntegrationConfig, 
   AdminEmailIntegrationConfig, 
   AdminTelegramIntegrationConfig,
-  AdminServiceAgentConfig 
+  AdminServiceAgentConfig,
+  AdminNewsletterAgentConfig
 } from './types'
 import { 
   ADMIN_WHATSAPP_INTEGRATION_CONFIG_KEY, 
   ADMIN_EMAIL_INTEGRATION_CONFIG_KEY, 
   ADMIN_TELEGRAM_INTEGRATION_CONFIG_KEY, 
   ADMIN_SERVICE_AGENT_CONFIG_KEY,
+  ADMIN_NEWSLETTER_AGENT_CONFIG_KEY,
   DEFAULT_WHATSAPP_TEST_MESSAGE,
   DEFAULT_EMAIL_TEST_MESSAGE,
   DEFAULT_TELEGRAM_TEST_MESSAGE,
   DEFAULT_AI_MODEL,
   DEFAULT_SERVICE_AGENT_OFF_HOURS_REPLY,
   DEFAULT_SERVICE_AGENT_OPENING_TEMPLATE,
-  DEFAULT_SERVICE_AGENT_QUALIFICATION_SCRIPT
+  DEFAULT_SERVICE_AGENT_QUALIFICATION_SCRIPT,
+  DEFAULT_NEWSLETTER_AGENT_OPENING_TEMPLATE,
+  DEFAULT_NEWSLETTER_AGENT_CONVERSION_SCRIPT
 } from './constants'
 import { safeString } from './utils'
 
@@ -308,4 +312,53 @@ export async function saveAdminServiceAgentConfig(
   config: AdminServiceAgentConfig
 ): Promise<void> {
   await env.MARTECH_KV.put(ADMIN_SERVICE_AGENT_CONFIG_KEY, JSON.stringify(config))
+}
+
+export function normalizeNewsletterAgentConfig(
+  input: unknown,
+  _env: Bindings
+): AdminNewsletterAgentConfig {
+  if (!input || typeof input !== 'object') {
+    return {
+      autoReplyEnabled: true,
+      openingTemplate: DEFAULT_NEWSLETTER_AGENT_OPENING_TEMPLATE,
+      conversionScript: DEFAULT_NEWSLETTER_AGENT_CONVERSION_SCRIPT,
+      aiModel: DEFAULT_AI_MODEL,
+      maxReplyChars: 320,
+      updatedAt: null,
+    }
+  }
+
+  const parsed = input as Partial<AdminNewsletterAgentConfig>
+  return {
+    autoReplyEnabled: parseBoolean(parsed.autoReplyEnabled, true),
+    openingTemplate:
+      safeString(parsed.openingTemplate) ?? DEFAULT_NEWSLETTER_AGENT_OPENING_TEMPLATE,
+    conversionScript:
+      safeString(parsed.conversionScript) ?? DEFAULT_NEWSLETTER_AGENT_CONVERSION_SCRIPT,
+    aiModel: safeString(parsed.aiModel) ?? DEFAULT_AI_MODEL,
+    maxReplyChars: clampNumber(parsed.maxReplyChars, 320, 160, 700),
+    updatedAt: safeString(parsed.updatedAt),
+  }
+}
+
+export async function getAdminNewsletterAgentConfig(
+  env: Bindings
+): Promise<AdminNewsletterAgentConfig> {
+  const raw = await env.MARTECH_KV.get(ADMIN_NEWSLETTER_AGENT_CONFIG_KEY)
+  if (!raw) return normalizeNewsletterAgentConfig(null, env)
+
+  try {
+    const parsed = JSON.parse(raw)
+    return normalizeNewsletterAgentConfig(parsed, env)
+  } catch {
+    return normalizeNewsletterAgentConfig(null, env)
+  }
+}
+
+export async function saveAdminNewsletterAgentConfig(
+  env: Bindings,
+  config: AdminNewsletterAgentConfig
+): Promise<void> {
+  await env.MARTECH_KV.put(ADMIN_NEWSLETTER_AGENT_CONFIG_KEY, JSON.stringify(config))
 }

@@ -23,6 +23,7 @@ export const ADMIN_WHATSAPP_INTEGRATION_CONFIG_KEY = 'admin_config:integration:w
 export const ADMIN_EMAIL_INTEGRATION_CONFIG_KEY = 'admin_config:integration:email'
 export const ADMIN_TELEGRAM_INTEGRATION_CONFIG_KEY = 'admin_config:integration:telegram'
 export const ADMIN_SERVICE_AGENT_CONFIG_KEY = 'admin_config:service_agent'
+export const ADMIN_NEWSLETTER_AGENT_CONFIG_KEY = 'admin_config:newsletter_agent'
 
 export const DEFAULT_WHATSAPP_TEST_MESSAGE =
   'Mensagem de teste do painel admin. Se voce recebeu isso, a integracao esta funcionando.'
@@ -41,6 +42,12 @@ export const DEFAULT_SERVICE_AGENT_OFF_HOURS_REPLY =
 
 export const DEFAULT_SERVICE_AGENT_QUALIFICATION_SCRIPT =
   'Priorize coletar servico, objetivo, prazo e faixa de investimento antes de sugerir proximo passo.'
+
+export const DEFAULT_NEWSLETTER_AGENT_OPENING_TEMPLATE =
+  'Oi {{name}}! Eu preparo um resumo semanal com ideias praticas de crescimento em 2 minutos de leitura. Quer receber a proxima edicao gratuitamente? Se quiser parar, e so falar SAIR.'
+
+export const DEFAULT_NEWSLETTER_AGENT_CONVERSION_SCRIPT =
+  'Conduza para inscricao com CTA claro e respeitoso, sem pressao excessiva, mantendo tom humano e opcao de saida.'
 
 export const AI_HEALTH_MIN_INFERENCES = 25
 

@@ -85,6 +85,8 @@ import {
   isValidTelegramChatId,
   getAdminServiceAgentConfig,
   saveAdminServiceAgentConfig,
+  getAdminNewsletterAgentConfig,
+  saveAdminNewsletterAgentConfig,
 } from '../integration'
 import { executeCampaignDispatch } from '../dispatch'
 import { renderAdminLoginPage, renderAdminDashboardPage } from '../templates'
@@ -440,7 +442,7 @@ admin.get('/', async (c) => {
   const unauthorized = await ensureAdminSession(c)
   if (unauthorized) return c.redirect('/admin/login', 302)
 
-  const [overview, campaigns, decisions, users, whatsappIntegration, emailIntegration, telegramIntegration, serviceAgentConfig, journeys, newsletterOverview, serviceOverview] = await Promise.all([
+  const [overview, campaigns, decisions, users, whatsappIntegration, emailIntegration, telegramIntegration, serviceAgentConfig, newsletterAgentConfig, journeys, newsletterOverview, serviceOverview] = await Promise.all([
     getOverviewMetrics(c.env),
     c.env.DB.prepare(
       'SELECT id, name, channel, status, updated_at FROM campaigns ORDER BY updated_at DESC LIMIT 30'
@@ -455,6 +457,7 @@ admin.get('/', async (c) => {
     getAdminEmailIntegrationConfig(c.env),
     getAdminTelegramIntegrationConfig(c.env),
     getAdminServiceAgentConfig(c.env),
+    getAdminNewsletterAgentConfig(c.env),
     listJourneys(c.env),
     getNewsletterAgentOverview(c.env, 20),
     getServiceAgentOverview(c.env, 20),
@@ -900,6 +903,7 @@ admin.get('/', async (c) => {
         selectedJourney,
       },
       newsletterAgent: newsletterOverview,
+      newsletterAgentConfig,
       newsletterAgentSession: {
         selectedSessionId: focusedNewsletterSessionId,
         selectedSession: focusedNewsletterSession,
@@ -1090,12 +1094,59 @@ admin.post('/actions/user/optout', async (c) => {
   }
 })
 
+// Action - Save Newsletter Agent runtime configuration
+admin.post('/actions/newsletter-agent/config/save', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    const currentConfig = await getAdminNewsletterAgentConfig(c.env)
+    const form = await c.req.parseBody()
+
+    const isChecked = (value: unknown): boolean =>
+      value === 'on' || value === 'true' || value === '1'
+
+    const parseReplyLimit = (value: unknown, fallback: number): number => {
+      const raw = typeof value === 'string' ? safeString(value) : null
+      const parsed = raw ? toNumber(raw) : fallback
+      if (!Number.isFinite(parsed)) return fallback
+      return Math.max(160, Math.min(700, Math.round(parsed)))
+    }
+
+    const config = {
+      autoReplyEnabled: isChecked(form.autoReplyEnabled),
+      openingTemplate:
+        safeString(typeof form.openingTemplate === 'string' ? form.openingTemplate : null) ??
+        currentConfig.openingTemplate,
+      conversionScript:
+        safeString(typeof form.conversionScript === 'string' ? form.conversionScript : null) ??
+        currentConfig.conversionScript,
+      aiModel:
+        safeString(typeof form.aiModel === 'string' ? form.aiModel : null) ?? currentConfig.aiModel,
+      maxReplyChars: parseReplyLimit(form.maxReplyChars, currentConfig.maxReplyChars),
+      updatedAt: new Date().toISOString(),
+    }
+
+    await saveAdminNewsletterAgentConfig(c.env, config)
+    return c.redirect(
+      buildAdminNewsletterRedirect('Configuracao do Newsletter Agent salva com sucesso.', 'success'),
+      302
+    )
+  } catch (error) {
+    return c.redirect(
+      buildAdminNewsletterRedirect(`Falha ao salvar configuracao: ${String(error)}`, 'error'),
+      302
+    )
+  }
+})
+
 // Action - Start Newsletter Agent conversation from admin screen
 admin.post('/actions/newsletter-agent/start', async (c) => {
   const unauthorized = await ensureAdminSession(c)
   if (unauthorized) return c.redirect('/admin/login', 302)
 
   try {
+    const newsletterAgentConfig = await getAdminNewsletterAgentConfig(c.env)
     const form = await c.req.parseBody()
     const normalizedContact = normalizeNewsletterContact(
       typeof form.contact === 'string' ? form.contact : null
@@ -1147,6 +1198,7 @@ admin.post('/actions/newsletter-agent/start', async (c) => {
       (await generateNewsletterOpeningMessage(c.env, {
         customerName: providedName ?? linkedUser?.name ?? null,
         contextHint: 'Abordagem inicial pelo painel administrativo.',
+        config: newsletterAgentConfig,
       }))
 
     const dispatchResult = await sendNewsletterAgentWhatsAppMessage(
@@ -1185,7 +1237,7 @@ admin.post('/actions/newsletter-agent/start', async (c) => {
       messageText: openingMessage,
       sentimentScore: sentiment.score,
       sentimentLabel: sentiment.label,
-      aiModel: customOpeningMessage ? null : DEFAULT_AI_MODEL,
+      aiModel: customOpeningMessage ? null : newsletterAgentConfig.aiModel || DEFAULT_AI_MODEL,
       metadata: {
         source: 'admin_manual_start',
       },
@@ -1217,6 +1269,7 @@ admin.post('/actions/newsletter-agent/reply', async (c) => {
   if (unauthorized) return c.redirect('/admin/login', 302)
 
   try {
+    const newsletterAgentConfig = await getAdminNewsletterAgentConfig(c.env)
     const form = await c.req.parseBody()
     const sessionId = safeString(typeof form.sessionId === 'string' ? form.sessionId : null)
     const replyMessage = safeString(typeof form.replyMessage === 'string' ? form.replyMessage : null)
@@ -1228,6 +1281,9 @@ admin.post('/actions/newsletter-agent/reply', async (c) => {
       )
     }
 
+    const maxReplyChars = Math.max(160, Math.min(700, Math.round(toNumber(newsletterAgentConfig.maxReplyChars || 320))))
+    const boundedReplyMessage = replyMessage.slice(0, maxReplyChars)
+
     const session = await getNewsletterConversationSessionById(c.env, sessionId)
     if (!session) {
       return c.redirect(buildAdminNewsletterRedirect('Sessao nao encontrada.', 'error'), 302)
@@ -1236,7 +1292,7 @@ admin.post('/actions/newsletter-agent/reply', async (c) => {
     const dispatchResult = await sendNewsletterAgentWhatsAppMessage(
       c.env,
       session.source_contact,
-      replyMessage,
+      boundedReplyMessage,
       session.id,
       'manual_reply'
     )
@@ -1252,13 +1308,14 @@ admin.post('/actions/newsletter-agent/reply', async (c) => {
       )
     }
 
-    const sentiment = analyzeNewsletterSentiment(replyMessage)
+    const sentiment = analyzeNewsletterSentiment(boundedReplyMessage)
     await appendNewsletterConversationMessage(c.env, {
       sessionId: session.id,
       direction: 'agent',
-      messageText: replyMessage,
+      messageText: boundedReplyMessage,
       sentimentScore: sentiment.score,
       sentimentLabel: sentiment.label,
+      aiModel: newsletterAgentConfig.aiModel || DEFAULT_AI_MODEL,
       metadata: {
         source: 'admin_manual_reply',
       },

@@ -46,13 +46,13 @@ import { setUserMarketingConsent } from '../consent'
 import { generatePersonalizedMessage } from '../ai'
 import { executeCampaignDispatch } from '../dispatch'
 import { runPersonaConversation, generateJourneyOpeningMessage, simulatePersonaConversation } from '../persona'
-import { generateNewsletterAgentReply } from '../newsletter-agent'
+import { analyzeNewsletterSentiment, generateNewsletterAgentReply } from '../newsletter-agent'
 import {
   analyzeServiceSentiment,
   detectServiceIntent,
   generateServiceAgentReply,
 } from '../service-agent'
-import { getAdminServiceAgentConfig } from '../integration'
+import { getAdminNewsletterAgentConfig, getAdminServiceAgentConfig } from '../integration'
 import { handleTelegramWebhook, sendTelegramMessage } from '../telegram-agent'
 import { getAdminTelegramIntegrationConfig } from '../integration'
 
@@ -543,11 +543,67 @@ api.post('/webhooks/whatsapp/inbound', async (c) => {
     if (updatedSession) session = updatedSession
   }
 
+  const newsletterConfig = await getAdminNewsletterAgentConfig(c.env)
   const history = await listNewsletterConversationMessages(c.env, session.id, 30)
+
+  if (!newsletterConfig.autoReplyEnabled) {
+    const nowIso = new Date().toISOString()
+    const manualSentiment = analyzeNewsletterSentiment(inboundMessage)
+
+    await appendNewsletterConversationMessage(c.env, {
+      sessionId: session.id,
+      direction: 'inbound',
+      messageText: inboundMessage,
+      sentimentScore: manualSentiment.score,
+      sentimentLabel: manualSentiment.label,
+      metadata: {
+        source: 'gateway_inbound',
+        messageId: safeString(body.messageId),
+        timestamp: safeString(body.timestamp),
+        autoReplyEnabled: false,
+      },
+    })
+
+    await updateNewsletterConversationSession(c.env, session.id, {
+      userId: session.user_id ?? inboundUser?.id ?? null,
+      status: session.status === 'converted' || session.status === 'opt_out' ? session.status : 'active',
+      sentimentScore: manualSentiment.score,
+      sentimentLabel: manualSentiment.label,
+      lastMessageAt: nowIso,
+    })
+
+    await appendNewsletterConversationMessage(c.env, {
+      sessionId: session.id,
+      direction: 'system',
+      messageText:
+        'Auto reply desativado no painel. Mensagem inbound registrada para tratamento manual.',
+      metadata: {
+        source: 'newsletter_agent_config',
+      },
+    })
+
+    const storedMessages = await listNewsletterConversationMessages(c.env, session.id, 100)
+
+    return c.json(
+      {
+        status: 'manual_queue',
+        sessionId: session.id,
+        sessionStatus: session.status,
+        intent: null,
+        sentiment: manualSentiment,
+        feedbackRating: session.feedback_rating,
+        reply: null,
+        messagesStored: storedMessages.length,
+      },
+      202
+    )
+  }
+
   const agentReply = await generateNewsletterAgentReply(c.env, {
     customerName,
     inboundMessage,
     history,
+    config: newsletterConfig,
   })
 
   const nowIso = new Date().toISOString()
@@ -630,7 +686,7 @@ api.post('/webhooks/whatsapp/inbound', async (c) => {
     sessionId: session.id,
     direction: 'agent',
     messageText: agentReply.replyText,
-    aiModel: DEFAULT_AI_MODEL,
+    aiModel: newsletterConfig.aiModel || DEFAULT_AI_MODEL,
     metadata: {
       intent: agentReply.intent,
       feedbackRating: agentReply.feedbackRating,
