@@ -172,7 +172,10 @@ async function generateTelegramReply(
   try {
     const startTime = Date.now()
     const aiResponse = await env.AI.run(modelToUse, {
-      messages: [{ role: 'user', content: promptText }],
+      messages: [
+        { role: 'system', content: promptText },
+        { role: 'user', content: userMessage },
+      ],
     })
     const endTime = Date.now()
 

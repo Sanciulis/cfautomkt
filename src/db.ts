@@ -1621,8 +1621,10 @@ export async function createTelegramConversationSession(
         status,
         sentiment_score,
         sentiment_label,
-        last_message_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`
+        last_message_at,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
       .bind(
         sessionId,
@@ -1634,6 +1636,8 @@ export async function createTelegramConversationSession(
         'active',
         null,
         null,
+        new Date().toISOString(),
+        new Date().toISOString(),
         new Date().toISOString()
       )
       .run()
@@ -1729,8 +1733,9 @@ export async function appendTelegramConversationMessage(
         sentiment_score,
         sentiment_label,
         ai_model,
-        metadata
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        metadata,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
       .bind(
         sessionId,
@@ -1740,13 +1745,14 @@ export async function appendTelegramConversationMessage(
         input.sentimentScore ?? null,
         input.sentimentLabel ?? null,
         safeString(input.aiModel),
-        input.metadata ? JSON.stringify(input.metadata) : null
+        input.metadata ? JSON.stringify(input.metadata) : null,
+        new Date().toISOString()
       )
       .run()
 
     // Update session last_message_at
     await env.DB.prepare(
-      'UPDATE telegram_conversation_sessions SET last_message_at = CURRENT_TIMESTAMP WHERE id = ?'
+      'UPDATE telegram_conversation_sessions SET last_message_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
     )
       .bind(sessionId)
       .run()
