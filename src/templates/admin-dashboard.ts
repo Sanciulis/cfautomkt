@@ -1647,63 +1647,63 @@ export function renderAdminDashboardPage(data: {
 
     <nav class="nav-group">
       <div class="nav-label">Monitoramento</div>
-      <a class="nav-item active" data-view="dashboard">
+      <a href="#" class="nav-item active" data-view="dashboard">
         <svg fill="currentColor" viewBox="0 0 20 20"><path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"></path></svg>
         <span>Insights</span>
       </a>
       
       <div class="nav-label">Comunicação</div>
-      <a class="nav-item" data-view="campaigns">
+      <a href="#" class="nav-item" data-view="campaigns">
         <svg fill="currentColor" viewBox="0 0 20 20"><path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"></path></svg>
         <span>Campanhas</span>
       </a>
-      <a class="nav-item" data-view="dispatch">
+      <a href="#" class="nav-item" data-view="dispatch">
         <svg fill="currentColor" viewBox="0 0 20 20"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"></path></svg>
         <span>Laboratório Envios</span>
       </a>
 
       <div class="nav-label">Crescimento & Audiência</div>
-      <a class="nav-item" data-view="wa-groups">
+      <a href="#" class="nav-item" data-view="wa-groups">
         <svg fill="currentColor" viewBox="0 0 20 20"><path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z"></path></svg>
         <span>Grupos e Extração</span>
       </a>
-      <a class="nav-item" data-view="users">
+      <a href="#" class="nav-item" data-view="users">
         <svg fill="currentColor" viewBox="0 0 20 20"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a7 7 0 017 7v1H1v-1a7 7 0 017-7z"></path></svg>
         <span>Base de Leads</span>
       </a>
-      <a class="nav-item" data-view="integrations">
+      <a href="#" class="nav-item" data-view="integrations">
         <svg fill="currentColor" viewBox="0 0 20 20"><path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM11 13a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
         <span>Integrações</span>
       </a>
 
       <div class="nav-label">Engajamento Inteligente</div>
-      <a class="nav-item" data-view="control-room">
+      <a href="#" class="nav-item" data-view="control-room">
         <svg fill="currentColor" viewBox="0 0 20 20"><path d="M4 3a1 1 0 00-1 1v3a1 1 0 001 1h3a1 1 0 001-1V4a1 1 0 00-1-1H4zM13 3a1 1 0 00-1 1v3a1 1 0 001 1h3a1 1 0 001-1V4a1 1 0 00-1-1h-3zM4 12a1 1 0 00-1 1v3a1 1 0 001 1h3a1 1 0 001-1v-3a1 1 0 00-1-1H4zM13 12a1 1 0 00-1 1v3a1 1 0 001 1h3a1 1 0 001-1v-3a1 1 0 00-1-1h-3z"></path></svg>
         <span>Control Room</span>
       </a>
-      <a class="nav-item" data-view="newsletter-agent">
+      <a href="#" class="nav-item" data-view="newsletter-agent">
         <svg fill="currentColor" viewBox="0 0 20 20"><path d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-3.441-.684L2 17l.739-3.147A6.807 6.807 0 012 10c0-3.866 3.582-7 8-7s8 3.134 8 7z"></path></svg>
         <span>Agente Newsletter</span>
       </a>
-      <a class="nav-item" data-view="service-agent">
+      <a href="#" class="nav-item" data-view="service-agent">
         <svg fill="currentColor" viewBox="0 0 20 20"><path d="M2 5a2 2 0 012-2h12a2 2 0 012 2v8a2 2 0 01-2 2h-3l-3 3-3-3H4a2 2 0 01-2-2V5zm4 2a1 1 0 000 2h8a1 1 0 100-2H6zm0 4a1 1 0 100 2h5a1 1 0 100-2H6z"></path></svg>
         <span>Agente Servicos</span>
       </a>
-      <a class="nav-item" data-view="journeys">
+      <a href="#" class="nav-item" data-view="journeys">
         <svg fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 0l-2 2a1 1 0 101.414 1.414L8 10.414l1.293 1.293a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
         <span>Jornadas AI</span>
       </a>
-      <a class="nav-item" data-view="ai-prompts">
+      <a href="#" class="nav-item" data-view="ai-prompts">
         <svg fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clip-rule="evenodd"></path></svg>
         <span>Engenharia de Prompt</span>
       </a>
-      <a class="nav-item" data-view="playground">
+      <a href="#" class="nav-item" data-view="playground">
         <svg fill="currentColor" viewBox="0 0 20 20"><path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z"></path><path d="M15 7v2a4 4 0 01-4 4H9.828l-1.766 1.767c.28.149.599.233.938.233h2l3 3v-3h2a2 2 0 002-2V9a2 2 0 00-2-2h-1z"></path></svg>
         <span>Playground AI</span>
       </a>
 
       <div class="nav-label">Configuração</div>
-      <a class="nav-item" data-view="ai-agent">
+      <a href="#" class="nav-item" data-view="ai-agent">
         <svg fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path></svg>
         <span>Agente Autônomo</span>
       </a>
@@ -2955,9 +2955,6 @@ export function renderAdminDashboardPage(data: {
   </main>
 
   <script>
-    if (!window.__adminMenuBound) {
-      window.__adminMenuBound = false;
-    }
 
     // Mobile Sidebar Logic
     const mobileBtn = document.getElementById('mobile-menu-btn');
@@ -3054,9 +3051,6 @@ export function renderAdminDashboardPage(data: {
     }
 
     function bindAdminNavigation() {
-      if (window.__adminMenuBound) return;
-      window.__adminMenuBound = true;
-
       navItems.forEach(item => {
         item.addEventListener('click', (event) => {
           event.preventDefault();
@@ -3932,3 +3926,4 @@ export function renderAdminDashboardPage(data: {
 </body>
 </html>`
 }
+
