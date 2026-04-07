@@ -4,7 +4,7 @@ import type {
   NewsletterSentimentLabel,
   TelegramWebhookUpdate,
 } from './types'
-import { DEFAULT_AI_MODEL } from './constants'
+import { DEFAULT_AI_MODEL, DEFAULT_TELEGRAM_AGENT_REPLY_PROMPT } from './constants'
 import { extractAIText, safeString } from './utils'
 import { logAIInference } from './ai-observability'
 import { getActivePrompt } from './prompt-manager'
@@ -28,12 +28,13 @@ type TelegramAgentReply = {
   intent: TelegramIntent
   sentiment: TelegramSentiment
   shouldOptOut: boolean
+  aiModelUsed: string
 }
 
 const POSITIVE_HINTS = [
   'obrigado',
   'valeu',
-  'ótimo',
+  'otimo',
   'bom',
   'gostei',
   'interessante',
@@ -46,13 +47,12 @@ const POSITIVE_HINTS = [
 ]
 
 const NEGATIVE_HINTS = [
-  'não',
   'nao',
   'pare',
   'sair',
   'chato',
   'ruim',
-  'ódio',
+  'odio',
   'irritado',
   'problema',
   'erro',
@@ -72,9 +72,8 @@ const OPT_OUT_HINTS = [
 
 function analyzeTelegramSentiment(text: string): TelegramSentiment {
   const lowerText = text.toLowerCase()
-  let score = 0.5 // neutral default
+  let score = 0.5
 
-  // Count positive and negative hints
   const positiveCount = POSITIVE_HINTS.reduce(
     (count, hint) => count + (lowerText.includes(hint) ? 1 : 0),
     0
@@ -84,8 +83,7 @@ function analyzeTelegramSentiment(text: string): TelegramSentiment {
     0
   )
 
-  // Adjust score based on hints
-  score += (positiveCount * 0.1) - (negativeCount * 0.1)
+  score += positiveCount * 0.1 - negativeCount * 0.1
   score = Math.max(0, Math.min(1, score))
 
   let label: NewsletterSentimentLabel = 'neutral'
@@ -98,24 +96,48 @@ function analyzeTelegramSentiment(text: string): TelegramSentiment {
 function analyzeTelegramIntent(text: string): TelegramIntent {
   const lowerText = text.toLowerCase()
 
-  // Check for opt-out first
-  if (OPT_OUT_HINTS.some(hint => lowerText.includes(hint))) {
+  if (OPT_OUT_HINTS.some((hint) => lowerText.includes(hint))) {
     return 'opt_out'
   }
 
-  // Check for feedback
-  if (lowerText.includes('feedback') || lowerText.includes('avaliacao') || lowerText.includes('avaliação')) {
+  if (
+    lowerText.includes('feedback') ||
+    lowerText.includes('avaliacao') ||
+    lowerText.includes('avaliacao do atendimento')
+  ) {
     return 'feedback'
   }
 
-  // Check for questions
-  if (lowerText.includes('?') || lowerText.includes('como') || lowerText.includes('quando') ||
-      lowerText.includes('onde') || lowerText.includes('por que') || lowerText.includes('porque') ||
-      lowerText.includes('qual') || lowerText.includes('quem')) {
+  if (
+    lowerText.includes('?') ||
+    lowerText.includes('como') ||
+    lowerText.includes('quando') ||
+    lowerText.includes('onde') ||
+    lowerText.includes('por que') ||
+    lowerText.includes('porque') ||
+    lowerText.includes('qual') ||
+    lowerText.includes('quem')
+  ) {
     return 'question'
   }
 
   return 'other'
+}
+
+function renderTelegramPromptTemplate(
+  promptText: string,
+  context: {
+    conversationContext: string
+    userMessage: string
+    detectedIntent: TelegramIntent
+    maxReplyChars: number
+  }
+): string {
+  return promptText
+    .replace(/\{\{\s*conversation_context\s*\}\}/g, context.conversationContext)
+    .replace(/\{\{\s*user_message\s*\}\}/g, context.userMessage)
+    .replace(/\{\{\s*detected_intent\s*\}\}/g, context.detectedIntent)
+    .replace(/\{\{\s*max_reply_chars\s*\}\}/g, String(context.maxReplyChars))
 }
 
 async function generateTelegramReply(
@@ -127,46 +149,42 @@ async function generateTelegramReply(
   const intent = analyzeTelegramIntent(userMessage)
   const sentiment = analyzeTelegramSentiment(userMessage)
 
-  // Build conversation context
-  const contextMessages = conversationHistory.slice(-10) // Last 10 messages
+  const contextMessages = conversationHistory.slice(-10)
   const conversationContext = contextMessages
-    .map(msg => `${msg.direction === 'inbound' ? 'User' : 'Bot'}: ${msg.message_text}`)
+    .map((msg) => `${msg.direction === 'inbound' ? 'User' : 'Bot'}: ${msg.message_text}`)
     .join('\n')
 
-  const promptText = `Você é um assistente de conversação amigável no Telegram.
+  const activePrompt = await getActivePrompt(
+    env,
+    'flow:telegram_agent_reply',
+    DEFAULT_TELEGRAM_AGENT_REPLY_PROMPT,
+    config.aiModel || DEFAULT_AI_MODEL
+  )
 
-CONTEXTO DA CONVERSAÇÃO:
-${conversationContext}
-
-ÚLTIMA MENSAGEM DO USUÁRIO: ${userMessage}
-
-INSTRUÇÕES:
-- Responda de forma natural e amigável em português brasileiro
-- Mantenha a resposta concisa (máximo ${config.maxReplyChars} caracteres)
-- Seja útil e informativo
-- Não use formatação markdown desnecessária
-- Se o usuário quiser parar a conversa, respeite isso
-
-Responda à mensagem do usuário:`
+  const modelToUse = safeString(activePrompt.model) ?? config.aiModel ?? DEFAULT_AI_MODEL
+  const promptText = renderTelegramPromptTemplate(activePrompt.text, {
+    conversationContext: conversationContext || 'Sem historico anterior.',
+    userMessage,
+    detectedIntent: intent,
+    maxReplyChars: config.maxReplyChars,
+  })
 
   try {
     const startTime = Date.now()
-    const aiResponse = await env.AI.run(config.aiModel, {
+    const aiResponse = await env.AI.run(modelToUse, {
       messages: [{ role: 'user', content: promptText }],
     })
     const endTime = Date.now()
 
-    const replyText = extractAIText(aiResponse) || 'Desculpe, não consegui processar sua mensagem.'
+    const replyText = extractAIText(aiResponse) || 'Desculpe, nao consegui processar sua mensagem.'
+    const truncatedReply =
+      replyText.length > config.maxReplyChars
+        ? replyText.substring(0, config.maxReplyChars - 3) + '...'
+        : replyText
 
-    // Truncate if too long
-    const truncatedReply = replyText.length > config.maxReplyChars
-      ? replyText.substring(0, config.maxReplyChars - 3) + '...'
-      : replyText
-
-    // Log AI inference
     await logAIInference(env, {
       flow: 'telegram_agent_reply',
-      model: config.aiModel,
+      model: modelToUse,
       status: 'success',
       latencyMs: endTime - startTime,
     })
@@ -176,29 +194,30 @@ Responda à mensagem do usuário:`
       intent,
       sentiment,
       shouldOptOut: intent === 'opt_out',
+      aiModelUsed: modelToUse,
     }
   } catch (error) {
     console.error('Telegram AI reply generation failed:', error)
 
-    // Log failed inference
     await logAIInference(env, {
       flow: 'telegram_agent_reply',
-      model: config.aiModel,
+      model: modelToUse,
       status: 'error',
       latencyMs: 0,
       errorMessage: String(error),
     })
 
-    // Fallback response
-    const fallbackReply = intent === 'opt_out'
-      ? 'Entendido. Se quiser conversar novamente, é só me chamar!'
-      : 'Desculpe, estou com dificuldades técnicas no momento. Tente novamente mais tarde.'
+    const fallbackReply =
+      intent === 'opt_out'
+        ? 'Entendido. Se quiser conversar novamente, e so me chamar.'
+        : 'Desculpe, estou com dificuldades tecnicas no momento. Tente novamente mais tarde.'
 
     return {
       replyText: fallbackReply,
       intent,
       sentiment,
       shouldOptOut: intent === 'opt_out',
+      aiModelUsed: modelToUse,
     }
   }
 }
@@ -209,13 +228,8 @@ export async function generateTelegramAgentReply(
   userMessage: string,
   config: { aiModel: string; maxReplyChars: number }
 ): Promise<TelegramAgentReply> {
-  // Get conversation history
   const conversationHistory = await listTelegramConversationMessages(env, sessionId, 50)
-
-  // Generate AI reply
-  const reply = await generateTelegramReply(env, conversationHistory, userMessage, config)
-
-  return reply
+  return generateTelegramReply(env, conversationHistory, userMessage, config)
 }
 
 export async function handleTelegramWebhook(
@@ -223,7 +237,6 @@ export async function handleTelegramWebhook(
   update: TelegramWebhookUpdate,
   config: { aiModel: string; maxReplyChars: number; conversationEnabled: boolean }
 ): Promise<{ shouldReply: boolean; replyText?: string; sessionId?: string }> {
-  // Only handle messages
   if (!update.message || !update.message.text) {
     return { shouldReply: false }
   }
@@ -236,16 +249,13 @@ export async function handleTelegramWebhook(
     return { shouldReply: false }
   }
 
-  // Skip if conversations are disabled
   if (!config.conversationEnabled) {
     return { shouldReply: false }
   }
 
-  // Get or create conversation session
   let session = await getLatestTelegramConversationSessionByChatId(env, chatId)
 
   if (!session) {
-    // Create new session
     session = await createTelegramConversationSession(env, {
       chatId,
       username: message.from.username,
@@ -254,37 +264,31 @@ export async function handleTelegramWebhook(
     })
   }
 
-  // Skip if session is closed or opted out
   if (session.status === 'closed' || session.status === 'opt_out') {
     return { shouldReply: false }
   }
 
-  // Add user message to conversation
   await appendTelegramConversationMessage(env, session.id, {
     direction: 'inbound',
     messageText: userMessage,
     messageId: message.message_id,
   })
 
-  // Generate reply
   const reply = await generateTelegramAgentReply(env, session.id, userMessage, config)
 
-  // Add bot reply to conversation
   await appendTelegramConversationMessage(env, session.id, {
     direction: 'agent',
     messageText: reply.replyText,
-    messageId: 0, // Bot messages don't have Telegram message IDs
+    messageId: 0,
     sentimentScore: reply.sentiment.score,
     sentimentLabel: reply.sentiment.label,
-    aiModel: config.aiModel,
+    aiModel: reply.aiModelUsed,
   })
 
-  // Update session status if needed
   if (reply.shouldOptOut) {
     await updateTelegramConversationSession(env, session.id, { status: 'opt_out' })
   }
 
-  // Update session sentiment
   await updateTelegramConversationSession(env, session.id, {
     sentimentScore: reply.sentiment.score,
     sentimentLabel: reply.sentiment.label,
@@ -297,11 +301,7 @@ export async function handleTelegramWebhook(
   }
 }
 
-export async function sendTelegramMessage(
-  env: Bindings,
-  chatId: string,
-  text: string
-): Promise<boolean> {
+export async function sendTelegramMessage(env: Bindings, chatId: string, text: string): Promise<boolean> {
   const token = env.TELEGRAM_BOT_TOKEN
   if (!token) {
     console.error('TELEGRAM_BOT_TOKEN not configured')
@@ -316,7 +316,7 @@ export async function sendTelegramMessage(
       },
       body: JSON.stringify({
         chat_id: chatId,
-        text: text,
+        text,
       }),
     })
 

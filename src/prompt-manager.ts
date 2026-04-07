@@ -16,6 +16,7 @@ export const SUPPORTED_PROMPT_TARGETS = [
   'flow:newsletter_agent_reply',
   'flow:service_agent_opening_message',
   'flow:service_agent_reply',
+  'flow:telegram_agent_reply',
   // Legacy targets kept for compatibility with existing prompt history.
   'flow:simulate_persona',
   'flow:journey_opening',
@@ -72,6 +73,7 @@ const PROMPT_PREVIEW_DEFAULT_USER_MESSAGES: Record<string, string> = {
   'flow:service_agent_opening_message':
     'Crie abertura para atendimento comercial oferecendo agendamento e orcamento.',
   'flow:service_agent_reply': 'Quero saber valores e prazo para implementar isso no meu negocio.',
+  'flow:telegram_agent_reply': 'Oi Veio, como eu comeco a usar esse servico?',
 }
 
 const PROMPT_ALLOWED_PLACEHOLDERS: Record<string, Set<string>> = {
@@ -91,6 +93,12 @@ const PROMPT_ALLOWED_PLACEHOLDERS: Record<string, Set<string>> = {
   'flow:simulate_persona': new Set(['journey_phase', 'conversation_history', 'last_user_message']),
   'flow:generate_journey_opening_message': new Set(['user_name']),
   'flow:journey_opening': new Set(['user_name']),
+  'flow:telegram_agent_reply': new Set([
+    'conversation_context',
+    'user_message',
+    'detected_intent',
+    'max_reply_chars',
+  ]),
 }
 
 export type PromptVersion = {

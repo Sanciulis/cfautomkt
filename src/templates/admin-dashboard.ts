@@ -2750,7 +2750,8 @@ export function renderAdminDashboardPage(data: {
                     <option value="flow:newsletter_agent_reply">flow:newsletter_agent_reply</option>
                     <option value="flow:service_agent_opening_message">flow:service_agent_opening_message</option>
                     <option value="flow:service_agent_reply">flow:service_agent_reply</option>
-                 </select>
+                    <option value="flow:telegram_agent_reply">flow:telegram_agent_reply</option>
+                </select>
                  <button id="btn-prompt-load" class="btn btn-outline" style="width: auto;">Carregar</button>
              </div>
            </div>
@@ -4213,5 +4214,4 @@ export function renderAdminDashboardPage(data: {
 </body>
 </html>`
 }
-
 
