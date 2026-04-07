@@ -170,3 +170,24 @@ A ferramenta “faz sentido” quando:
 4. Selecionar primeiro experimento da semana.  
 5. Definir data de revisão e critério de sucesso.
 
+---
+
+## 10) Como Ler o Painel do Agente Autônomo
+
+Na view **Agente Autônomo**, a seção **Aderência Estratégica (90 dias)** consolida os sinais:
+- `NSM Growth (7d)`: crescimento semanal de convertidos vs meta `+25%`.
+- `Opt-out Rate (7d)`: taxa agregada newsletter + service vs limite `<5%`.
+- `Operações Estagnadas`: campanhas/jornadas ativas sem tração em `>7 dias`.
+- `Redução Tempo Conversão`: proxy de melhoria no tempo médio para converter vs meta `-30%`.
+
+Status esperado:
+- `ok`: aderente ao plano.
+- `warning`: desvio moderado, exige ajuste operacional.
+- `critical`: violação de guardrail (prioridade imediata).
+
+Tabela de decisões estratégicas:
+- Exibe os registros recentes gerados automaticamente pelo agente:
+ - `strategy_alignment_gap`
+ - `strategy_guardrail_breach`
+ - `strategy_control_room_alert`
+- Cada linha indica o motivo e onde agir no Control Room.

@@ -8,6 +8,7 @@ import type {
   ServiceConversationStatus,
 } from '../types'
 import {
+  ADMIN_AUTONOMOUS_AGENT_STATE_KEY,
   DEFAULT_WHATSAPP_TEST_MESSAGE,
   DEFAULT_EMAIL_TEST_MESSAGE,
   DEFAULT_TELEGRAM_TEST_MESSAGE,
@@ -3207,6 +3208,390 @@ admin.get('/api/ai/metrics', async (c) => {
     })
   } catch (error) {
     return c.json({ error: String(error) }, 500)
+  }
+})
+
+async function getAutonomousAgentEnabled(env: Bindings): Promise<boolean> {
+  const raw = await env.MARTECH_KV.get(ADMIN_AUTONOMOUS_AGENT_STATE_KEY)
+  if (raw === null) return true
+  const normalized = String(raw).trim().toLowerCase()
+  return !['false', '0', 'off', 'disabled'].includes(normalized)
+}
+
+type StrategyAlignmentSnapshot = {
+  target: {
+    nsmGrowth: number
+    optOutRateMax: number
+    staleOperationsMax: number
+    conversionTimeReduction: number
+  }
+  metrics: {
+    currentWeekConverted: number
+    previousWeekConverted: number
+    growthRate: number
+    totalOptOut: number
+    totalSessions: number
+    optOutRate: number
+    staleCampaigns: number
+    staleJourneys: number
+    currentAvgHours: number | null
+    previousAvgHours: number | null
+    conversionTimeReductionRate: number | null
+  }
+  status: {
+    nsmGrowth: 'ok' | 'warning'
+    optOut: 'ok' | 'critical'
+    staleOperations: 'ok' | 'warning'
+    conversionTime: 'ok' | 'warning'
+  }
+  primaryAction: {
+    title: string
+    detail: string
+    priority: 'low' | 'medium' | 'high'
+  }
+  recentDecisions: Array<{
+    type: string
+    target: string | null
+    reason: string
+    payload: unknown
+    createdAt: string
+  }>
+}
+
+async function buildStrategyAlignmentSnapshot(env: Bindings, windowDays: number): Promise<StrategyAlignmentSnapshot> {
+  const safeDays = Math.max(7, Math.min(30, Math.floor(windowDays)))
+
+  const [nsmRow, optOutRow, staleRow, ttcRow, decisionsRows] = await Promise.all([
+    env.DB.prepare(
+      `
+      SELECT
+        (SELECT COUNT(*) FROM interactions
+          WHERE event_type = 'converted'
+            AND timestamp >= datetime('now', ?)) +
+        (SELECT COUNT(*) FROM newsletter_conversation_sessions
+          WHERE status = 'converted'
+            AND COALESCE(converted_at, updated_at, created_at) >= datetime('now', ?)) +
+        (SELECT COUNT(*) FROM service_conversation_sessions
+          WHERE status IN ('scheduled', 'quoted')
+            AND COALESCE(updated_at, created_at) >= datetime('now', ?))
+          AS current_period_converted,
+        (SELECT COUNT(*) FROM interactions
+          WHERE event_type = 'converted'
+            AND timestamp >= datetime('now', ?)
+            AND timestamp < datetime('now', ?)) +
+        (SELECT COUNT(*) FROM newsletter_conversation_sessions
+          WHERE status = 'converted'
+            AND COALESCE(converted_at, updated_at, created_at) >= datetime('now', ?)
+            AND COALESCE(converted_at, updated_at, created_at) < datetime('now', ?)) +
+        (SELECT COUNT(*) FROM service_conversation_sessions
+          WHERE status IN ('scheduled', 'quoted')
+            AND COALESCE(updated_at, created_at) >= datetime('now', ?)
+            AND COALESCE(updated_at, created_at) < datetime('now', ?))
+          AS previous_period_converted
+      `
+    ).bind(
+      `-${safeDays} days`,
+      `-${safeDays} days`,
+      `-${safeDays} days`,
+      `-${safeDays * 2} days`,
+      `-${safeDays} days`,
+      `-${safeDays * 2} days`,
+      `-${safeDays} days`,
+      `-${safeDays * 2} days`,
+      `-${safeDays} days`,
+    ).first<{ current_period_converted: number; previous_period_converted: number }>(),
+    env.DB.prepare(
+      `
+      SELECT
+        (
+          (SELECT SUM(CASE WHEN status = 'opt_out' THEN 1 ELSE 0 END)
+            FROM newsletter_conversation_sessions
+            WHERE created_at >= datetime('now', ?)) +
+          (SELECT SUM(CASE WHEN status = 'opt_out' THEN 1 ELSE 0 END)
+            FROM service_conversation_sessions
+            WHERE created_at >= datetime('now', ?))
+        ) AS total_opt_out,
+        (
+          (SELECT COUNT(*) FROM newsletter_conversation_sessions
+            WHERE created_at >= datetime('now', ?)) +
+          (SELECT COUNT(*) FROM service_conversation_sessions
+            WHERE created_at >= datetime('now', ?))
+        ) AS total_sessions
+      `
+    ).bind(`-${safeDays} days`, `-${safeDays} days`, `-${safeDays} days`, `-${safeDays} days`)
+      .first<{ total_opt_out: number; total_sessions: number }>(),
+    env.DB.prepare(
+      `
+      SELECT
+        (SELECT COUNT(*)
+          FROM campaigns c
+          WHERE c.status = 'active'
+            AND (
+              c.updated_at < datetime('now', '-7 days')
+              OR NOT EXISTS (
+                SELECT 1 FROM interactions i
+                  WHERE i.campaign_id = c.id
+                    AND i.timestamp >= datetime('now', '-7 days')
+              )
+            )) AS stale_campaigns,
+        (SELECT COUNT(*)
+          FROM journeys j
+          WHERE j.status = 'active'
+            AND NOT EXISTS (
+              SELECT 1 FROM journey_enrollments je
+                WHERE je.journey_id = j.id
+                  AND je.last_interaction_at >= datetime('now', '-7 days')
+            )) AS stale_journeys
+      `
+    ).first<{ stale_campaigns: number; stale_journeys: number }>(),
+    env.DB.prepare(
+      `
+      SELECT
+        (
+          SELECT AVG((julianday(converted_at) - julianday(created_at)) * 24.0)
+          FROM newsletter_conversation_sessions
+          WHERE status = 'converted'
+            AND converted_at IS NOT NULL
+            AND created_at >= datetime('now', '-30 days')
+        ) AS current_avg_hours,
+        (
+          SELECT AVG((julianday(converted_at) - julianday(created_at)) * 24.0)
+          FROM newsletter_conversation_sessions
+          WHERE status = 'converted'
+            AND converted_at IS NOT NULL
+            AND created_at >= datetime('now', '-60 days')
+            AND created_at < datetime('now', '-30 days')
+        ) AS previous_avg_hours
+      `
+    ).first<{ current_avg_hours: number | null; previous_avg_hours: number | null }>(),
+    env.DB.prepare(
+      `SELECT decision_type, target_id, reason, payload, created_at
+       FROM agent_decisions
+       WHERE decision_type IN ('strategy_alignment_gap', 'strategy_guardrail_breach', 'strategy_control_room_alert')
+       ORDER BY created_at DESC
+       LIMIT 50`
+    ).all<{
+      decision_type: string
+      target_id: string | null
+      reason: string
+      payload: string | null
+      created_at: string
+    }>(),
+  ])
+
+  const currentWeekConverted = toNumber(nsmRow?.current_period_converted)
+  const previousWeekConverted = toNumber(nsmRow?.previous_period_converted)
+  const growthRate =
+    previousWeekConverted > 0
+      ? (currentWeekConverted - previousWeekConverted) / previousWeekConverted
+      : currentWeekConverted > 0
+        ? 1
+        : 0
+
+  const totalOptOut = toNumber(optOutRow?.total_opt_out)
+  const totalSessions = toNumber(optOutRow?.total_sessions)
+  const optOutRate = totalSessions > 0 ? totalOptOut / totalSessions : 0
+
+  const staleCampaigns = toNumber(staleRow?.stale_campaigns)
+  const staleJourneys = toNumber(staleRow?.stale_journeys)
+
+  const currentAvgHours = Number(ttcRow?.current_avg_hours ?? Number.NaN)
+  const previousAvgHours = Number(ttcRow?.previous_avg_hours ?? Number.NaN)
+  const conversionTimeReductionRate =
+    Number.isFinite(currentAvgHours) && Number.isFinite(previousAvgHours) && previousAvgHours > 0
+      ? (previousAvgHours - currentAvgHours) / previousAvgHours
+      : null
+
+  const target = {
+    nsmGrowth: 0.25,
+    optOutRateMax: 0.05,
+    staleOperationsMax: 0,
+    conversionTimeReduction: 0.3,
+  }
+
+  const status = {
+    nsmGrowth: growthRate >= target.nsmGrowth ? 'ok' as const : 'warning' as const,
+    optOut: totalSessions >= 20 && optOutRate > target.optOutRateMax ? 'critical' as const : 'ok' as const,
+    staleOperations: staleCampaigns + staleJourneys > target.staleOperationsMax ? 'warning' as const : 'ok' as const,
+    conversionTime:
+      conversionTimeReductionRate !== null && conversionTimeReductionRate >= target.conversionTimeReduction
+        ? 'ok' as const
+        : 'warning' as const,
+  }
+
+  const primaryAction = (() => {
+    if (status.optOut === 'critical') {
+      return {
+        title: 'Reduzir opt-out imediatamente',
+        detail: 'Revisar copy de abordagem e frequência de disparo; priorizar sessões com sentimento negativo.',
+        priority: 'high' as const,
+      }
+    }
+    if (status.nsmGrowth === 'warning') {
+      return {
+        title: 'Aumentar conversão semanal',
+        detail: 'Rodar 1 experimento principal de oferta/copy/canal e acompanhar impacto em 7 dias.',
+        priority: 'high' as const,
+      }
+    }
+    if (status.staleOperations === 'warning') {
+      return {
+        title: 'Destravar operações estagnadas',
+        detail: 'No Control Room, pausar ativos sem tração >7 dias e relançar com hipótese nova.',
+        priority: 'medium' as const,
+      }
+    }
+    if (status.conversionTime === 'warning') {
+      return {
+        title: 'Acelerar tempo para conversão',
+        detail: 'Ajustar CTA e remover fricção no primeiro contato para reduzir tempo médio.',
+        priority: 'medium' as const,
+      }
+    }
+    return {
+      title: 'Manter cadência semanal',
+      detail: 'Estratégia aderente. Continue com 1 experimento por semana e revisão no ritual.',
+      priority: 'low' as const,
+    }
+  })()
+
+  const recentDecisions = (decisionsRows.results ?? []).map((row) => {
+    let payload: unknown = null
+    try {
+      payload = row.payload ? JSON.parse(row.payload) : null
+    } catch {
+      payload = null
+    }
+    return {
+      type: row.decision_type,
+      target: row.target_id,
+      reason: row.reason,
+      payload,
+      createdAt: row.created_at,
+    }
+  })
+
+  return {
+    target,
+    metrics: {
+      currentWeekConverted,
+      previousWeekConverted,
+      growthRate,
+      totalOptOut,
+      totalSessions,
+      optOutRate,
+      staleCampaigns,
+      staleJourneys,
+      currentAvgHours: Number.isFinite(currentAvgHours) ? currentAvgHours : null,
+      previousAvgHours: Number.isFinite(previousAvgHours) ? previousAvgHours : null,
+      conversionTimeReductionRate,
+    },
+    status,
+    primaryAction,
+    recentDecisions,
+  }
+}
+
+// API - Strategic Alignment Overview (based on docs/ESTRATEGIA_OPERACIONAL_MARTECH_90_DIAS.md)
+admin.get('/api/strategy/alignment', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.json({ error: 'Unauthorized' }, 401)
+
+  try {
+    const requestedDays = toNumber(c.req.query('days'))
+    const days = Number.isFinite(requestedDays) ? Math.max(7, Math.min(30, Math.floor(requestedDays))) : 7
+    const agentEnabled = await getAutonomousAgentEnabled(c.env)
+    const snapshot = await buildStrategyAlignmentSnapshot(c.env, days)
+
+    return c.json({
+      generatedAt: new Date().toISOString(),
+      days,
+      agent: { enabled: agentEnabled },
+      ...snapshot,
+    })
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
+// API - Strategic Alignment CSV Export
+admin.get('/api/strategy/alignment/export.csv', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.text('Unauthorized', 401)
+
+  try {
+    const requestedDays = toNumber(c.req.query('days'))
+    const days = Number.isFinite(requestedDays) ? Math.max(7, Math.min(30, Math.floor(requestedDays))) : 7
+    const snapshot = await buildStrategyAlignmentSnapshot(c.env, days)
+
+    const metrics = snapshot.metrics
+    const csvLines = [
+      'metric,value',
+      `days_window,${days}`,
+      `converted_current,${metrics.currentWeekConverted}`,
+      `converted_previous,${metrics.previousWeekConverted}`,
+      `growth_rate,${metrics.growthRate}`,
+      `opt_out_total,${metrics.totalOptOut}`,
+      `sessions_total,${metrics.totalSessions}`,
+      `opt_out_rate,${metrics.optOutRate}`,
+      `stale_campaigns,${metrics.staleCampaigns}`,
+      `stale_journeys,${metrics.staleJourneys}`,
+      `avg_time_to_conversion_current_hours,${metrics.currentAvgHours ?? ''}`,
+      `avg_time_to_conversion_previous_hours,${metrics.previousAvgHours ?? ''}`,
+      `time_to_conversion_reduction_rate,${metrics.conversionTimeReductionRate ?? ''}`,
+      `status_nsm_growth,${snapshot.status.nsmGrowth}`,
+      `status_opt_out,${snapshot.status.optOut}`,
+      `status_stale_operations,${snapshot.status.staleOperations}`,
+      `status_conversion_time,${snapshot.status.conversionTime}`,
+      `primary_action_title,"${snapshot.primaryAction.title.replace(/"/g, '""')}"`,
+      `primary_action_detail,"${snapshot.primaryAction.detail.replace(/"/g, '""')}"`,
+      `primary_action_priority,${snapshot.primaryAction.priority}`,
+    ]
+
+    return c.body(csvLines.join('\n'), {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Content-Disposition': `attachment; filename="strategy-alignment-${days}d.csv"`,
+      },
+    })
+  } catch (error) {
+    return c.text(String(error), 500)
+  }
+})
+
+// API - Autonomous Agent State
+admin.get('/api/agent-autonomous/status', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.json({ error: 'Unauthorized' }, 401)
+  try {
+    const enabled = await getAutonomousAgentEnabled(c.env)
+    return c.json({ enabled })
+  } catch (error) {
+    return c.json({ error: String(error) }, 500)
+  }
+})
+
+// Action - Toggle Autonomous Agent
+admin.post('/actions/agent-autonomous/toggle', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+  try {
+    const form = await c.req.parseBody()
+    const enabled = toBoolean(typeof form.enabled === 'string' ? form.enabled : null, true)
+    await c.env.MARTECH_KV.put(ADMIN_AUTONOMOUS_AGENT_STATE_KEY, enabled ? 'true' : 'false')
+
+    return c.redirect(
+      buildAdminRedirect(
+        enabled
+          ? 'Agente autonomo ativado. O ciclo agendado voltara a executar normalmente.'
+          : 'Agente autonomo desativado. O ciclo agendado sera ignorado ate nova ativacao.',
+        'success'
+      ) + '#ai-agent',
+      302
+    )
+  } catch (error) {
+    return c.redirect(buildAdminRedirect(`Falha ao alterar estado do agente: ${String(error)}`, 'error') + '#ai-agent', 302)
   }
 })
 

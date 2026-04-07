@@ -24,6 +24,7 @@ export const ADMIN_EMAIL_INTEGRATION_CONFIG_KEY = 'admin_config:integration:emai
 export const ADMIN_TELEGRAM_INTEGRATION_CONFIG_KEY = 'admin_config:integration:telegram'
 export const ADMIN_SERVICE_AGENT_CONFIG_KEY = 'admin_config:service_agent'
 export const ADMIN_NEWSLETTER_AGENT_CONFIG_KEY = 'admin_config:newsletter_agent'
+export const ADMIN_AUTONOMOUS_AGENT_STATE_KEY = 'admin_config:autonomous_agent:enabled'
 
 export const DEFAULT_WHATSAPP_TEST_MESSAGE =
   'Mensagem de teste do painel admin. Se voce recebeu isso, a integracao esta funcionando.'

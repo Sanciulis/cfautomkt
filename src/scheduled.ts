@@ -4,6 +4,7 @@ import { getAIInferenceOverview, logAgentDecision } from './db'
 import { evaluateFreezingRules } from './freezing-rules'
 import { logAIInference } from './ai-observability'
 import {
+  ADMIN_AUTONOMOUS_AGENT_STATE_KEY,
   AI_HEALTH_MIN_INFERENCES,
   AI_HEALTH_WARNING_THRESHOLDS,
   AI_HEALTH_CRITICAL_THRESHOLDS,
@@ -12,6 +13,15 @@ import {
 const AI_ALERT_DEDUPE_PREFIX = 'ai_ops_alert'
 const AI_WARNING_DEDUPE_SECONDS = 60 * 60
 const AI_CRITICAL_DEDUPE_SECONDS = 60 * 30
+const STRATEGY_ALERT_DEDUPE_PREFIX = 'strategy_alignment'
+const STRATEGY_ALERT_DEDUPE_SECONDS = 60 * 60 * 12
+
+const STRATEGY_TARGETS = {
+  nsmGrowthTarget: 0.25,
+  optOutRateMax: 0.05,
+  avgTimeToConversionReductionTarget: 0.3,
+  staleOperationDays: 7,
+}
 
 async function shouldEmitAIOpsAlert(env: Bindings, severity: 'warning' | 'critical'): Promise<boolean> {
   const key = `${AI_ALERT_DEDUPE_PREFIX}:${severity}`
@@ -20,6 +30,17 @@ async function shouldEmitAIOpsAlert(env: Bindings, severity: 'warning' | 'critic
 
   const ttl = severity === 'critical' ? AI_CRITICAL_DEDUPE_SECONDS : AI_WARNING_DEDUPE_SECONDS
   await env.MARTECH_KV.put(key, new Date().toISOString(), { expirationTtl: ttl })
+  return true
+}
+
+async function shouldEmitStrategyAlert(env: Bindings, keySuffix: string): Promise<boolean> {
+  const key = `${STRATEGY_ALERT_DEDUPE_PREFIX}:${keySuffix}`
+  const existing = await env.MARTECH_KV.get(key)
+  if (existing) return false
+
+  await env.MARTECH_KV.put(key, new Date().toISOString(), {
+    expirationTtl: STRATEGY_ALERT_DEDUPE_SECONDS,
+  })
   return true
 }
 
@@ -138,7 +159,226 @@ async function runAIOperationalHealthCheck(env: Bindings): Promise<void> {
   })
 }
 
+async function runStrategicAlignmentChecks(env: Bindings): Promise<void> {
+  try {
+    const nsmRow = await env.DB.prepare(
+      `
+      SELECT
+        (SELECT COUNT(*) FROM interactions
+          WHERE event_type = 'converted'
+            AND timestamp >= datetime('now', '-7 days')) +
+        (SELECT COUNT(*) FROM newsletter_conversation_sessions
+          WHERE status = 'converted'
+            AND COALESCE(converted_at, updated_at, created_at) >= datetime('now', '-7 days')) +
+        (SELECT COUNT(*) FROM service_conversation_sessions
+          WHERE status IN ('scheduled', 'quoted')
+            AND COALESCE(updated_at, created_at) >= datetime('now', '-7 days'))
+          AS current_week_converted,
+        (SELECT COUNT(*) FROM interactions
+          WHERE event_type = 'converted'
+            AND timestamp >= datetime('now', '-14 days')
+            AND timestamp < datetime('now', '-7 days')) +
+        (SELECT COUNT(*) FROM newsletter_conversation_sessions
+          WHERE status = 'converted'
+            AND COALESCE(converted_at, updated_at, created_at) >= datetime('now', '-14 days')
+            AND COALESCE(converted_at, updated_at, created_at) < datetime('now', '-7 days')) +
+        (SELECT COUNT(*) FROM service_conversation_sessions
+          WHERE status IN ('scheduled', 'quoted')
+            AND COALESCE(updated_at, created_at) >= datetime('now', '-14 days')
+            AND COALESCE(updated_at, created_at) < datetime('now', '-7 days'))
+          AS previous_week_converted
+      `
+    ).first<{ current_week_converted: number; previous_week_converted: number }>()
+
+    const currentWeekConverted = toNumber(nsmRow?.current_week_converted)
+    const previousWeekConverted = toNumber(nsmRow?.previous_week_converted)
+    const growthRate =
+      previousWeekConverted > 0
+        ? (currentWeekConverted - previousWeekConverted) / previousWeekConverted
+        : currentWeekConverted > 0
+          ? 1
+          : 0
+
+    if (growthRate < STRATEGY_TARGETS.nsmGrowthTarget) {
+      const shouldEmit = await shouldEmitStrategyAlert(env, 'nsm_growth_gap')
+      if (shouldEmit) {
+        await logAgentDecision(
+          env,
+          'strategy_alignment_gap',
+          'north_star',
+          'NSM growth below strategic target (+25% converted leads/week).',
+          {
+            metric: 'converted_leads_per_week',
+            targetGrowth: STRATEGY_TARGETS.nsmGrowthTarget,
+            currentWeekConverted,
+            previousWeekConverted,
+            growthRate,
+          }
+        )
+      }
+    }
+  } catch (error) {
+    console.warn('[STRATEGY CHECK] NSM growth check skipped:', String(error))
+  }
+
+  try {
+    const optOutRow = await env.DB.prepare(
+      `
+      SELECT
+        (
+          (SELECT SUM(CASE WHEN status = 'opt_out' THEN 1 ELSE 0 END)
+             FROM newsletter_conversation_sessions
+            WHERE created_at >= datetime('now', '-7 days')) +
+          (SELECT SUM(CASE WHEN status = 'opt_out' THEN 1 ELSE 0 END)
+             FROM service_conversation_sessions
+            WHERE created_at >= datetime('now', '-7 days'))
+        ) AS total_opt_out,
+        (
+          (SELECT COUNT(*) FROM newsletter_conversation_sessions
+            WHERE created_at >= datetime('now', '-7 days')) +
+          (SELECT COUNT(*) FROM service_conversation_sessions
+            WHERE created_at >= datetime('now', '-7 days'))
+        ) AS total_sessions
+      `
+    ).first<{ total_opt_out: number; total_sessions: number }>()
+
+    const totalOptOut = toNumber(optOutRow?.total_opt_out)
+    const totalSessions = toNumber(optOutRow?.total_sessions)
+    const optOutRate = totalSessions > 0 ? totalOptOut / totalSessions : 0
+
+    if (totalSessions >= 20 && optOutRate > STRATEGY_TARGETS.optOutRateMax) {
+      const shouldEmit = await shouldEmitStrategyAlert(env, 'opt_out_guardrail_breach')
+      if (shouldEmit) {
+        await logAgentDecision(
+          env,
+          'strategy_guardrail_breach',
+          'opt_out_rate',
+          'Opt-out rate above strategic threshold (<5%).',
+          {
+            targetMax: STRATEGY_TARGETS.optOutRateMax,
+            optOutRate,
+            totalOptOut,
+            totalSessions,
+            windowDays: 7,
+          }
+        )
+      }
+    }
+  } catch (error) {
+    console.warn('[STRATEGY CHECK] opt-out check skipped:', String(error))
+  }
+
+  try {
+    const staleRow = await env.DB.prepare(
+      `
+      SELECT
+        (SELECT COUNT(*)
+           FROM campaigns c
+          WHERE c.status = 'active'
+            AND (
+              c.updated_at < datetime('now', '-7 days')
+              OR NOT EXISTS (
+                SELECT 1 FROM interactions i
+                 WHERE i.campaign_id = c.id
+                   AND i.timestamp >= datetime('now', '-7 days')
+              )
+            )) AS stale_campaigns,
+        (SELECT COUNT(*)
+           FROM journeys j
+          WHERE j.status = 'active'
+            AND NOT EXISTS (
+              SELECT 1 FROM journey_enrollments je
+               WHERE je.journey_id = j.id
+                 AND je.last_interaction_at >= datetime('now', '-7 days')
+            )) AS stale_journeys
+      `
+    ).first<{ stale_campaigns: number; stale_journeys: number }>()
+
+    const staleCampaigns = toNumber(staleRow?.stale_campaigns)
+    const staleJourneys = toNumber(staleRow?.stale_journeys)
+
+    if (staleCampaigns > 0 || staleJourneys > 0) {
+      const shouldEmit = await shouldEmitStrategyAlert(env, 'stale_operations')
+      if (shouldEmit) {
+        await logAgentDecision(
+          env,
+          'strategy_control_room_alert',
+          'operations_staleness',
+          'Active operations stale for more than 7 days; review in Control Room.',
+          {
+            staleCampaigns,
+            staleJourneys,
+            staleThresholdDays: STRATEGY_TARGETS.staleOperationDays,
+          }
+        )
+      }
+    }
+  } catch (error) {
+    console.warn('[STRATEGY CHECK] stale operations check skipped:', String(error))
+  }
+
+  try {
+    const ttcRow = await env.DB.prepare(
+      `
+      SELECT
+        (
+          SELECT AVG((julianday(converted_at) - julianday(created_at)) * 24.0)
+          FROM newsletter_conversation_sessions
+          WHERE status = 'converted'
+            AND converted_at IS NOT NULL
+            AND created_at >= datetime('now', '-30 days')
+        ) AS current_avg_hours,
+        (
+          SELECT AVG((julianday(converted_at) - julianday(created_at)) * 24.0)
+          FROM newsletter_conversation_sessions
+          WHERE status = 'converted'
+            AND converted_at IS NOT NULL
+            AND created_at >= datetime('now', '-60 days')
+            AND created_at < datetime('now', '-30 days')
+        ) AS previous_avg_hours
+      `
+    ).first<{ current_avg_hours: number | null; previous_avg_hours: number | null }>()
+
+    const currentAvg = Number(ttcRow?.current_avg_hours ?? Number.NaN)
+    const previousAvg = Number(ttcRow?.previous_avg_hours ?? Number.NaN)
+
+    if (Number.isFinite(currentAvg) && Number.isFinite(previousAvg) && previousAvg > 0) {
+      const reductionRate = (previousAvg - currentAvg) / previousAvg
+      if (reductionRate < STRATEGY_TARGETS.avgTimeToConversionReductionTarget) {
+        const shouldEmit = await shouldEmitStrategyAlert(env, 'time_to_conversion_gap')
+        if (shouldEmit) {
+          await logAgentDecision(
+            env,
+            'strategy_alignment_gap',
+            'time_to_conversion',
+            'Average time-to-conversion reduction below strategic target (-30%).',
+            {
+              targetReduction: STRATEGY_TARGETS.avgTimeToConversionReductionTarget,
+              currentAvgHours: currentAvg,
+              previousAvgHours: previousAvg,
+              reductionRate,
+              windowDays: 30,
+            }
+          )
+        }
+      }
+    }
+  } catch (error) {
+    console.warn('[STRATEGY CHECK] time-to-conversion check skipped:', String(error))
+  }
+}
+
 export async function runScheduledAgent(env: Bindings): Promise<void> {
+  const autonomousAgentStateRaw = await env.MARTECH_KV.get(ADMIN_AUTONOMOUS_AGENT_STATE_KEY)
+  const autonomousAgentEnabled = autonomousAgentStateRaw === null
+    ? true
+    : !['false', '0', 'off', 'disabled'].includes(String(autonomousAgentStateRaw).trim().toLowerCase())
+
+  if (!autonomousAgentEnabled) {
+    console.log('Autonomous Agent cycle skipped because agent is disabled by admin config')
+    return
+  }
+
   console.log('Autonomous Agent running optimization cycle')
 
   // ── 1. Cold User Channel Migration ─────────────────────────
@@ -345,4 +585,5 @@ export async function runScheduledAgent(env: Bindings): Promise<void> {
 
   // ── 7. AI Operational Health Check ─────────────────────────
   await runAIOperationalHealthCheck(env)
+  await runStrategicAlignmentChecks(env)
 }

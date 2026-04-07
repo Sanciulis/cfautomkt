@@ -153,6 +153,36 @@ Proximos passos:
 
 ## Historico de Atualizacoes
 
+### 2026-04-07 - Agente autonomo alinhado a estrategia operacional (90 dias)
+Data da atualizacao: 2026-04-07
+Responsavel: Engenharia
+Entrega realizada:
+- Guardrails estrategicos adicionados ao ciclo `scheduled` para checagem automatica de alinhamento.
+- Novas verificacoes:
+ - Crescimento semanal da NSM (leads convertidos/semana) vs meta de +25%.
+ - Taxa de opt-out agregada (newsletter + service) vs limite maximo de 5%.
+ - Operacoes estagnadas por mais de 7 dias (campanhas/jornadas ativas).
+ - Reducao de tempo medio para conversao (proxy newsletter) vs meta de -30%.
+- Dedupe de alertas estrategicos em KV para evitar ruido operacional.
+- Registro das divergencias em `agent_decisions` com tipos:
+ - `strategy_alignment_gap`
+ - `strategy_guardrail_breach`
+ - `strategy_control_room_alert`
+Fluxos impactados:
+- Agente autonomo (cron/scheduled)
+- Control Room (priorizacao e intervencao)
+- Governanca de estrategia baseada em dados
+Metricas antes:
+- Agente autonomo aplicava regras operacionais sem validar aderencia explicita ao plano estrategico de 90 dias.
+Metricas depois:
+- Ciclo autonomo passa a monitorar aderencia continua as metas-chave definidas no alinhamento.
+Riscos identificados:
+- Possivel falta de amostra em janelas curtas pode limitar alguns calculos de comparacao.
+Acoes corretivas:
+- Alertas estrategicos usam dedupe e so disparam quando ha desvio relevante.
+Proximos passos:
+- Expor esses sinais estrategicos em card dedicado no painel "Agente Autonomo".
+
 ### 2026-04-01 - Marco inicial de observabilidade de inferencia
 Data da atualizacao: 2026-04-01
 Responsavel: Engenharia
