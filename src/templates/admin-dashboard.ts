@@ -1,4 +1,4 @@
-﻿import { DEFAULT_WHATSAPP_TEST_MESSAGE, DEFAULT_EMAIL_TEST_MESSAGE, DEFAULT_TELEGRAM_TEST_MESSAGE, DEFAULT_AI_MODEL } from '../constants'
+import { DEFAULT_WHATSAPP_TEST_MESSAGE, DEFAULT_EMAIL_TEST_MESSAGE, DEFAULT_TELEGRAM_TEST_MESSAGE, DEFAULT_AI_MODEL } from '../constants'
 import { escapeHtml } from '../utils'
 
 export function renderAdminDashboardPage(data: {
@@ -270,7 +270,7 @@ export function renderAdminDashboardPage(data: {
     .map(
       (campaign) =>
         `<tr>
-          <td><code class="compact-code">${escapeHtml(campaign.id.slice(0, 8))}â€¦</code></td>
+          <td><code class="compact-code">${escapeHtml(campaign.id.slice(0, 8))}…</code></td>
           <td><span class="font-bold">${escapeHtml(campaign.name)}</span></td>
           <td><span class="badge badge-outline">${escapeHtml(campaign.channel)}</span></td>
           <td><span class="badge ${campaign.status === 'active' ? 'badge-success' : 'badge-warn'}">${escapeHtml(campaign.status)}</span></td>
@@ -283,7 +283,7 @@ export function renderAdminDashboardPage(data: {
     .map(
       (user) =>
         `<tr>
-          <td><code class="compact-code">${escapeHtml(user.id.slice(0, 8))}â€¦</code></td>
+          <td><code class="compact-code">${escapeHtml(user.id.slice(0, 8))}…</code></td>
           <td><span class="font-bold">${escapeHtml(user.name || '-')}</span></td>
           <td><span class="text-xs opacity-60">${escapeHtml(user.email || user.phone || '-')}</span></td>
           <td><span class="badge badge-outline">${escapeHtml(user.preferred_channel)}</span></td>
@@ -314,7 +314,7 @@ export function renderAdminDashboardPage(data: {
       (journey) =>
         `<tr>
           <td><code class="compact-code">${escapeHtml(journey.id.slice(0, 8))}\u2026</code></td>
-          <td><span class="font-bold">${escapeHtml(journey.name)}</span><br/><span class="text-xs opacity-60">${escapeHtml((journey.product_name || journey.objective || 'Em ConstruÃ§Ã£o').slice(0, 60))}${(journey.product_name || journey.objective || '').length > 60 ? 'â€¦' : ''}</span></td>
+          <td><span class="font-bold">${escapeHtml(journey.name)}</span><br/><span class="text-xs opacity-60">${escapeHtml((journey.product_name || journey.objective || 'Em Construção').slice(0, 60))}${(journey.product_name || journey.objective || '').length > 60 ? '…' : ''}</span></td>
           <td><span class="badge badge-outline">${journey.enrollmentCount} leads</span></td>
           <td><span class="badge ${journey.status === 'active' ? 'badge-success' : 'badge-warn'}">${escapeHtml(journey.status)}</span></td>
           <td>
@@ -356,7 +356,7 @@ export function renderAdminDashboardPage(data: {
       return `<a href="${href}" class="control-entity-item ${isActive ? 'active' : ''}">
         <div>
           <div class="font-bold">${escapeHtml(campaign.name)}</div>
-          <div class="text-xs opacity-60">Canal ${escapeHtml(campaign.channel)} â€¢ Atualizado ${escapeHtml(campaign.updated_at ? new Date(campaign.updated_at).toLocaleDateString('pt-BR') : '-')}</div>
+          <div class="text-xs opacity-60">Canal ${escapeHtml(campaign.channel)} • Atualizado ${escapeHtml(campaign.updated_at ? new Date(campaign.updated_at).toLocaleDateString('pt-BR') : '-')}</div>
         </div>
         <span class="badge ${statusClass}">${escapeHtml(campaign.status)}</span>
       </a>`
@@ -417,7 +417,7 @@ export function renderAdminDashboardPage(data: {
 
   const campaignControlBodyHtml = (() => {
     if (!selectedCampaign) {
-      return '<div class="timeline-content"><span class="text-sm opacity-60">Nenhuma campanha disponÃ­vel para controle no momento.</span></div>'
+      return '<div class="timeline-content"><span class="text-sm opacity-60">Nenhuma campanha disponível para controle no momento.</span></div>'
     }
 
     const sent = selectedCampaign.stats.sent
@@ -431,7 +431,7 @@ export function renderAdminDashboardPage(data: {
       .map(
         (row) =>
           `<tr>
-            <td><code class="compact-code">${escapeHtml(row.userId.slice(0, 8))}â€¦</code></td>
+            <td><code class="compact-code">${escapeHtml(row.userId.slice(0, 8))}…</code></td>
             <td>${escapeHtml(row.userName || '-')}</td>
             <td><span class="badge badge-outline">${escapeHtml(row.eventType)}</span></td>
             <td><span class="badge badge-outline">${escapeHtml(row.channel)}</span></td>
@@ -444,18 +444,18 @@ export function renderAdminDashboardPage(data: {
       <div class="mini-stat-grid">
         <div class="mini-stat-card"><span class="text-xs opacity-60">Envios</span><strong>${sent}</strong></div>
         <div class="mini-stat-card"><span class="text-xs opacity-60">Abertura</span><strong>${openRate.toFixed(1)}%</strong></div>
-        <div class="mini-stat-card"><span class="text-xs opacity-60">ConversÃ£o</span><strong>${conversionRate.toFixed(1)}%</strong></div>
+        <div class="mini-stat-card"><span class="text-xs opacity-60">Conversão</span><strong>${conversionRate.toFixed(1)}%</strong></div>
         <div class="mini-stat-card"><span class="text-xs opacity-60">Falhas</span><strong>${failed}</strong></div>
       </div>
 
       <div class="flow-rail">
         <div class="flow-node"><span class="text-xs opacity-60">Segmento</span><strong>${sent}</strong></div>
-        <div class="flow-arrow">â†’</div>
+        <div class="flow-arrow">→</div>
         <div class="flow-node"><span class="text-xs opacity-60">Copy IA</span><strong>${selectedCampaign.stats.clicked}</strong></div>
-        <div class="flow-arrow">â†’</div>
+        <div class="flow-arrow">→</div>
         <div class="flow-node"><span class="text-xs opacity-60">Canal</span><strong>${escapeHtml(selectedCampaign.channel)}</strong></div>
-        <div class="flow-arrow">â†’</div>
-        <div class="flow-node"><span class="text-xs opacity-60">ConversÃµes</span><strong>${converted}</strong></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-node"><span class="text-xs opacity-60">Conversões</span><strong>${converted}</strong></div>
       </div>
 
       ${showOperationalControls ? `
@@ -490,7 +490,7 @@ export function renderAdminDashboardPage(data: {
             <div class="form-group" style="grid-column:1 / -1;"><label class="input-label">Base Copy</label><textarea class="input-control" name="baseCopy" rows="4">${escapeHtml(selectedCampaign.base_copy || '')}</textarea></div>
             <div class="form-group"><label class="input-label">Oferta / Incentivo</label><input class="input-control" name="incentiveOffer" value="${escapeHtml(selectedCampaign.incentive_offer || '')}" /></div>
           </div>
-          <button type="submit" class="btn btn-glass" style="width:auto;">Salvar EdiÃ§Ã£o</button>
+          <button type="submit" class="btn btn-glass" style="width:auto;">Salvar Edição</button>
         </form>
       ` : ''}
 
@@ -511,7 +511,7 @@ export function renderAdminDashboardPage(data: {
 
   const journeyControlBodyHtml = (() => {
     if (!selectedJourney) {
-      return '<div class="timeline-content"><span class="text-sm opacity-60">Nenhuma jornada disponÃ­vel para controle no momento.</span></div>'
+      return '<div class="timeline-content"><span class="text-sm opacity-60">Nenhuma jornada disponível para controle no momento.</span></div>'
     }
 
     const phaseMax = Math.max(1, ...selectedJourney.phaseCounts.map((entry) => entry.count))
@@ -534,7 +534,7 @@ export function renderAdminDashboardPage(data: {
       .map(
         (row) =>
           `<tr>
-            <td><code class="compact-code">${escapeHtml(row.userId.slice(0, 8))}â€¦</code></td>
+            <td><code class="compact-code">${escapeHtml(row.userId.slice(0, 8))}…</code></td>
             <td>${escapeHtml(row.userName || '-')}</td>
             <td><span class="badge badge-outline">${escapeHtml(row.currentPhase)}</span></td>
             <td>${row.turns}</td>
@@ -547,7 +547,7 @@ export function renderAdminDashboardPage(data: {
       <div class="mini-stat-grid">
         <div class="mini-stat-card"><span class="text-xs opacity-60">Leads Inscritos</span><strong>${selectedJourney.totalEnrollments}</strong></div>
         <div class="mini-stat-card"><span class="text-xs opacity-60">Retidos</span><strong>${selectedJourney.retainedEnrollments}</strong></div>
-        <div class="mini-stat-card"><span class="text-xs opacity-60">RetenÃ§Ã£o</span><strong>${retentionRate.toFixed(1)}%</strong></div>
+        <div class="mini-stat-card"><span class="text-xs opacity-60">Retenção</span><strong>${retentionRate.toFixed(1)}%</strong></div>
         <div class="mini-stat-card"><span class="text-xs opacity-60">Persona</span><strong>${escapeHtml(selectedJourney.personaName || '-')}</strong></div>
       </div>
 
@@ -579,7 +579,7 @@ export function renderAdminDashboardPage(data: {
             <div class="form-group" style="grid-column:1 / -1;"><label class="input-label">Objetivo da Jornada</label><textarea class="input-control" name="objective" rows="3">${escapeHtml(selectedJourney.objective || '')}</textarea></div>
             <div class="form-group" style="grid-column:1 / -1;"><label class="input-label">System Prompt</label><textarea class="input-control" name="systemPrompt" rows="5">${escapeHtml(selectedJourney.systemPrompt || '')}</textarea></div>
           </div>
-          <button type="submit" class="btn btn-glass" style="width:auto;">Salvar EdiÃ§Ã£o</button>
+          <button type="submit" class="btn btn-glass" style="width:auto;">Salvar Edição</button>
         </form>
       ` : ''}
 
@@ -587,10 +587,10 @@ export function renderAdminDashboardPage(data: {
         <div class="table-container" style="margin-top:20px;">
           <table>
             <thead>
-              <tr><th>Lead</th><th>Nome</th><th>Fase</th><th>Turnos</th><th>Ãšltimo contato</th></tr>
+              <tr><th>Lead</th><th>Nome</th><th>Fase</th><th>Turnos</th><th>Último contato</th></tr>
             </thead>
             <tbody>
-              ${recentEnrollmentsRows || '<tr><td colspan="5" class="opacity-40 text-center py-8">Sem inscriÃ§Ãµes recentes para esta jornada.</td></tr>'}
+              ${recentEnrollmentsRows || '<tr><td colspan="5" class="opacity-40 text-center py-8">Sem inscrições recentes para esta jornada.</td></tr>'}
             </tbody>
           </table>
         </div>
@@ -603,7 +603,7 @@ export function renderAdminDashboardPage(data: {
   const whatsappTestMessage = escapeHtml(data.whatsappIntegration.testMessage ?? DEFAULT_WHATSAPP_TEST_MESSAGE)
   const whatsappUpdatedAtLabel = data.whatsappIntegration.updatedAt
     ? `Configurado em ${new Date(data.whatsappIntegration.updatedAt).toLocaleDateString()}`
-    : 'Aguardando configuraÃ§Ã£o'
+    : 'Aguardando configuração'
   
   const dispatchTokenStatus = data.whatsappIntegration.dispatchTokenConfigured
     ? '<span class="status-indicator status-ready">API Gateway Ativa</span>'
@@ -615,7 +615,7 @@ export function renderAdminDashboardPage(data: {
   const emailTestMessage = escapeHtml(data.emailIntegration.testMessage ?? DEFAULT_EMAIL_TEST_MESSAGE)
   const emailUpdatedAtLabel = data.emailIntegration.updatedAt
     ? `Atualizado: ${new Date(data.emailIntegration.updatedAt).toLocaleString('pt-BR')}`
-    : 'Aguardando configuraÃ§Ã£o'
+    : 'Aguardando configuração'
 
   const telegramWebhookUrl = escapeHtml(data.telegramIntegration.webhookUrl ?? '')
   const telegramInboundWebhookUrl = escapeHtml(data.telegramIntegration.inboundWebhookUrl ?? '')
@@ -623,7 +623,7 @@ export function renderAdminDashboardPage(data: {
   const telegramTestMessage = escapeHtml(data.telegramIntegration.testMessage ?? DEFAULT_TELEGRAM_TEST_MESSAGE)
   const telegramUpdatedAtLabel = data.telegramIntegration.updatedAt
     ? `Atualizado: ${new Date(data.telegramIntegration.updatedAt).toLocaleString('pt-BR')}`
-    : 'Aguardando configuraÃ§Ã£o'
+    : 'Aguardando configuração'
   const telegramConversationEnabled = data.telegramIntegration.conversationEnabled
   const telegramAiModel = escapeHtml(data.telegramIntegration.aiModel ?? DEFAULT_AI_MODEL)
   const telegramMaxReplyChars = data.telegramIntegration.maxReplyChars
@@ -655,7 +655,7 @@ export function renderAdminDashboardPage(data: {
       return `<a href="${href}" class="control-entity-item ${isActive ? 'active' : ''}">
         <div>
           <div class="font-bold">${sessionLabel}</div>
-          <div class="text-xs opacity-60">${escapeHtml(session.sourceContact)} â€¢ ${session.messageCount} msgs â€¢ ${escapeHtml(lastMessageLabel)}</div>
+          <div class="text-xs opacity-60">${escapeHtml(session.sourceContact)} • ${session.messageCount} msgs • ${escapeHtml(lastMessageLabel)}</div>
         </div>
         <div class="flex items-center" style="gap:8px;">
           <span class="badge ${resolveNewsletterStatusClass(session.status)}">${escapeHtml(session.status)}</span>
@@ -672,8 +672,8 @@ export function renderAdminDashboardPage(data: {
           : message.direction === 'agent'
             ? 'badge-success'
             : 'badge-glass'
-      const sentimentLabel = message.sentimentLabel ? ` â€¢ ${message.sentimentLabel}` : ''
-      const aiLabel = message.aiModel ? ` â€¢ ${message.aiModel}` : ''
+      const sentimentLabel = message.sentimentLabel ? ` • ${message.sentimentLabel}` : ''
+      const aiLabel = message.aiModel ? ` • ${message.aiModel}` : ''
       return `<tr>
         <td><span class="badge ${directionBadgeClass}">${escapeHtml(message.direction)}</span></td>
         <td><span class="text-sm">${escapeHtml(message.messageText)}</span></td>
@@ -720,7 +720,7 @@ export function renderAdminDashboardPage(data: {
       return `<a href="${href}" class="control-entity-item ${isActive ? 'active' : ''}">
         <div>
           <div class="font-bold">${sessionLabel}</div>
-          <div class="text-xs opacity-60">${escapeHtml(session.sourceContact)} â€¢ ${session.messageCount} msgs â€¢ intent ${intentLabel}</div>
+          <div class="text-xs opacity-60">${escapeHtml(session.sourceContact)} • ${session.messageCount} msgs • intent ${intentLabel}</div>
           <div class="text-xs opacity-40">${escapeHtml(lastMessageLabel)}</div>
         </div>
         <div class="flex items-center" style="gap:8px;">
@@ -738,9 +738,9 @@ export function renderAdminDashboardPage(data: {
           : message.direction === 'agent'
             ? 'badge-success'
             : 'badge-glass'
-      const intentLabel = message.intent ? ` â€¢ ${message.intent}` : ''
-      const sentimentLabel = message.sentimentLabel ? ` â€¢ ${message.sentimentLabel}` : ''
-      const aiLabel = message.aiModel ? ` â€¢ ${message.aiModel}` : ''
+      const intentLabel = message.intent ? ` • ${message.intent}` : ''
+      const sentimentLabel = message.sentimentLabel ? ` • ${message.sentimentLabel}` : ''
+      const aiLabel = message.aiModel ? ` • ${message.aiModel}` : ''
       return `<tr>
         <td><span class="badge ${directionBadgeClass}">${escapeHtml(message.direction)}</span></td>
         <td><span class="text-sm">${escapeHtml(message.messageText)}</span></td>
@@ -752,7 +752,7 @@ export function renderAdminDashboardPage(data: {
   const serviceAppointmentRowsHtml = data.serviceAgentSession.appointments
     .map((appointment) =>
       `<tr>
-        <td><code class="compact-code">${escapeHtml(appointment.id.slice(0, 8))}â€¦</code></td>
+        <td><code class="compact-code">${escapeHtml(appointment.id.slice(0, 8))}…</code></td>
         <td>${escapeHtml(appointment.serviceType || '-')}</td>
         <td>${escapeHtml(appointment.requestedDate || '-')} ${escapeHtml(appointment.requestedTime || '')}</td>
         <td><span class="badge badge-outline">${escapeHtml(appointment.status)}</span></td>
@@ -763,7 +763,7 @@ export function renderAdminDashboardPage(data: {
   const serviceQuoteRowsHtml = data.serviceAgentSession.quotes
     .map((quote) =>
       `<tr>
-        <td><code class="compact-code">${escapeHtml(quote.id.slice(0, 8))}â€¦</code></td>
+        <td><code class="compact-code">${escapeHtml(quote.id.slice(0, 8))}…</code></td>
         <td>${escapeHtml(quote.serviceType || '-')}</td>
         <td>${escapeHtml(quote.budgetRange || '-')}</td>
         <td><span class="badge badge-glass">${escapeHtml(quote.status)}</span></td>
@@ -1669,20 +1669,20 @@ export function renderAdminDashboardPage(data: {
         <span>Insights</span>
       </a>
       
-      <div class="nav-label">ComunicaÃ§Ã£o</div>
+      <div class="nav-label">Comunicação</div>
       <a href="#" class="nav-item" data-view="campaigns">
         <svg fill="currentColor" viewBox="0 0 20 20"><path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"></path></svg>
         <span>Campanhas</span>
       </a>
       <a href="#" class="nav-item" data-view="dispatch">
         <svg fill="currentColor" viewBox="0 0 20 20"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z"></path></svg>
-        <span>LaboratÃ³rio Envios</span>
+        <span>Laboratório Envios</span>
       </a>
 
-      <div class="nav-label">Crescimento & AudiÃªncia</div>
+      <div class="nav-label">Crescimento & Audiência</div>
       <a href="#" class="nav-item" data-view="wa-groups">
         <svg fill="currentColor" viewBox="0 0 20 20"><path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z"></path></svg>
-        <span>Grupos e ExtraÃ§Ã£o</span>
+        <span>Grupos e Extração</span>
       </a>
       <a href="#" class="nav-item" data-view="users">
         <svg fill="currentColor" viewBox="0 0 20 20"><path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a7 7 0 017 7v1H1v-1a7 7 0 017-7z"></path></svg>
@@ -1690,7 +1690,7 @@ export function renderAdminDashboardPage(data: {
       </a>
       <a href="#" class="nav-item" data-view="integrations">
         <svg fill="currentColor" viewBox="0 0 20 20"><path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM11 13a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
-        <span>IntegraÃ§Ãµes</span>
+        <span>Integrações</span>
       </a>
 
       <div class="nav-label">Engajamento Inteligente</div>
@@ -1719,16 +1719,16 @@ export function renderAdminDashboardPage(data: {
         <span>Playground AI</span>
       </a>
 
-      <div class="nav-label">ConfiguraÃ§Ã£o</div>
+      <div class="nav-label">Configuração</div>
       <a href="#" class="nav-item" data-view="ai-agent">
         <svg fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path></svg>
-        <span>Agente AutÃ´nomo</span>
+        <span>Agente Autônomo</span>
       </a>
     </nav>
 
     <div class="sidebar-footer">
       <form method="post" action="/admin/logout">
-        <button class="logout-btn" type="submit">Encerrar SessÃ£o</button>
+        <button class="logout-btn" type="submit">Encerrar Sessão</button>
       </form>
     </div>
   </aside>
@@ -1743,7 +1743,7 @@ export function renderAdminDashboardPage(data: {
           </button>
           <h2 id="view-title" class="page-title">Dashboard Operacional</h2>
         </div>
-        <p id="view-subtitle" class="page-subtitle">VisÃ£o 360Âº de interaÃ§Ãµes e mÃ©tricas virais.</p>
+        <p id="view-subtitle" class="page-subtitle">Visão 360º de interações e métricas virais.</p>
       </div>
       <div class="flex items-center gap-4">
         <span class="badge badge-glass font-mono text-[10px] uppercase tracking-widest">v2.1.0 AI-Ready</span>
@@ -1759,12 +1759,12 @@ export function renderAdminDashboardPage(data: {
           <div class="stat-accent"></div>
         </div>
         <div class="stat-card">
-          <span class="stat-label">InteraÃ§Ãµes</span>
+          <span class="stat-label">Interações</span>
           <span class="stat-value">${data.totals.interactions}</span>
           <div class="stat-accent" style="background:var(--secondary)"></div>
         </div>
         <div class="stat-card">
-          <span class="stat-label">ConversÃ£o MÃ©dia</span>
+          <span class="stat-label">Conversão Média</span>
           <span class="stat-value">${(data.metrics.conversionRate * 100).toFixed(1)}%</span>
           <div class="stat-accent"></div>
         </div>
@@ -1777,13 +1777,13 @@ export function renderAdminDashboardPage(data: {
 
       <section class="panel" style="margin-bottom: 28px;">
         <div class="panel-header">
-          <h3 class="panel-title">MÃ©tricas Operacionais de IA</h3>
+          <h3 class="panel-title">Métricas Operacionais de IA</h3>
           <div class="flex items-center" style="gap:10px;">
             <select id="ai-metrics-range" class="input-control" style="width:auto; min-width:140px; padding:8px 12px; font-size:0.85rem;">
-              <option value="6">Ãšltimas 6h</option>
-              <option value="24" selected>Ãšltimas 24h</option>
-              <option value="72">Ãšltimas 72h</option>
-              <option value="168">Ãšltimos 7 dias</option>
+              <option value="6">Últimas 6h</option>
+              <option value="24" selected>Últimas 24h</option>
+              <option value="72">Últimas 72h</option>
+              <option value="168">Últimos 7 dias</option>
             </select>
             <button id="btn-refresh-ai-metrics" class="btn btn-glass" style="width:auto; padding:8px 14px; font-size:0.8rem;">Atualizar</button>
           </div>
@@ -1791,7 +1791,7 @@ export function renderAdminDashboardPage(data: {
 
         <div class="stats-grid" style="margin-bottom: 20px;">
           <div class="stat-card" style="padding:16px; border-radius:16px;">
-            <span class="stat-label">InferÃªncias</span>
+            <span class="stat-label">Inferências</span>
             <span id="ai-total" class="stat-value" style="font-size:1.4rem;">-</span>
           </div>
           <div class="stat-card" style="padding:16px; border-radius:16px;">
@@ -1803,13 +1803,13 @@ export function renderAdminDashboardPage(data: {
             <span id="ai-fallback-rate" class="stat-value" style="font-size:1.4rem;">-</span>
           </div>
           <div class="stat-card" style="padding:16px; border-radius:16px;">
-            <span class="stat-label">LatÃªncia p95</span>
+            <span class="stat-label">Latência p95</span>
             <span id="ai-latency-p95" class="stat-value" style="font-size:1.4rem;">-</span>
           </div>
         </div>
 
         <div id="ai-metrics-alert" class="timeline-content" style="margin-bottom: 16px;">
-          <span class="badge badge-glass">Aguardando dados de saÃºde operacional de IA...</span>
+          <span class="badge badge-glass">Aguardando dados de saúde operacional de IA...</span>
         </div>
 
         <div class="table-container">
@@ -1822,16 +1822,16 @@ export function renderAdminDashboardPage(data: {
                 <th>Fallback %</th>
                 <th>P50 (ms)</th>
                 <th>P95 (ms)</th>
-                <th>Ãšltimo Evento</th>
+                <th>Último Evento</th>
               </tr>
             </thead>
             <tbody id="ai-metrics-rows">
-              <tr><td colspan="7" class="opacity-40 text-center py-8">Carregando mÃ©tricas de IA...</td></tr>
+              <tr><td colspan="7" class="opacity-40 text-center py-8">Carregando métricas de IA...</td></tr>
             </tbody>
           </table>
         </div>
 
-        <div class="text-xs opacity-60" id="ai-metrics-updated-at" style="margin-top:12px;">Aguardando atualizaÃ§Ã£o...</div>
+        <div class="text-xs opacity-60" id="ai-metrics-updated-at" style="margin-top:12px;">Aguardando atualização...</div>
       </section>
 
       <div class="panel-grid">
@@ -1843,7 +1843,7 @@ export function renderAdminDashboardPage(data: {
           <div class="table-container">
             <table>
               <thead>
-                <tr><th>ID</th><th>Campanha</th><th>Canal</th><th>Status</th><th>Ãšltima AÃ§Ã£o</th></tr>
+                <tr><th>ID</th><th>Campanha</th><th>Canal</th><th>Status</th><th>Última Ação</th></tr>
               </thead>
               <tbody>
                 ${campaignsHtml || '<tr><td colspan="5" class="opacity-40 text-center py-8">Nenhuma campanha registrada</td></tr>'}
@@ -1858,7 +1858,7 @@ export function renderAdminDashboardPage(data: {
             <span class="badge badge-success text-[9px]">Live AI</span>
           </div>
           <div class="timeline">
-            ${decisionsHtml || '<div class="opacity-30 text-sm">Aguardando primeiras decisÃµes autÃ´nomas...</div>'}
+            ${decisionsHtml || '<div class="opacity-30 text-sm">Aguardando primeiras decisões autônomas...</div>'}
           </div>
         </section>
       </div>
@@ -1873,7 +1873,7 @@ export function renderAdminDashboardPage(data: {
             <div class="panel-grid">
               <div>
                 <div class="form-group"><label class="input-label">Nome da Campanha</label><input class="input-control" name="name" placeholder="Ex: Onboarding Especial Setembro" required /></div>
-                <div class="form-group"><label class="input-label">Base Copy (IA serÃ¡ aplicada sobre este texto)</label><textarea class="input-control" name="baseCopy" placeholder="OlÃ¡ {{name}}, temos uma oferta..." required></textarea></div>
+                <div class="form-group"><label class="input-label">Base Copy (IA será aplicada sobre este texto)</label><textarea class="input-control" name="baseCopy" placeholder="Olá {{name}}, temos uma oferta..." required></textarea></div>
               </div>
               <div>
                 <div class="form-group"><label class="input-label">Identificador Customizado (Opcional)</label><input class="input-control" name="id" placeholder="onboarding-2026" /></div>
@@ -1898,16 +1898,16 @@ export function renderAdminDashboardPage(data: {
     <div id="view-dispatch" class="view-content">
       <div class="panel-grid" style="grid-template-columns: 1fr;">
         <section class="panel">
-          <h3 class="panel-title">MÃ³dulo de Disparo em Lote</h3>
-          <p class="text-sm opacity-60 mb-8">Execute aÃ§Ãµes massivas com personalizaÃ§Ã£o em tempo real (Llama 3).</p>
+          <h3 class="panel-title">Módulo de Disparo em Lote</h3>
+          <p class="text-sm opacity-60 mb-8">Execute ações massivas com personalização em tempo real (Llama 3).</p>
           <form method="post" action="/admin/actions/campaign/dispatch">
             <div class="panel-grid">
               <div>
                 <div class="form-group"><label class="input-label">ID da Campanha</label><input class="input-control" name="campaignId" required /></div>
-                <div class="form-group"><label class="input-label">Testar um Lead EspecÃ­fico (Opcional)</label><input class="input-control" name="targetUserId" placeholder="Ex: usr_123456" /></div>
-                <div class="form-group"><label class="input-label">Limite de UsuÃ¡rios</label><input class="input-control" name="limit" type="number" value="100" min="1" max="500" /></div>
+                <div class="form-group"><label class="input-label">Testar um Lead Específico (Opcional)</label><input class="input-control" name="targetUserId" placeholder="Ex: usr_123456" /></div>
+                <div class="form-group"><label class="input-label">Limite de Usuários</label><input class="input-control" name="limit" type="number" value="100" min="1" max="500" /></div>
                 <div class="form-group">
-                  <label class="input-label">EstratÃ©gia de SegmentaÃ§Ã£o</label>
+                  <label class="input-label">Estratégia de Segmentação</label>
                   <select class="input-control" name="includeInactive">
                     <option value="false">Base Ativa (Engajados 30d)</option>
                     <option value="true">Full Base (Deep Reactivation)</option>
@@ -1915,22 +1915,22 @@ export function renderAdminDashboardPage(data: {
                 </div>
               </div>
               <div>
-                <div class="form-group"><label class="input-label">Capa de PersonalizaÃ§Ã£o IA</label>
+                <div class="form-group"><label class="input-label">Capa de Personalização IA</label>
                   <select class="input-control" name="personalize">
                     <option value="true">Ativar (Llama 3 Dynamic)</option>
                     <option value="false">Base Copy Original</option>
                   </select>
                 </div>
-                <div class="form-group"><label class="input-label">Modo de SeguranÃ§a</label>
+                <div class="form-group"><label class="input-label">Modo de Segurança</label>
                   <select class="input-control" name="dryRun">
-                    <option value="true">Dry Run (SimulaÃ§Ã£o sem envio)</option>
+                    <option value="true">Dry Run (Simulação sem envio)</option>
                     <option value="false">LIVE (Envio Real)</option>
                   </select>
                 </div>
                 <div class="form-group"><label class="input-label">Webhook Override (Labs)</label><input class="input-control" name="webhookUrlOverride" placeholder="https://httpbin.org/post" /></div>
               </div>
             </div>
-            <button type="submit" class="btn btn-primary">Iniciar OrquestraÃ§Ã£o de Disparo</button>
+            <button type="submit" class="btn btn-primary">Iniciar Orquestração de Disparo</button>
           </form>
         </section>
       </div>
@@ -1961,7 +1961,7 @@ export function renderAdminDashboardPage(data: {
         </section>
 
         <section class="panel">
-          <h3 class="panel-title">GestÃ£o de Opt-out (LGPD)</h3>
+          <h3 class="panel-title">Gestão de Opt-out (LGPD)</h3>
           <form method="post" action="/admin/actions/user/optout" style="margin-top:20px">
             <div class="form-group"><label class="input-label">Lead ID</label><input class="input-control" name="userId" required /></div>
             <div class="form-group"><label class="input-label">Motivo / Origem</label><input class="input-control" name="source" value="manual_admin_intervention" /></div>
@@ -1970,13 +1970,13 @@ export function renderAdminDashboardPage(data: {
         </section>
 
         <section class="panel">
-          <h3 class="panel-title">InjeÃ§Ã£o em Massa (CSV)</h3>
+          <h3 class="panel-title">Injeção em Massa (CSV)</h3>
           <p class="text-sm opacity-60 mb-6">Importe lotes de leads via CSV. Colunas Suportadas: <code>name</code>, <code>email</code>, <code>phone</code>, <code>channel</code>.</p>
           <form method="post" action="/admin/actions/user/upload" enctype="multipart/form-data">
             <div class="form-group">
               <input class="input-control" type="file" name="csvFile" accept=".csv" required style="padding: 10px; background: rgba(0,0,0,0.1);" />
             </div>
-            <button type="submit" class="btn btn-glass">Processar IngestÃ£o</button>
+            <button type="submit" class="btn btn-glass">Processar Ingestão</button>
           </form>
         </section>
       </div>
@@ -1984,7 +1984,7 @@ export function renderAdminDashboardPage(data: {
       <div class="panel-grid" style="margin-top:24px; grid-template-columns: 1fr;">
         <section class="panel">
           <div class="panel-header">
-            <h3 class="panel-title">Ãšltimos Leads Registrados</h3>
+            <h3 class="panel-title">Últimos Leads Registrados</h3>
           </div>
           <div class="table-container">
             <table>
@@ -2010,7 +2010,7 @@ export function renderAdminDashboardPage(data: {
           </div>
           <p class="text-sm opacity-60 mb-4">Selecione um grupo do WhatsApp conectado para mapear seus participantes.</p>
           <div id="groups-list-container" class="space-y-4 max-h-[400px] overflow-y-auto pr-2">
-            <div class="opacity-40 text-sm text-center py-8">Clique em Buscar Grupos para iniciar a sincronizaÃ§Ã£o com seu Gateway.</div>
+            <div class="opacity-40 text-sm text-center py-8">Clique em Buscar Grupos para iniciar a sincronização com seu Gateway.</div>
           </div>
         </section>
 
@@ -2054,7 +2054,7 @@ export function renderAdminDashboardPage(data: {
               <div class="form-group"><label class="input-label">Status Link</label><input class="input-control" value="${escapeHtml(whatsappUpdatedAtLabel)}" readonly /></div>
             </div>
             <div class="form-group"><label class="input-label">Payload de Boas-vindas (Teste)</label><textarea class="input-control" name="testMessage">${whatsappTestMessage}</textarea></div>
-            <div class="form-group"><label class="input-label">Administrative Gateway Token (Para extraÃ§Ã£o de grupos)</label><input class="input-control" name="gatewayToken" type="password" value="${escapeHtml(data.whatsappIntegration.gatewayToken || '')}" placeholder="Insira o Token de Admin do Gateway" /></div>
+            <div class="form-group"><label class="input-label">Administrative Gateway Token (Para extração de grupos)</label><input class="input-control" name="gatewayToken" type="password" value="${escapeHtml(data.whatsappIntegration.gatewayToken || '')}" placeholder="Insira o Token de Admin do Gateway" /></div>
             <button type="submit" class="btn btn-primary">Atualizar Infraestrutura</button>
           </form>
         </section>
@@ -2069,7 +2069,7 @@ export function renderAdminDashboardPage(data: {
             </div>
             <div class="form-group"><label class="input-label">Assunto de Boas-vindas (Teste)</label><input class="input-control" name="testSubject" value="${emailTestSubject}" /></div>
             <div class="form-group"><label class="input-label">Corpo do E-mail (Teste)</label><textarea class="input-control" name="testMessage">${emailTestMessage}</textarea></div>
-            <button type="submit" class="btn btn-primary">Salvar ConfiguraÃ§Ã£o de E-mail</button>
+            <button type="submit" class="btn btn-primary">Salvar Configuração de E-mail</button>
           </form>
         </section>
 
@@ -2077,7 +2077,7 @@ export function renderAdminDashboardPage(data: {
           <h3 class="panel-title">Configurador Telegram Bot</h3>
           <form method="post" action="/admin/actions/integration/telegram/save" style="margin-top:24px">
             <div class="form-group"><label class="input-label">Endpoint de Entrega (JSON Webhook)</label><input class="input-control" name="webhookUrl" value="${telegramWebhookUrl}" placeholder="https://gw.dominio.com/send/telegram" required /></div>
-            <div class="form-group"><label class="input-label">Webhook Inbound (Telegram -> Plataforma)</label><input class="input-control" name="inboundWebhookUrl" value="${telegramInboundWebhookUrl}" placeholder="https://api.seudominio.com/webhooks/telegram/inbound" required /><p class="text-xs opacity-50" style="margin-top:8px;">Este endpoint recebe mensagens do bot. Use o botÃ£o "Configurar Webhook no Telegram" para registrar automaticamente.</p></div>
+            <div class="form-group"><label class="input-label">Webhook Inbound (Telegram -> Plataforma)</label><input class="input-control" name="inboundWebhookUrl" value="${telegramInboundWebhookUrl}" placeholder="https://api.seudominio.com/webhooks/telegram/inbound" required /><p class="text-xs opacity-50" style="margin-top:8px;">Este endpoint recebe mensagens do bot. Use o botão "Configurar Webhook no Telegram" para registrar automaticamente.</p></div>
             <div class="panel-grid" style="grid-template-columns: 1fr 1fr; gap:16px;">
               <div class="form-group"><label class="input-label">Chat ID de Teste</label><input class="input-control" name="testChatId" value="${telegramTestChatId}" /><p class="text-xs opacity-40" style="margin-top:8px;">Use apenas chat ID numerico (ex: 123456789) ou @canal. Nao use token do bot neste campo.</p></div>
               <div class="form-group"><label class="input-label">Status Link</label><input class="input-control" value="${escapeHtml(telegramUpdatedAtLabel)}" readonly /></div>
@@ -2085,13 +2085,13 @@ export function renderAdminDashboardPage(data: {
             <div class="form-group"><label class="input-label">Mensagem de Boas-vindas (Teste)</label><textarea class="input-control" name="testMessage">${telegramTestMessage}</textarea></div>
             
             <div class="panel" style="margin-top:24px; background: rgba(99,102,241,0.05); border: 1px solid rgba(99,102,241,0.2);">
-              <h4 class="panel-title" style="font-size: 1rem; margin-bottom: 16px;">ConfiguraÃ§Ãµes de ConversaÃ§Ã£o AI</h4>
+              <h4 class="panel-title" style="font-size: 1rem; margin-bottom: 16px;">Configurações de Conversação AI</h4>
               <div class="form-group">
                 <label class="checkbox-label">
                   <input type="checkbox" name="conversationEnabled" ${telegramConversationEnabled ? 'checked' : ''} />
-                  <span>Habilitar conversaÃ§Ã£o AI</span>
+                  <span>Habilitar conversação AI</span>
                 </label>
-                <p class="text-xs opacity-60" style="margin-top: 4px;">Permite que o bot responda automaticamente Ã s mensagens recebidas</p>
+                <p class="text-xs opacity-60" style="margin-top: 4px;">Permite que o bot responda automaticamente às mensagens recebidas</p>
               </div>
               <div class="panel-grid" style="grid-template-columns: 1fr 1fr; gap:16px; margin-top: 16px;">
                 <div class="form-group">
@@ -2103,7 +2103,7 @@ export function renderAdminDashboardPage(data: {
                   </select>
                 </div>
                 <div class="form-group">
-                  <label class="input-label">MÃ¡ximo de Caracteres por Resposta</label>
+                  <label class="input-label">Máximo de Caracteres por Resposta</label>
                   <input type="number" class="input-control" name="maxReplyChars" value="${telegramMaxReplyChars || 1000}" min="100" max="4000" />
                   <p class="text-xs opacity-60" style="margin-top: 4px;">Limite de caracteres para respostas do bot</p>
                 </div>
@@ -2111,7 +2111,7 @@ export function renderAdminDashboardPage(data: {
             </div>
             
             <div class="flex items-center gap-3" style="margin-top:24px;">
-              <button type="submit" class="btn btn-primary">Salvar ConfiguraÃ§Ã£o do Telegram</button>
+              <button type="submit" class="btn btn-primary">Salvar Configuração do Telegram</button>
               <button type="submit" formaction="/admin/actions/integration/telegram/set-webhook" formmethod="post" class="btn btn-glass">Configurar Webhook no Telegram</button>
               <button type="submit" formaction="/admin/actions/integration/telegram/test" formmethod="post" class="btn btn-glass">Salvar e Testar Telegram</button>
             </div>
@@ -2134,31 +2134,31 @@ export function renderAdminDashboardPage(data: {
       <div class="panel-grid" style="grid-template-columns: 1fr;">
         <section class="panel">
           <h3 class="panel-title">Pipeline de Jornadas (AIDA)</h3>
-          <p class="text-sm opacity-60 mb-6">Defina jornadas conversacionais com persona AI. O sistema guia leads pelo funil: <strong>Discovery â†’ Interest â†’ Desire â†’ Action â†’ Retained</strong></p>
+          <p class="text-sm opacity-60 mb-6">Defina jornadas conversacionais com persona AI. O sistema guia leads pelo funil: <strong>Discovery → Interest → Desire → Action → Retained</strong></p>
           
           <div style="display:flex;gap:8px;margin-bottom:32px;flex-wrap:wrap;">
             <div style="flex:1;min-width:120px;padding:16px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.2);border-radius:16px;text-align:center;">
-              <div style="font-size:1.5rem;">ðŸ”</div>
+              <div style="font-size:1.5rem;">🔍</div>
               <div class="text-xs font-bold" style="color:var(--primary);margin-top:4px;">Discovery</div>
-              <div class="text-xs opacity-40">AtenÃ§Ã£o</div>
+              <div class="text-xs opacity-40">Atenção</div>
             </div>
             <div style="flex:1;min-width:120px;padding:16px;background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.2);border-radius:16px;text-align:center;">
-              <div style="font-size:1.5rem;">ðŸ’¡</div>
+              <div style="font-size:1.5rem;">💡</div>
               <div class="text-xs font-bold" style="color:var(--secondary);margin-top:4px;">Interest</div>
               <div class="text-xs opacity-40">Interesse</div>
             </div>
             <div style="flex:1;min-width:120px;padding:16px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.2);border-radius:16px;text-align:center;">
-              <div style="font-size:1.5rem;">ðŸ”¥</div>
+              <div style="font-size:1.5rem;">🔥</div>
               <div class="text-xs font-bold" style="color:#f59e0b;margin-top:4px;">Desire</div>
               <div class="text-xs opacity-40">Desejo</div>
             </div>
             <div style="flex:1;min-width:120px;padding:16px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.2);border-radius:16px;text-align:center;">
-              <div style="font-size:1.5rem;">ðŸŽ¯</div>
+              <div style="font-size:1.5rem;">🎯</div>
               <div class="text-xs font-bold" style="color:#ef4444;margin-top:4px;">Action</div>
-              <div class="text-xs opacity-40">ConversÃ£o</div>
+              <div class="text-xs opacity-40">Conversão</div>
             </div>
             <div style="flex:1;min-width:120px;padding:16px;background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.3);border-radius:16px;text-align:center;">
-              <div style="font-size:1.5rem;">ðŸ’Ž</div>
+              <div style="font-size:1.5rem;">💎</div>
               <div class="text-xs font-bold" style="color:var(--primary);margin-top:4px;">Retained</div>
               <div class="text-xs opacity-40">Advocacy</div>
             </div>
@@ -2171,11 +2171,11 @@ export function renderAdminDashboardPage(data: {
           <h3 class="panel-title">Criar Nova Jornada</h3>
           <form method="post" action="/admin/actions/journey/create" style="margin-top:24px">
             <div class="form-group"><label class="input-label">Nome da Jornada</label><input class="input-control" name="name" placeholder="Ex: Onboarding Premium Q4" required /></div>
-            <div class="form-group"><label class="input-label">Objetivo (O que a jornada quer alcanÃ§ar)</label><input class="input-control" name="objective" placeholder="Ex: Converter leads frios em clientes pagantes" required /></div>
+            <div class="form-group"><label class="input-label">Objetivo (O que a jornada quer alcançar)</label><input class="input-control" name="objective" placeholder="Ex: Converter leads frios em clientes pagantes" required /></div>
             <div class="form-group">
               <label class="input-label">Persona AI (System Prompt)</label>
-              <textarea class="input-control" name="systemPrompt" rows="6" placeholder="VocÃª Ã© a Ana, consultora de marketing digital com 5 anos de experiÃªncia. Fale de forma casual e amigÃ¡vel, como uma amiga que quer ajudar..." required></textarea>
-              <p class="text-xs opacity-40" style="margin-top:8px;">Define a personalidade da IA. Seja especÃ­fico sobre tom, vocabulÃ¡rio, e estilo de comunicaÃ§Ã£o.</p>
+              <textarea class="input-control" name="systemPrompt" rows="6" placeholder="Você é a Ana, consultora de marketing digital com 5 anos de experiência. Fale de forma casual e amigável, como uma amiga que quer ajudar..." required></textarea>
+              <p class="text-xs opacity-40" style="margin-top:8px;">Define a personalidade da IA. Seja específico sobre tom, vocabulário, e estilo de comunicação.</p>
             </div>
             <div class="form-group"><label class="input-label">ID Customizado (Opcional)</label><input class="input-control" name="id" placeholder="onboarding-premium-q4" /></div>
             <button type="submit" class="btn btn-primary">Publicar Jornada</button>
@@ -2194,10 +2194,10 @@ export function renderAdminDashboardPage(data: {
             <h4 style="font-size:0.9rem;font-weight:700;margin-bottom:12px;">Como Funciona</h4>
             <div class="text-sm opacity-60" style="line-height:1.8;">
               <p>1. <strong>Crie uma jornada</strong> com persona AI personalizada</p>
-              <p>2. <strong>Inscreva leads</strong> â€” eles comeÃ§am na fase Discovery</p>
+              <p>2. <strong>Inscreva leads</strong> — eles começam na fase Discovery</p>
               <p>3. <strong>A IA conversa</strong> no tom da persona definida</p>
-              <p>4. <strong>AvanÃ§o automÃ¡tico</strong> de fase baseado nas respostas do lead</p>
-              <p>5. <strong>ConversÃ£o e retenÃ§Ã£o</strong> â€” leads viram clientes e indicadores</p>
+              <p>4. <strong>Avanço automático</strong> de fase baseado nas respostas do lead</p>
+              <p>5. <strong>Conversão e retenção</strong> — leads viram clientes e indicadores</p>
             </div>
           </div>
         </section>
@@ -2212,7 +2212,7 @@ export function renderAdminDashboardPage(data: {
           <div class="table-container">
             <table>
               <thead>
-                <tr><th>ID</th><th>Jornada</th><th>Leads</th><th>Status</th><th>AÃ§Ã£o</th></tr>
+                <tr><th>ID</th><th>Jornada</th><th>Leads</th><th>Status</th><th>Ação</th></tr>
               </thead>
               <tbody>
                 ${journeysHtml || '<tr><td colspan="5" class="opacity-40 text-center py-8">Nenhuma jornada criada ainda. Crie a primeira acima!</td></tr>'}
@@ -2228,10 +2228,10 @@ export function renderAdminDashboardPage(data: {
       <div class="panel-grid" style="grid-template-columns: 1fr;">
         <section class="panel">
           <div class="panel-header">
-            <h3 class="panel-title">Controle Total de ExecuÃ§Ã£o</h3>
+            <h3 class="panel-title">Controle Total de Execução</h3>
             <span class="badge badge-glass">${escapeHtml(data.controlPanel.selectedType)}</span>
           </div>
-          <p class="text-sm opacity-60" style="margin-top:-8px;margin-bottom:16px;">Selecione campanha ou jornada, altere nÃ­vel de detalhe e execute aÃ§Ãµes de iniciar, pausar, parar e editar.</p>
+          <p class="text-sm opacity-60" style="margin-top:-8px;margin-bottom:16px;">Selecione campanha ou jornada, altere nível de detalhe e execute ações de iniciar, pausar, parar e editar.</p>
           <div class="chip-row">${controlTypeSelectorHtml}</div>
           <div class="chip-row">${controlDetailSelectorHtml}</div>
           <div class="text-xs opacity-60">Item em foco: ${escapeHtml(data.controlPanel.selectedId || 'nenhum')}</div>
@@ -2241,7 +2241,7 @@ export function renderAdminDashboardPage(data: {
       <div class="panel-grid" style="margin-top:24px; grid-template-columns: minmax(280px, 0.9fr) 1.4fr;">
         <section class="panel">
           <div class="panel-header">
-            <h3 class="panel-title">${isJourneyControl ? 'Jornadas SelecionÃ¡veis' : 'Campanhas SelecionÃ¡veis'}</h3>
+            <h3 class="panel-title">${isJourneyControl ? 'Jornadas Selecionáveis' : 'Campanhas Selecionáveis'}</h3>
             <span class="badge badge-outline">${isJourneyControl ? data.controlPanel.journeys.length : data.controlPanel.campaigns.length}</span>
           </div>
           <div class="control-entity-list">
@@ -2255,7 +2255,7 @@ export function renderAdminDashboardPage(data: {
           <div class="panel-header">
             <h3 class="panel-title">${isJourneyControl ? `Jornada: ${escapeHtml(selectedJourney?.name || '-')}` : `Campanha: ${escapeHtml(selectedCampaign?.name || '-')}`}</h3>
             <div class="flex items-center" style="gap:8px;">
-              <span class="badge badge-outline">NÃ­vel ${escapeHtml(data.controlPanel.detailLevel)}</span>
+              <span class="badge badge-outline">Nível ${escapeHtml(data.controlPanel.detailLevel)}</span>
               <span class="badge ${(isJourneyControl ? selectedJourney?.status : selectedCampaign?.status) === 'active' ? 'badge-success' : 'badge-warn'}">${escapeHtml((isJourneyControl ? selectedJourney?.status : selectedCampaign?.status) || 'sem status')}</span>
             </div>
           </div>
@@ -2677,13 +2677,13 @@ export function renderAdminDashboardPage(data: {
       <div class="panel-grid" style="grid-template-columns: 1fr 2fr; align-items: start;">
         <!-- Setup Mocks -->
         <section class="panel">
-          <h3 class="panel-title">Configurar SimulaÃ§Ã£o</h3>
+          <h3 class="panel-title">Configurar Simulação</h3>
           <p class="text-sm opacity-60 mb-6">Ajuste os blocos antes de conversar.</p>
           
           <div class="space-y-4">
             <div class="form-group">
               <label class="input-label">Persona (System Prompt)</label>
-              <textarea id="pg-sys-prompt" class="input-control" rows="3">VocÃª Ã© a Ana, consultora super amigÃ¡vel de onboarding do FluxoIA, fala de forma natural e rÃ¡pida.</textarea>
+              <textarea id="pg-sys-prompt" class="input-control" rows="3">Você é a Ana, consultora super amigável de onboarding do FluxoIA, fala de forma natural e rápida.</textarea>
             </div>
             
             <div class="form-group">
@@ -2694,10 +2694,10 @@ export function renderAdminDashboardPage(data: {
             <div class="form-group">
               <label class="input-label">Fase Inicial do Lead (AIDA)</label>
               <select id="pg-phase" class="input-control">
-                <option value="discovery">Discovery (AtenÃ§Ã£o/Descoberta)</option>
+                <option value="discovery">Discovery (Atenção/Descoberta)</option>
                 <option value="interest">Interest (Aprofundamento/Interesse)</option>
-                <option value="desire">Desire (ConstruÃ§Ã£o de Desejo)</option>
-                <option value="action">Action (Fechamento explÃ­cito)</option>
+                <option value="desire">Desire (Construção de Desejo)</option>
+                <option value="action">Action (Fechamento explícito)</option>
               </select>
             </div>
             
@@ -2719,7 +2719,7 @@ export function renderAdminDashboardPage(data: {
           
           <div id="pg-chat-history" style="flex:1; overflow-y:auto; padding: 16px 0; display:flex; flex-direction:column; gap:12px;">
              <!-- Messages will appear here -->
-             <div class="text-center opacity-40 text-sm mt-8">Nenhuma mensagem ainda. Envie um "OlÃ¡" para comeÃ§ar a simulaÃ§Ã£o.</div>
+             <div class="text-center opacity-40 text-sm mt-8">Nenhuma mensagem ainda. Envie um "Olá" para começar a simulação.</div>
           </div>
           
           <div style="border-top:1px solid var(--border); padding-top: 16px; display:flex; gap: 8px;">
@@ -2736,7 +2736,7 @@ export function renderAdminDashboardPage(data: {
          <!-- Left Pane: Target Selection and Active State -->
          <section class="panel">
            <h3 class="panel-title mb-4">Gerenciamento de Prompts Centrais</h3>
-           <p class="text-sm opacity-60 mb-6">Selecione um fluxo ou target para inspecionar, editar e publicÃ¡-lo para todos os usuÃ¡rios.</p>
+           <p class="text-sm opacity-60 mb-6">Selecione um fluxo ou target para inspecionar, editar e publicá-lo para todos os usuários.</p>
            
            <div class="mb-6">
              <label class="text-xs opacity-60 uppercase tracking-widest font-bold">Target ID (Fluxo ou Persona)</label>
@@ -2767,7 +2767,7 @@ export function renderAdminDashboardPage(data: {
                     <input id="prompt-editor-model" class="input-control mt-2" type="text" value="@cf/meta/llama-3-8b-instruct" />
                   </div>
                   <div>
-                    <label class="text-xs opacity-60">Motivo da Nova VersÃ£o (Rollout)</label>
+                    <label class="text-xs opacity-60">Motivo da Nova Versão (Rollout)</label>
                     <input id="prompt-editor-reason" class="input-control mt-2" type="text" placeholder="Ex: Ajuste fino para CTA mais agressivo" />
                   </div>
                </div>
@@ -2775,10 +2775,10 @@ export function renderAdminDashboardPage(data: {
                <div class="grid grid-cols-2 gap-4 mt-4">
                   <div>
                     <label class="text-xs opacity-60">Mensagem de Teste (dry-run)</label>
-                    <input id="prompt-preview-user-message" class="input-control mt-2" type="text" placeholder="Mensagem usada para simular inferÃªncia de preview" />
+                    <input id="prompt-preview-user-message" class="input-control mt-2" type="text" placeholder="Mensagem usada para simular inferência de preview" />
                   </div>
                   <div>
-                    <label class="text-xs opacity-60">Dry-run de InferÃªncia</label>
+                    <label class="text-xs opacity-60">Dry-run de Inferência</label>
                     <label class="input-control mt-2" style="display:flex; align-items:center; gap:8px; cursor:pointer;">
                       <input id="prompt-preview-run-inference" type="checkbox" style="width:16px; height:16px;" checked />
                       <span style="font-size:0.85rem;">Executar chamada real da IA no preview</span>
@@ -2788,7 +2788,7 @@ export function renderAdminDashboardPage(data: {
 
                <div class="flex justify-between mt-6" style="gap: 8px; flex-wrap: wrap;">
                  <button id="btn-prompt-preview" class="btn btn-outline">Validar / Preview</button>
-                 <button id="btn-prompt-publish" class="btn btn-primary">Publicar Nova VersÃ£o (Ir para Prod)</button>
+                 <button id="btn-prompt-publish" class="btn btn-primary">Publicar Nova Versão (Ir para Prod)</button>
                </div>
 
                <div id="prompt-preview-box" class="hidden" style="margin-top:16px; border:1px solid var(--border); border-radius:14px; padding:14px; background: var(--glass);">
@@ -2800,10 +2800,10 @@ export function renderAdminDashboardPage(data: {
 
          <!-- Right Pane: History & Rollback -->
          <section class="panel">
-           <h3 class="panel-title mb-4">Auditoria e Versionamento <span id="prompt-history-badge" class="badge badge-outline ml-2">HistÃ³rico Vazio</span></h3>
-           <p class="text-sm opacity-60 mb-6">Consulte o histÃ³rico de alteraÃ§Ãµes. O sistema usarÃ¡ em ProduÃ§Ã£o sempre o <b>ID Mais Recente</b> no topo da pilha.</p>
+           <h3 class="panel-title mb-4">Auditoria e Versionamento <span id="prompt-history-badge" class="badge badge-outline ml-2">Histórico Vazio</span></h3>
+           <p class="text-sm opacity-60 mb-6">Consulte o histórico de alterações. O sistema usará em Produção sempre o <b>ID Mais Recente</b> no topo da pilha.</p>
            
-           <div id="prompt-history-loading" class="text-center opacity-40 text-sm hidden py-8">Buscando histÃ³rico...</div>
+           <div id="prompt-history-loading" class="text-center opacity-40 text-sm hidden py-8">Buscando histórico...</div>
            
            <div class="table-container" style="max-height: 480px; overflow-y: auto;">
              <table>
@@ -2811,11 +2811,11 @@ export function renderAdminDashboardPage(data: {
                  <tr>
                    <th>Data / ID</th>
                    <th>Reason & Model</th>
-                   <th>AÃ§Ã£o</th>
+                   <th>Ação</th>
                  </tr>
                </thead>
                <tbody id="prompt-history-rows">
-                 <tr><td colspan="3" class="opacity-40 text-center py-8">Pressione 'Carregar' para visualizar o histÃ³rico.</td></tr>
+                 <tr><td colspan="3" class="opacity-40 text-center py-8">Pressione 'Carregar' para visualizar o histórico.</td></tr>
                </tbody>
              </table>
            </div>
@@ -2833,7 +2833,7 @@ export function renderAdminDashboardPage(data: {
                   <div class="flex justify-between items-start">
                      <div>
                         <span class="text-primary font-bold">Auto-Kill Low Performance</span>
-                        <p class="text-xs opacity-60 mt-1">Pausa campanhas com conversÃ£o < 2% apÃ³s 20 disparos.</p>
+                        <p class="text-xs opacity-60 mt-1">Pausa campanhas com conversão < 2% após 20 disparos.</p>
                      </div>
                      <span class="badge badge-success">Ativo</span>
                   </div>
@@ -2841,8 +2841,8 @@ export function renderAdminDashboardPage(data: {
                <div class="p-4 bg-glass-bright rounded-xl border border-border mt-4">
                   <div class="flex justify-between items-start">
                      <div>
-                        <span class="text-primary font-bold">ReativaÃ§Ã£o SMS (Cold Users)</span>
-                        <p class="text-xs opacity-60 mt-1">Migra canais se usuÃ¡rio estiver offline hÃ¡ +3 dias.</p>
+                        <span class="text-primary font-bold">Reativação SMS (Cold Users)</span>
+                        <p class="text-xs opacity-60 mt-1">Migra canais se usuário estiver offline há +3 dias.</p>
                      </div>
                      <span class="badge badge-success">Ativo</span>
                   </div>
@@ -2851,7 +2851,7 @@ export function renderAdminDashboardPage(data: {
                   <div class="flex justify-between items-start">
                      <div>
                         <span class="text-primary font-bold">Incentivo Viral (Milestones)</span>
-                        <p class="text-xs opacity-60 mt-1">Identifica power referrers (5+ indicaÃ§Ãµes).</p>
+                        <p class="text-xs opacity-60 mt-1">Identifica power referrers (5+ indicações).</p>
                      </div>
                      <span class="badge badge-success">Ativo</span>
                   </div>
@@ -2965,17 +2965,17 @@ export function renderAdminDashboardPage(data: {
                  </div>
                  <div>
                    <label class="text-xs opacity-60"><span class="badge badge-warn text-xs mr-2">A</span> Prompt Base (Controle)</label>
-                   <textarea id="eval-prompt-a" class="input-control font-mono text-xs" rows="3">VocÃª Ã© um vendedor. Responda normal.</textarea>
+                   <textarea id="eval-prompt-a" class="input-control font-mono text-xs" rows="3">Você é um vendedor. Responda normal.</textarea>
                  </div>
                  <div>
                    <label class="text-xs opacity-60"><span class="badge badge-success text-xs mr-2">B</span> Prompt Teste (Desafiante)</label>
-                   <textarea id="eval-prompt-b" class="input-control font-mono text-xs" rows="3">VocÃª Ã© agressivo com vendas, crie urgÃªncia.</textarea>
+                   <textarea id="eval-prompt-b" class="input-control font-mono text-xs" rows="3">Você é agressivo com vendas, crie urgência.</textarea>
                  </div>
-                 <button id="btn-run-eval" class="btn btn-primary mt-2">Rodar AvaliaÃ§Ã£o A/B</button>
+                 <button id="btn-run-eval" class="btn btn-primary mt-2">Rodar Avaliação A/B</button>
              </div>
              <!-- Right: Outputs -->
              <div class="flex flex-col p-4 bg-black rounded border border-border" style="overflow-y:auto; gap: 16px;">
-                <div id="eval-loading" class="text-xs opacity-60 text-center py-4 hidden">Aguardando inferÃªncia simultÃ¢nea...</div>
+                <div id="eval-loading" class="text-xs opacity-60 text-center py-4 hidden">Aguardando inferência simultânea...</div>
                 
                 <div id="eval-res-a" class="hidden">
                   <div class="flex items-center gap-2 mb-2"><span class="badge badge-warn text-xs">Resultado A</span></div>
@@ -3006,7 +3006,7 @@ export function renderAdminDashboardPage(data: {
        <div class="panel-grid" style="margin-top:24px; grid-template-columns: 1fr;">
          <section class="panel">
            <div class="panel-header">
-             <h3 class="panel-title">Qualidade de InteligÃªncia: Datasets de AvaliaÃ§Ã£o</h3>
+             <h3 class="panel-title">Qualidade de Inteligência: Datasets de Avaliação</h3>
              <div class="flex items-center" style="gap:10px;">
                <select id="ai-eval-limit" class="input-control" style="width:auto; min-width:140px; padding:8px 12px; font-size:0.85rem;">
                  <option value="100">100 registros</option>
@@ -3017,19 +3017,19 @@ export function renderAdminDashboardPage(data: {
                <button id="btn-export-eval-json" class="btn btn-glass" style="width:auto; padding:8px 14px; font-size:0.8rem;">Exportar Baseline (JSON)</button>
              </div>
            </div>
-           <p class="text-sm opacity-60 mt-4 mb-2">Utilize estes datasets para avaliar retrospectivamente a qualidade da IA (A/B testing de Prompts). Os dados sÃ£o ofuscados automaticamente.</p>
+           <p class="text-sm opacity-60 mt-4 mb-2">Utilize estes datasets para avaliar retrospectivamente a qualidade da IA (A/B testing de Prompts). Os dados são ofuscados automaticamente.</p>
          </section>
        </div>
 
        <div class="panel-grid" style="margin-top:24px; grid-template-columns: 1fr;">
          <section class="panel">
            <div class="panel-header">
-             <h3 class="panel-title">HistÃ³rico de Alertas Operacionais (IA)</h3>
+             <h3 class="panel-title">Histórico de Alertas Operacionais (IA)</h3>
              <div class="flex items-center" style="gap:10px;">
                <select id="ai-alerts-range" class="input-control" style="width:auto; min-width:140px; padding:8px 12px; font-size:0.85rem;">
-                 <option value="24">Ãšltimas 24h</option>
-                 <option value="72">Ãšltimas 72h</option>
-                 <option value="168" selected>Ãšltimos 7 dias</option>
+                 <option value="24">Últimas 24h</option>
+                 <option value="72">Últimas 72h</option>
+                 <option value="168" selected>Últimos 7 dias</option>
                </select>
                <button id="btn-refresh-ai-alerts" class="btn btn-glass" style="width:auto; padding:8px 14px; font-size:0.8rem;">Atualizar</button>
                <button id="btn-export-ai-alerts" class="btn btn-glass" style="width:auto; padding:8px 14px; font-size:0.8rem;">Exportar CSV</button>
@@ -3056,7 +3056,7 @@ export function renderAdminDashboardPage(data: {
 
            <div class="stats-grid" style="margin-top:16px; margin-bottom: 0;">
              <div class="stat-card" style="padding:16px; border-radius:16px;">
-               <span class="stat-label">TendÃªncia (7d)</span>
+               <span class="stat-label">Tendência (7d)</span>
                <span id="ai-alerts-trend-summary" class="stat-value" style="font-size:1.1rem;">-</span>
              </div>
              <div class="stat-card" style="padding:16px; border-radius:16px;">
@@ -3080,12 +3080,12 @@ export function renderAdminDashboardPage(data: {
                  </tr>
                </thead>
                <tbody id="ai-alerts-trend-rows">
-                 <tr><td colspan="4" class="opacity-40 text-center py-8">Sem tendÃªncia disponÃ­vel.</td></tr>
+                 <tr><td colspan="4" class="opacity-40 text-center py-8">Sem tendência disponível.</td></tr>
                </tbody>
              </table>
            </div>
 
-           <div class="text-xs opacity-60" id="ai-alerts-updated-at" style="margin-top:12px;">Aguardando atualizaÃ§Ã£o...</div>
+           <div class="text-xs opacity-60" id="ai-alerts-updated-at" style="margin-top:12px;">Aguardando atualização...</div>
          </section>
        </div>
     </div>
@@ -3146,19 +3146,19 @@ export function renderAdminDashboardPage(data: {
     const viewSubtitle = document.getElementById('view-subtitle');
 
     const viewMeta = {
-      'dashboard': { title: 'Dashboard Operacional', subtitle: 'VisÃ£o 360Âº de interaÃ§Ãµes e mÃ©tricas virais.' },
-      'campaigns': { title: 'GestÃ£o de Campanhas', subtitle: 'Crie e gerencie motores de crescimento.' },
-      'dispatch': { title: 'LaboratÃ³rio de Envios', subtitle: 'OrquestraÃ§Ã£o massiva com inteligÃªncia artificial.' },
-      'users': { title: 'Base de Leads', subtitle: 'GestÃ£o de perfis e conformidade LGPD.' },
-      'wa-groups': { title: 'Explorador de Grupos', subtitle: 'ExtraÃ§Ã£o e captura de audiÃªncia via grupos de WhatsApp.' },
-      'integrations': { title: 'IntegraÃ§Ãµes de Canais', subtitle: 'Configure webhooks e gateways de entrega multicanal.' },
-      'control-room': { title: 'Control Room', subtitle: 'Selecione campanha ou jornada, visualize diagrama e execute aÃ§Ãµes em tempo real.' },
-      'newsletter-agent': { title: 'Agente Newsletter', subtitle: 'Inicie abordagens por contato e audite histÃ³rico, sentimento e feedback em uma Ãºnica tela.' },
+      'dashboard': { title: 'Dashboard Operacional', subtitle: 'Visão 360º de interações e métricas virais.' },
+      'campaigns': { title: 'Gestão de Campanhas', subtitle: 'Crie e gerencie motores de crescimento.' },
+      'dispatch': { title: 'Laboratório de Envios', subtitle: 'Orquestração massiva com inteligência artificial.' },
+      'users': { title: 'Base de Leads', subtitle: 'Gestão de perfis e conformidade LGPD.' },
+      'wa-groups': { title: 'Explorador de Grupos', subtitle: 'Extração e captura de audiência via grupos de WhatsApp.' },
+      'integrations': { title: 'Integrações de Canais', subtitle: 'Configure webhooks e gateways de entrega multicanal.' },
+      'control-room': { title: 'Control Room', subtitle: 'Selecione campanha ou jornada, visualize diagrama e execute ações em tempo real.' },
+      'newsletter-agent': { title: 'Agente Newsletter', subtitle: 'Inicie abordagens por contato e audite histórico, sentimento e feedback em uma única tela.' },
       'service-agent': { title: 'Agente de Servicos', subtitle: 'Gerencie conversas de agendamento, orcamento e duvidas com rastreabilidade completa.' },
       'journeys': { title: 'Jornadas AI', subtitle: 'Crie e gerencie jornadas conversacionais com persona AI inteligente.' },
       'ai-prompts': { title: 'Engenharia de Prompt', subtitle: 'Versionamento, Rollback e Auditoria Oficial.' },
       'playground': { title: 'Playground AI', subtitle: 'Ambiente seguro para simular e calibrar o funil de IA.' },
-      'ai-agent': { title: 'Agente AutÃ´nomo', subtitle: 'SupervisÃ£o das decisÃµes tomadas pela IA na Edge.' }
+      'ai-agent': { title: 'Agente Autônomo', subtitle: 'Supervisão das decisões tomadas pela IA na Edge.' }
     };
 
     function activateView(targetView) {
@@ -3259,7 +3259,7 @@ export function renderAdminDashboardPage(data: {
         const data = await response.json();
 
         if (!response.ok || !data || data.error) {
-          throw new Error((data && data.error) || 'Falha ao carregar mÃ©tricas de IA');
+          throw new Error((data && data.error) || 'Falha ao carregar métricas de IA');
         }
 
         if (totalEl) totalEl.textContent = String(data.totals?.total ?? 0);
@@ -3270,16 +3270,16 @@ export function renderAdminDashboardPage(data: {
         const errRate = Number(data.totals?.errorRate || 0);
         const fallbackRate = Number(data.totals?.fallbackRate || 0);
         const p95 = Number(data.totals?.latencyP95Ms || 0);
-        let healthBadge = '<span class="badge badge-success">Status: saudÃ¡vel</span>';
-        let healthText = 'OperaÃ§Ã£o de IA dentro do esperado.';
+        let healthBadge = '<span class="badge badge-success">Status: saudável</span>';
+        let healthText = 'Operação de IA dentro do esperado.';
 
         if (errRate > 0.05 || fallbackRate > 0.15 || p95 > 2500) {
-          healthBadge = '<span class="badge badge-warn">Status: atenÃ§Ã£o</span>';
-          healthText = 'HÃ¡ degradaÃ§Ã£o moderada. Revisar fluxos com maior erro/fallback.';
+          healthBadge = '<span class="badge badge-warn">Status: atenção</span>';
+          healthText = 'Há degradação moderada. Revisar fluxos com maior erro/fallback.';
         }
         if (errRate > 0.1 || fallbackRate > 0.25 || p95 > 4000) {
-          healthBadge = '<span class="badge" style="background: rgba(239, 68, 68, 0.15); color: #f87171;">Status: crÃ­tico</span>';
-          healthText = 'DegradaÃ§Ã£o crÃ­tica detectada. Priorizar mitigaÃ§Ã£o imediata.';
+          healthBadge = '<span class="badge" style="background: rgba(239, 68, 68, 0.15); color: #f87171;">Status: crítico</span>';
+          healthText = 'Degradação crítica detectada. Priorizar mitigação imediata.';
         }
 
         if (alertEl) {
@@ -3293,7 +3293,7 @@ export function renderAdminDashboardPage(data: {
 
         const flows = Array.isArray(data.flows) ? data.flows : [];
         if (!flows.length) {
-          rowsEl.innerHTML = '<tr><td colspan="7" class="opacity-40 text-center py-8">Sem dados de inferÃªncia no perÃ­odo selecionado.</td></tr>';
+          rowsEl.innerHTML = '<tr><td colspan="7" class="opacity-40 text-center py-8">Sem dados de inferência no período selecionado.</td></tr>';
         } else {
           rowsEl.innerHTML = flows.map((flow) => {
             const lastSeen = flow.lastSeenAt ? new Date(flow.lastSeenAt).toLocaleString('pt-BR') : '-';
@@ -3311,13 +3311,13 @@ export function renderAdminDashboardPage(data: {
 
         if (updatedAtEl) {
           const generatedAt = data.generatedAt ? new Date(data.generatedAt).toLocaleString('pt-BR') : '-';
-          updatedAtEl.textContent = 'Atualizado em ' + generatedAt + ' â€¢ Janela: ' + String(data.rangeHours || hours) + 'h';
+          updatedAtEl.textContent = 'Atualizado em ' + generatedAt + ' • Janela: ' + String(data.rangeHours || hours) + 'h';
         }
       } catch (error) {
-        rowsEl.innerHTML = '<tr><td colspan="7" class="text-center py-8" style="color:#f87171;">Erro ao carregar mÃ©tricas de IA.</td></tr>';
-        if (updatedAtEl) updatedAtEl.textContent = 'Falha na atualizaÃ§Ã£o: ' + String(error);
+        rowsEl.innerHTML = '<tr><td colspan="7" class="text-center py-8" style="color:#f87171;">Erro ao carregar métricas de IA.</td></tr>';
+        if (updatedAtEl) updatedAtEl.textContent = 'Falha na atualização: ' + String(error);
         if (alertEl) {
-          alertEl.innerHTML = '<span class="badge" style="background: rgba(239, 68, 68, 0.15); color: #f87171;">Status: indisponÃ­vel</span><p class="text-sm opacity-80" style="margin-top:8px;">NÃ£o foi possÃ­vel carregar as mÃ©tricas operacionais de IA.</p>';
+          alertEl.innerHTML = '<span class="badge" style="background: rgba(239, 68, 68, 0.15); color: #f87171;">Status: indisponível</span><p class="text-sm opacity-80" style="margin-top:8px;">Não foi possível carregar as métricas operacionais de IA.</p>';
         }
       } finally {
         refreshBtn.disabled = false;
@@ -3362,16 +3362,16 @@ export function renderAdminDashboardPage(data: {
             trendSummaryEl.textContent = 'piorando';
             trendSummaryEl.style.color = '#f87171';
           } else if (warningCount > 0) {
-            trendSummaryEl.textContent = 'atenÃ§Ã£o';
+            trendSummaryEl.textContent = 'atenção';
             trendSummaryEl.style.color = '#f59e0b';
           } else {
-            trendSummaryEl.textContent = 'estÃ¡vel';
+            trendSummaryEl.textContent = 'estável';
             trendSummaryEl.style.color = '#10b981';
           }
         }
 
         if (!alerts.length) {
-          rowsEl.innerHTML = '<tr><td colspan="6" class="opacity-40 text-center py-8">Sem alertas no perÃ­odo selecionado.</td></tr>';
+          rowsEl.innerHTML = '<tr><td colspan="6" class="opacity-40 text-center py-8">Sem alertas no período selecionado.</td></tr>';
         } else {
           rowsEl.innerHTML = alerts.map((alert) => {
             const severity = String(alert.severity || 'unknown');
@@ -3394,7 +3394,7 @@ export function renderAdminDashboardPage(data: {
 
         if (trendRowsEl) {
           if (!trendByDay.length) {
-            trendRowsEl.innerHTML = '<tr><td colspan="4" class="opacity-40 text-center py-8">Sem tendÃªncia no perÃ­odo selecionado.</td></tr>';
+            trendRowsEl.innerHTML = '<tr><td colspan="4" class="opacity-40 text-center py-8">Sem tendência no período selecionado.</td></tr>';
           } else {
             trendRowsEl.innerHTML = trendByDay.map((item) => {
               const day = item.day ? new Date(item.day + 'T00:00:00').toLocaleDateString('pt-BR') : '-';
@@ -3413,14 +3413,14 @@ export function renderAdminDashboardPage(data: {
 
         if (updatedAtEl) {
           const generatedAt = data.generatedAt ? new Date(data.generatedAt).toLocaleString('pt-BR') : '-';
-          updatedAtEl.textContent = 'Atualizado em ' + generatedAt + ' â€¢ Janela: ' + String(data.rangeHours || hours) + 'h';
+          updatedAtEl.textContent = 'Atualizado em ' + generatedAt + ' • Janela: ' + String(data.rangeHours || hours) + 'h';
         }
       } catch (error) {
         rowsEl.innerHTML = '<tr><td colspan="6" class="text-center py-8" style="color:#f87171;">Erro ao carregar alertas operacionais de IA.</td></tr>';
         if (trendRowsEl) {
-          trendRowsEl.innerHTML = '<tr><td colspan="4" class="text-center py-8" style="color:#f87171;">Erro ao carregar tendÃªncia de alertas.</td></tr>';
+          trendRowsEl.innerHTML = '<tr><td colspan="4" class="text-center py-8" style="color:#f87171;">Erro ao carregar tendência de alertas.</td></tr>';
         }
-        if (updatedAtEl) updatedAtEl.textContent = 'Falha na atualizaÃ§Ã£o: ' + String(error);
+        if (updatedAtEl) updatedAtEl.textContent = 'Falha na atualização: ' + String(error);
       } finally {
         refreshBtn.disabled = false;
         refreshBtn.textContent = 'Atualizar';
@@ -3645,7 +3645,7 @@ export function renderAdminDashboardPage(data: {
         }
       }
 
-      promptPreviewMeta.textContent = statusParts.join(' â€¢ ');
+      promptPreviewMeta.textContent = statusParts.join(' • ');
 
       const renderedPromptText = String(preview?.renderedPrompt || '');
       const outputBlocks = ['=== Prompt Renderizado ===\\n' + renderedPromptText];
@@ -3691,12 +3691,12 @@ export function renderAdminDashboardPage(data: {
         document.getElementById('prompt-editor-model').value = data.active.model || '@cf/meta/llama-3-8b-instruct';
         document.getElementById('prompt-editor-reason').value = '';
 
-        // Habilitar Ã¡rea
+        // Habilitar área
         promptEditorArea.style.opacity = '1';
         promptEditorArea.style.pointerEvents = 'auto';
         hidePromptPreview();
 
-        // Preencher HistÃ³rico
+        // Preencher Histórico
         const history = data.history || [];
         document.getElementById('prompt-history-badge').innerText = history.length + ' deploys';
         if (history.length === 0) {
@@ -3744,7 +3744,7 @@ export function renderAdminDashboardPage(data: {
         const runInference = Boolean(promptPreviewRunInference && promptPreviewRunInference.checked);
         const userMessage = promptPreviewUserMessageInput ? promptPreviewUserMessageInput.value : '';
 
-        if (!promptText) return alert('Prompt base Ã© obrigatÃ³rio.');
+        if (!promptText) return alert('Prompt base é obrigatório.');
 
         btnPromptPreview.disabled = true;
         const previousLabel = btnPromptPreview.innerText;
@@ -3789,8 +3789,8 @@ export function renderAdminDashboardPage(data: {
          const model = document.getElementById('prompt-editor-model').value;
          const changeReason = document.getElementById('prompt-editor-reason').value || 'Ajustes via Painel Admin';
 
-         if(!promptText) return alert('Prompt base Ã© obrigatÃ³rio.');
-         if(confirm('Isso atualizarÃ¡ o comportamento AI de TODOS os usuÃ¡rios deste Target em ProduÃ§Ã£o. Tem certeza?')) {
+         if(!promptText) return alert('Prompt base é obrigatório.');
+         if(confirm('Isso atualizará o comportamento AI de TODOS os usuários deste Target em Produção. Tem certeza?')) {
             btnPromptPublish.disabled = true;
             btnPromptPublish.innerText = 'Publicando...';
 
@@ -3824,7 +3824,7 @@ export function renderAdminDashboardPage(data: {
                alert('Falha ao publicar: ' + e.message);
             } finally {
                btnPromptPublish.disabled = false;
-               btnPromptPublish.innerText = 'Publicar Nova VersÃ£o (Ir para Prod)';
+               btnPromptPublish.innerText = 'Publicar Nova Versão (Ir para Prod)';
             }
          }
       });
@@ -3836,7 +3836,7 @@ export function renderAdminDashboardPage(data: {
          document.getElementById('prompt-editor-text').value = v.prompt_text;
          document.getElementById('prompt-editor-model').value = v.model;
          document.getElementById('prompt-editor-reason').value = 'Rollback (Restaurado da v' + v.id + ') - ' + v.change_reason;
-         alert('Prompt V' + id + ' foi carregado no Editor! Revise o texto Ã  esquerda e clique em "Publicar Nova VersÃ£o" se desejar jogar para ProduÃ§Ã£o.');
+         alert('Prompt V' + id + ' foi carregado no Editor! Revise o texto à esquerda e clique em "Publicar Nova Versão" se desejar jogar para Produção.');
        }
     };
 
@@ -3848,7 +3848,7 @@ export function renderAdminDashboardPage(data: {
         const promptA = document.getElementById('eval-prompt-a').value.trim();
         const promptB = document.getElementById('eval-prompt-b').value.trim();
 
-        if (!transcript || !promptA) return alert('Transcript e Prompt A sÃ£o obrigatÃ³rios.');
+        if (!transcript || !promptA) return alert('Transcript e Prompt A são obrigatórios.');
 
         btnRunEval.disabled = true;
         btnRunEval.textContent = 'Avaliando...';
@@ -3873,7 +3873,7 @@ export function renderAdminDashboardPage(data: {
             document.getElementById('eval-txt-a').textContent = '"' + res.resultA.response + '"';
             document.getElementById('eval-tone-a').textContent = res.resultA.scorecard.tone;
             document.getElementById('eval-cta-a').textContent = res.resultA.scorecard.cta;
-            document.getElementById('eval-safe-a').textContent = (res.resultA.scorecard.safety === 1 ? 'Sim' : 'NÃ£o');
+            document.getElementById('eval-safe-a').textContent = (res.resultA.scorecard.safety === 1 ? 'Sim' : 'Não');
             const colorA = res.resultA.scorecard.safety === 0 ? '#f87171' : 'inherit';
             document.getElementById('eval-safe-a').style.color = colorA;
             document.getElementById('eval-rsn-a').textContent = res.resultA.scorecard.reasoning;
@@ -3885,25 +3885,25 @@ export function renderAdminDashboardPage(data: {
             document.getElementById('eval-txt-b').textContent = '"' + res.resultB.response + '"';
             document.getElementById('eval-tone-b').textContent = res.resultB.scorecard.tone;
             document.getElementById('eval-cta-b').textContent = res.resultB.scorecard.cta;
-            document.getElementById('eval-safe-b').textContent = (res.resultB.scorecard.safety === 1 ? 'Sim' : 'NÃ£o');
+            document.getElementById('eval-safe-b').textContent = (res.resultB.scorecard.safety === 1 ? 'Sim' : 'Não');
             const colorB = res.resultB.scorecard.safety === 0 ? '#f87171' : 'inherit';
             document.getElementById('eval-safe-b').style.color = colorB;
             document.getElementById('eval-rsn-b').textContent = res.resultB.scorecard.reasoning;
           }
 
         } catch (e) {
-          alert('Erro na avaliaÃ§Ã£o: ' + e);
+          alert('Erro na avaliação: ' + e);
         } finally {
           document.getElementById('eval-loading').classList.add('hidden');
           btnRunEval.disabled = false;
-          btnRunEval.textContent = 'Rodar AvaliaÃ§Ã£o A/B';
+          btnRunEval.textContent = 'Rodar Avaliação A/B';
         }
       });
     }
 
     // Navigation binding initialized near the top of this script.
 
-    // WA Groups â€” calls same-origin Worker proxy (no CORS, token stays server-side)
+    // WA Groups — calls same-origin Worker proxy (no CORS, token stays server-side)
     const btnFetchGroups = document.getElementById('btn-fetch-groups');
     const groupsContainer = document.getElementById('groups-list-container');
     const participantsContainer = document.getElementById('participants-list-container');
@@ -4173,7 +4173,7 @@ export function renderAdminDashboardPage(data: {
               const notice = document.createElement('div');
               notice.className = 'text-center text-xs font-mono mb-2 mt-2';
               notice.style.color = 'var(--success)';
-              notice.innerText = 'âš¡ SINAL DETECTADO: Funil AvanÃ§ou para -> ' + data.currentPhase.toUpperCase();
+              notice.innerText = '⚡ SINAL DETECTADO: Funil Avançou para -> ' + data.currentPhase.toUpperCase();
               chatContainer.appendChild(notice);
               
               document.getElementById('pg-phase').value = data.currentPhase;
@@ -4183,7 +4183,7 @@ export function renderAdminDashboardPage(data: {
            appendPgMessage('assistant', '[Erro da API] ' + (data.error || 'Falha no playground'));
         }
       } catch (err) {
-        appendPgMessage('assistant', '[ExceÃ§Ã£o] Falha de comunicaÃ§Ã£o de rede');
+        appendPgMessage('assistant', '[Exceção] Falha de comunicação de rede');
       } finally {
         btnPgSend.disabled = false;
         btnPgSend.innerText = 'Enviar';
@@ -4199,7 +4199,7 @@ export function renderAdminDashboardPage(data: {
 
       document.getElementById('btn-pg-reset').addEventListener('click', () => {
         pgChatHistory = [];
-        chatContainer.innerHTML = '<div class="text-center opacity-40 text-sm mt-8">HistÃ³rico resetado. Nova simulaÃ§Ã£o.</div>';
+        chatContainer.innerHTML = '<div class="text-center opacity-40 text-sm mt-8">Histórico resetado. Nova simulação.</div>';
         phaseDisplay.innerText = 'Fase: ' + document.getElementById('pg-phase').value;
       });
       
