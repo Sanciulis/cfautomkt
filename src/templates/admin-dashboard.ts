@@ -2955,6 +2955,7 @@ export function renderAdminDashboardPage(data: {
   </main>
 
   <script>
+    (() => {
 
     // Mobile Sidebar Logic
     const mobileBtn = document.getElementById('mobile-menu-btn');
@@ -3050,7 +3051,12 @@ export function renderAdminDashboardPage(data: {
       history.replaceState(null, null, '#' + targetView);
     }
 
+    const adminNavState = (window.__adminNavState = window.__adminNavState || { bound: false });
+
     function bindAdminNavigation() {
+      if (adminNavState.bound) return;
+      adminNavState.bound = true;
+
       navItems.forEach(item => {
         item.addEventListener('click', (event) => {
           event.preventDefault();
@@ -3064,6 +3070,13 @@ export function renderAdminDashboardPage(data: {
       } else {
         activateView('dashboard');
       }
+
+      window.addEventListener('hashchange', () => {
+        const hashView = window.location.hash.substring(1);
+        if (hashView && document.querySelector('[data-view="' + hashView + '"]')) {
+          activateView(hashView);
+        }
+      });
     }
 
     bindAdminNavigation();
@@ -3922,6 +3935,7 @@ export function renderAdminDashboardPage(data: {
       });
     }
 
+    })();
   </script>
 </body>
 </html>`
