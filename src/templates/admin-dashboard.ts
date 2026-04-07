@@ -3375,7 +3375,7 @@ export function renderAdminDashboardPage(data: {
       promptPreviewMeta.textContent = statusParts.join(' • ');
 
       const renderedPromptText = String(preview?.renderedPrompt || '');
-      const outputBlocks = ['=== Prompt Renderizado ===\n' + renderedPromptText];
+      const outputBlocks = ['=== Prompt Renderizado ===\\n' + renderedPromptText];
 
       if (dryRunInference?.requested) {
         const dryRunLines = [
@@ -3391,10 +3391,10 @@ export function renderAdminDashboardPage(data: {
           dryRunLines.push('Fallback usado: ' + (dryRunInference.fallbackUsed ? 'sim' : 'nao'));
         }
 
-        outputBlocks.push(dryRunLines.join('\n'));
+        outputBlocks.push(dryRunLines.join('\\n'));
       }
 
-      promptPreviewOutput.textContent = outputBlocks.join('\n\n');
+      promptPreviewOutput.textContent = outputBlocks.join('\\n\\n');
       promptPreviewBox.classList.remove('hidden');
     }
 
@@ -3495,7 +3495,7 @@ export function renderAdminDashboardPage(data: {
             if (validationErrors.length) {
               messageParts.push('Erros: ' + validationErrors.join(' | '));
             }
-            throw new Error(messageParts.join('\n'));
+            throw new Error(messageParts.join('\\n'));
           }
 
           showPromptPreview(preview, dryRunInference);
@@ -3538,12 +3538,12 @@ export function renderAdminDashboardPage(data: {
                  if (validationWarnings.length) {
                    messageParts.push('Avisos: ' + validationWarnings.join(' | '));
                  }
-                 throw new Error(messageParts.join('\n'));
+                 throw new Error(messageParts.join('\\n'));
                }
 
                const warnings = Array.isArray(data.warnings) ? data.warnings : [];
                const successMessage = warnings.length
-                 ? 'Publicado com sucesso!\n\nAvisos: ' + warnings.join(' | ')
+                 ? 'Publicado com sucesso!\\n\\nAvisos: ' + warnings.join(' | ')
                  : 'Publicado com sucesso!';
                alert(successMessage);
                await loadPromptData(); // refresh UI
