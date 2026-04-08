@@ -161,6 +161,15 @@ function buildAgentSlug(name: string): string {
     .slice(0, 64)
 }
 
+function parseFormCheckbox(value: unknown): boolean {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    return normalized === 'on' || normalized === 'true' || normalized === '1' || normalized === 'yes'
+  }
+  return false
+}
+
 async function ensureAdminAgentConfigsTable(env: Bindings): Promise<void> {
   await env.DB.prepare(
     `CREATE TABLE IF NOT EXISTS admin_agent_configs (
@@ -2767,12 +2776,12 @@ admin.post('/actions/agents/create', async (c) => {
       safeString(typeof form.testMessage === 'string' ? form.testMessage : null) ??
       'Mensagem de teste do agente.'
     const conversationEnabled = Object.prototype.hasOwnProperty.call(form, 'conversationEnabled')
-      ? toBoolean(form.conversationEnabled, false)
+      ? parseFormCheckbox(form.conversationEnabled)
         ? 1
         : 0
       : 0
     const enabled = Object.prototype.hasOwnProperty.call(form, 'enabled')
-      ? toBoolean(form.enabled, false)
+      ? parseFormCheckbox(form.enabled)
         ? 1
         : 0
       : 0
@@ -2889,12 +2898,12 @@ admin.post('/actions/agents/update', async (c) => {
     const testMessage =
       safeString(typeof form.testMessage === 'string' ? form.testMessage : null) ?? existing.test_message
     const conversationEnabled = Object.prototype.hasOwnProperty.call(form, 'conversationEnabled')
-      ? toBoolean(form.conversationEnabled, false)
+      ? parseFormCheckbox(form.conversationEnabled)
         ? 1
         : 0
       : 0
     const enabled = Object.prototype.hasOwnProperty.call(form, 'enabled')
-      ? toBoolean(form.enabled, false)
+      ? parseFormCheckbox(form.enabled)
         ? 1
         : 0
       : 0
