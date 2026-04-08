@@ -120,6 +120,95 @@ function toCsvCell(value: unknown): string {
 
 type ControlEntityType = 'campaign' | 'journey'
 type ControlDetailLevel = 'summary' | 'operations' | 'full'
+type AgentChannel = 'telegram' | 'whatsapp' | 'email' | 'custom'
+
+type AdminAgentConfigRow = {
+  id: string
+  name: string
+  slug: string
+  channel: AgentChannel
+  description: string | null
+  inbound_webhook_url: string | null
+  dispatch_webhook_url: string | null
+  test_contact: string | null
+  test_message: string | null
+  conversation_enabled: number
+  ai_model: string
+  max_reply_chars: number
+  prompt_target_id: string | null
+  system_prompt: string | null
+  opening_message: string | null
+  stop_keywords: string | null
+  enabled: number
+  created_at: string
+  updated_at: string
+}
+
+function normalizeAgentChannel(value: string | null): AgentChannel {
+  if (value === 'telegram' || value === 'whatsapp' || value === 'email' || value === 'custom') {
+    return value
+  }
+  return 'telegram'
+}
+
+function buildAgentSlug(name: string): string {
+  return name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64)
+}
+
+async function ensureAdminAgentConfigsTable(env: Bindings): Promise<void> {
+  await env.DB.prepare(
+    `CREATE TABLE IF NOT EXISTS admin_agent_configs (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      slug TEXT NOT NULL UNIQUE,
+      channel TEXT NOT NULL DEFAULT 'telegram' CHECK (channel IN ('telegram', 'whatsapp', 'email', 'custom')),
+      description TEXT,
+      inbound_webhook_url TEXT,
+      dispatch_webhook_url TEXT,
+      test_contact TEXT,
+      test_message TEXT,
+      conversation_enabled INTEGER NOT NULL DEFAULT 1 CHECK (conversation_enabled IN (0, 1)),
+      ai_model TEXT NOT NULL DEFAULT '@cf/meta/llama-3-8b-instruct',
+      max_reply_chars INTEGER NOT NULL DEFAULT 320,
+      prompt_target_id TEXT,
+      system_prompt TEXT,
+      opening_message TEXT,
+      stop_keywords TEXT,
+      enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`
+  ).run()
+
+  await env.DB.prepare(
+    'CREATE INDEX IF NOT EXISTS idx_admin_agent_configs_channel_enabled ON admin_agent_configs(channel, enabled)'
+  ).run()
+}
+
+async function listAdminAgentConfigs(env: Bindings): Promise<AdminAgentConfigRow[]> {
+  await ensureAdminAgentConfigsTable(env)
+  const rows = await env.DB.prepare(
+    'SELECT * FROM admin_agent_configs ORDER BY enabled DESC, updated_at DESC, created_at DESC LIMIT 200'
+  ).all<AdminAgentConfigRow>()
+  return rows.results ?? []
+}
+
+async function getAdminAgentConfigById(
+  env: Bindings,
+  id: string
+): Promise<AdminAgentConfigRow | null> {
+  await ensureAdminAgentConfigsTable(env)
+  const row = await env.DB.prepare('SELECT * FROM admin_agent_configs WHERE id = ?')
+    .bind(id)
+    .first<AdminAgentConfigRow>()
+  return row ?? null
+}
 
 function normalizeControlType(value: string | null): ControlEntityType {
   return value === 'journey' ? 'journey' : 'campaign'
@@ -214,6 +303,18 @@ function buildAdminServiceRedirect(
   params.set('kind', kind)
   if (sessionId) params.set('serviceSessionId', sessionId)
   return `/admin?${params.toString()}#service-agent`
+}
+
+function buildAdminAgentsRedirect(
+  notice: string,
+  kind: 'success' | 'error',
+  agentConfigId?: string | null
+): string {
+  const params = new URLSearchParams()
+  params.set('notice', notice)
+  params.set('kind', kind)
+  if (agentConfigId) params.set('agentConfigId', agentConfigId)
+  return `/admin?${params.toString()}#agents`
 }
 
 function normalizeNewsletterContact(value: unknown): string | null {
@@ -443,7 +544,9 @@ admin.get('/', async (c) => {
   const unauthorized = await ensureAdminSession(c)
   if (unauthorized) return c.redirect('/admin/login', 302)
 
-  const [overview, campaigns, decisions, users, whatsappIntegration, emailIntegration, telegramIntegration, serviceAgentConfig, newsletterAgentConfig, journeys, newsletterOverview, serviceOverview] = await Promise.all([
+  await ensureAdminAgentConfigsTable(c.env)
+
+  const [overview, campaigns, decisions, users, whatsappIntegration, emailIntegration, telegramIntegration, serviceAgentConfig, newsletterAgentConfig, journeys, newsletterOverview, serviceOverview, agentConfigs] = await Promise.all([
     getOverviewMetrics(c.env),
     c.env.DB.prepare(
       'SELECT id, name, channel, status, updated_at FROM campaigns ORDER BY updated_at DESC LIMIT 30'
@@ -462,6 +565,7 @@ admin.get('/', async (c) => {
     listJourneys(c.env),
     getNewsletterAgentOverview(c.env, 20),
     getServiceAgentOverview(c.env, 20),
+    listAdminAgentConfigs(c.env),
   ])
 
   // Fetch enrollment counts for each journey
@@ -750,6 +854,34 @@ admin.get('/', async (c) => {
   const defaultServiceSessionId = serviceOverview.recentSessions[0]?.id ?? null
   const focusedServiceSessionId = requestedServiceSessionId ?? defaultServiceSessionId
 
+  const requestedAgentConfigId = safeString(c.req.query('agentConfigId'))
+  const selectedAgentConfigCore =
+    agentConfigs.find((item) => item.id === requestedAgentConfigId) ?? agentConfigs[0] ?? null
+
+  const selectedAgentConfig = selectedAgentConfigCore
+    ? {
+        id: selectedAgentConfigCore.id,
+        name: selectedAgentConfigCore.name,
+        slug: selectedAgentConfigCore.slug,
+        channel: selectedAgentConfigCore.channel,
+        description: selectedAgentConfigCore.description,
+        inboundWebhookUrl: selectedAgentConfigCore.inbound_webhook_url,
+        dispatchWebhookUrl: selectedAgentConfigCore.dispatch_webhook_url,
+        testContact: selectedAgentConfigCore.test_contact,
+        testMessage: selectedAgentConfigCore.test_message,
+        conversationEnabled: selectedAgentConfigCore.conversation_enabled === 1,
+        aiModel: selectedAgentConfigCore.ai_model,
+        maxReplyChars: toNumber(selectedAgentConfigCore.max_reply_chars),
+        promptTargetId: selectedAgentConfigCore.prompt_target_id,
+        systemPrompt: selectedAgentConfigCore.system_prompt,
+        openingMessage: selectedAgentConfigCore.opening_message,
+        stopKeywords: selectedAgentConfigCore.stop_keywords,
+        enabled: selectedAgentConfigCore.enabled === 1,
+        createdAt: selectedAgentConfigCore.created_at,
+        updatedAt: selectedAgentConfigCore.updated_at,
+      }
+    : null
+
   let focusedServiceSession: {
     id: string
     userId: string | null
@@ -918,6 +1050,23 @@ admin.get('/', async (c) => {
         selectedMessages: focusedServiceMessages,
         appointments: focusedServiceAppointments,
         quotes: focusedServiceQuotes,
+      },
+      agentConfigs: {
+        selectedId: selectedAgentConfig?.id ?? null,
+        items: agentConfigs.map((item) => ({
+          id: item.id,
+          name: item.name,
+          slug: item.slug,
+          channel: item.channel,
+          description: item.description,
+          enabled: item.enabled === 1,
+          conversationEnabled: item.conversation_enabled === 1,
+          aiModel: item.ai_model,
+          maxReplyChars: toNumber(item.max_reply_chars),
+          promptTargetId: item.prompt_target_id,
+          updatedAt: item.updated_at,
+        })),
+        selected: selectedAgentConfig,
       },
     })
   )
@@ -2575,6 +2724,288 @@ admin.post('/actions/integration/telegram/test', async (c) => {
   } catch (error) {
     return c.redirect(
       buildAdminRedirect(`Falha ao executar teste da integracao Telegram: ${String(error)}`, 'error'),
+      302
+    )
+  }
+})
+
+// Action - Create Agent configuration
+admin.post('/actions/agents/create', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    await ensureAdminAgentConfigsTable(c.env)
+    const form = await c.req.parseBody()
+
+    const name = safeString(typeof form.name === 'string' ? form.name : null)
+    if (!name) {
+      return c.redirect(buildAdminAgentsRedirect('Nome do agente e obrigatorio.', 'error'), 302)
+    }
+
+    const slugInput = safeString(typeof form.slug === 'string' ? form.slug : null)
+    const slug = buildAgentSlug(slugInput || name)
+    if (!slug) {
+      return c.redirect(
+        buildAdminAgentsRedirect('Slug invalido. Use letras e numeros.', 'error'),
+        302
+      )
+    }
+
+    const channel = normalizeAgentChannel(
+      safeString(typeof form.channel === 'string' ? form.channel : null)
+    )
+    const description = safeString(typeof form.description === 'string' ? form.description : null)
+    const inboundWebhookUrl = safeString(
+      typeof form.inboundWebhookUrl === 'string' ? form.inboundWebhookUrl : null
+    )
+    const dispatchWebhookUrl = safeString(
+      typeof form.dispatchWebhookUrl === 'string' ? form.dispatchWebhookUrl : null
+    )
+    const testContact = safeString(typeof form.testContact === 'string' ? form.testContact : null)
+    const testMessage =
+      safeString(typeof form.testMessage === 'string' ? form.testMessage : null) ??
+      'Mensagem de teste do agente.'
+    const conversationEnabled = Object.prototype.hasOwnProperty.call(form, 'conversationEnabled')
+      ? toBoolean(form.conversationEnabled, false)
+        ? 1
+        : 0
+      : 0
+    const enabled = Object.prototype.hasOwnProperty.call(form, 'enabled')
+      ? toBoolean(form.enabled, false)
+        ? 1
+        : 0
+      : 0
+    const aiModel =
+      safeString(typeof form.aiModel === 'string' ? form.aiModel : null) ?? DEFAULT_AI_MODEL
+    const maxReplyChars = Math.max(
+      80,
+      Math.min(
+        4000,
+        Math.round(
+          toNumber(typeof form.maxReplyChars === 'string' ? form.maxReplyChars : null) || 320
+        )
+      )
+    )
+    const promptTargetId = safeString(
+      typeof form.promptTargetId === 'string' ? form.promptTargetId : null
+    )
+    const systemPrompt = safeString(typeof form.systemPrompt === 'string' ? form.systemPrompt : null)
+    const openingMessage = safeString(
+      typeof form.openingMessage === 'string' ? form.openingMessage : null
+    )
+    const stopKeywords = safeString(typeof form.stopKeywords === 'string' ? form.stopKeywords : null)
+
+    const id = crypto.randomUUID()
+    const nowIso = new Date().toISOString()
+
+    await c.env.DB.prepare(
+      `INSERT INTO admin_agent_configs (
+        id, name, slug, channel, description, inbound_webhook_url, dispatch_webhook_url,
+        test_contact, test_message, conversation_enabled, ai_model, max_reply_chars,
+        prompt_target_id, system_prompt, opening_message, stop_keywords, enabled, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        id,
+        name,
+        slug,
+        channel,
+        description,
+        inboundWebhookUrl,
+        dispatchWebhookUrl,
+        testContact,
+        testMessage,
+        conversationEnabled,
+        aiModel,
+        maxReplyChars,
+        promptTargetId,
+        systemPrompt,
+        openingMessage,
+        stopKeywords,
+        enabled,
+        nowIso,
+        nowIso
+      )
+      .run()
+
+    return c.redirect(buildAdminAgentsRedirect(`Agente criado: ${name}`, 'success', id), 302)
+  } catch (error) {
+    const detail = String(error)
+    const isDuplicate = detail.toLowerCase().includes('unique')
+    return c.redirect(
+      buildAdminAgentsRedirect(
+        isDuplicate
+          ? 'Slug ja existe. Use outro identificador para o agente.'
+          : `Falha ao criar agente: ${detail}`,
+        'error'
+      ),
+      302
+    )
+  }
+})
+
+// Action - Update Agent configuration
+admin.post('/actions/agents/update', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    await ensureAdminAgentConfigsTable(c.env)
+    const form = await c.req.parseBody()
+    const agentConfigId = safeString(typeof form.agentConfigId === 'string' ? form.agentConfigId : null)
+    if (!agentConfigId) {
+      return c.redirect(buildAdminAgentsRedirect('Agente nao informado para edicao.', 'error'), 302)
+    }
+
+    const existing = await getAdminAgentConfigById(c.env, agentConfigId)
+    if (!existing) {
+      return c.redirect(buildAdminAgentsRedirect('Agente nao encontrado.', 'error'), 302)
+    }
+
+    const name = safeString(typeof form.name === 'string' ? form.name : null) ?? existing.name
+    const slugInput = safeString(typeof form.slug === 'string' ? form.slug : null) ?? existing.slug
+    const slug = buildAgentSlug(slugInput || name)
+    if (!slug) {
+      return c.redirect(
+        buildAdminAgentsRedirect('Slug invalido. Use letras e numeros.', 'error', agentConfigId),
+        302
+      )
+    }
+
+    const channel = normalizeAgentChannel(
+      safeString(typeof form.channel === 'string' ? form.channel : null) ?? existing.channel
+    )
+    const description =
+      safeString(typeof form.description === 'string' ? form.description : null) ?? existing.description
+    const inboundWebhookUrl =
+      safeString(typeof form.inboundWebhookUrl === 'string' ? form.inboundWebhookUrl : null) ??
+      existing.inbound_webhook_url
+    const dispatchWebhookUrl =
+      safeString(typeof form.dispatchWebhookUrl === 'string' ? form.dispatchWebhookUrl : null) ??
+      existing.dispatch_webhook_url
+    const testContact =
+      safeString(typeof form.testContact === 'string' ? form.testContact : null) ?? existing.test_contact
+    const testMessage =
+      safeString(typeof form.testMessage === 'string' ? form.testMessage : null) ?? existing.test_message
+    const conversationEnabled = Object.prototype.hasOwnProperty.call(form, 'conversationEnabled')
+      ? toBoolean(form.conversationEnabled, false)
+        ? 1
+        : 0
+      : 0
+    const enabled = Object.prototype.hasOwnProperty.call(form, 'enabled')
+      ? toBoolean(form.enabled, false)
+        ? 1
+        : 0
+      : 0
+    const aiModel =
+      safeString(typeof form.aiModel === 'string' ? form.aiModel : null) ?? existing.ai_model
+    const maxReplyChars = Math.max(
+      80,
+      Math.min(
+        4000,
+        Math.round(
+          toNumber(typeof form.maxReplyChars === 'string' ? form.maxReplyChars : null) ||
+            toNumber(existing.max_reply_chars) ||
+            320
+        )
+      )
+    )
+    const promptTargetId =
+      safeString(typeof form.promptTargetId === 'string' ? form.promptTargetId : null) ??
+      existing.prompt_target_id
+    const systemPrompt =
+      safeString(typeof form.systemPrompt === 'string' ? form.systemPrompt : null) ??
+      existing.system_prompt
+    const openingMessage =
+      safeString(typeof form.openingMessage === 'string' ? form.openingMessage : null) ??
+      existing.opening_message
+    const stopKeywords =
+      safeString(typeof form.stopKeywords === 'string' ? form.stopKeywords : null) ??
+      existing.stop_keywords
+
+    await c.env.DB.prepare(
+      `UPDATE admin_agent_configs
+       SET name = ?, slug = ?, channel = ?, description = ?, inbound_webhook_url = ?,
+           dispatch_webhook_url = ?, test_contact = ?, test_message = ?, conversation_enabled = ?,
+           ai_model = ?, max_reply_chars = ?, prompt_target_id = ?, system_prompt = ?,
+           opening_message = ?, stop_keywords = ?, enabled = ?, updated_at = ?
+       WHERE id = ?`
+    )
+      .bind(
+        name,
+        slug,
+        channel,
+        description,
+        inboundWebhookUrl,
+        dispatchWebhookUrl,
+        testContact,
+        testMessage,
+        conversationEnabled,
+        aiModel,
+        maxReplyChars,
+        promptTargetId,
+        systemPrompt,
+        openingMessage,
+        stopKeywords,
+        enabled,
+        new Date().toISOString(),
+        agentConfigId
+      )
+      .run()
+
+    return c.redirect(buildAdminAgentsRedirect(`Agente atualizado: ${name}`, 'success', agentConfigId), 302)
+  } catch (error) {
+    const detail = String(error)
+    const isDuplicate = detail.toLowerCase().includes('unique')
+    return c.redirect(
+      buildAdminAgentsRedirect(
+        isDuplicate
+          ? 'Slug ja existe. Use outro identificador para o agente.'
+          : `Falha ao atualizar agente: ${detail}`,
+        'error'
+      ),
+      302
+    )
+  }
+})
+
+// Action - Toggle Agent active status
+admin.post('/actions/agents/toggle', async (c) => {
+  const unauthorized = await ensureAdminSession(c)
+  if (unauthorized) return c.redirect('/admin/login', 302)
+
+  try {
+    await ensureAdminAgentConfigsTable(c.env)
+    const form = await c.req.parseBody()
+    const agentConfigId = safeString(typeof form.agentConfigId === 'string' ? form.agentConfigId : null)
+    if (!agentConfigId) {
+      return c.redirect(buildAdminAgentsRedirect('Agente nao informado.', 'error'), 302)
+    }
+
+    const existing = await getAdminAgentConfigById(c.env, agentConfigId)
+    if (!existing) {
+      return c.redirect(buildAdminAgentsRedirect('Agente nao encontrado.', 'error'), 302)
+    }
+
+    const nextEnabled = existing.enabled === 1 ? 0 : 1
+    await c.env.DB.prepare(
+      'UPDATE admin_agent_configs SET enabled = ?, updated_at = ? WHERE id = ?'
+    )
+      .bind(nextEnabled, new Date().toISOString(), agentConfigId)
+      .run()
+
+    return c.redirect(
+      buildAdminAgentsRedirect(
+        nextEnabled === 1 ? 'Agente ativado com sucesso.' : 'Agente desativado com sucesso.',
+        'success',
+        agentConfigId
+      ),
+      302
+    )
+  } catch (error) {
+    return c.redirect(
+      buildAdminAgentsRedirect(`Falha ao alterar status do agente: ${String(error)}`, 'error'),
       302
     )
   }

@@ -213,6 +213,28 @@ CREATE TABLE IF NOT EXISTS service_quotes (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
 );
 
+CREATE TABLE IF NOT EXISTS admin_agent_configs (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  channel TEXT NOT NULL DEFAULT 'telegram' CHECK (channel IN ('telegram', 'whatsapp', 'email', 'custom')),
+  description TEXT,
+  inbound_webhook_url TEXT,
+  dispatch_webhook_url TEXT,
+  test_contact TEXT,
+  test_message TEXT,
+  conversation_enabled INTEGER NOT NULL DEFAULT 1 CHECK (conversation_enabled IN (0, 1)),
+  ai_model TEXT NOT NULL DEFAULT '@cf/meta/llama-3-8b-instruct',
+  max_reply_chars INTEGER NOT NULL DEFAULT 320,
+  prompt_target_id TEXT,
+  system_prompt TEXT,
+  opening_message TEXT,
+  stop_keywords TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_users_referral_code ON users(referral_code);
 CREATE INDEX IF NOT EXISTS idx_users_last_active ON users(last_active);
 CREATE INDEX IF NOT EXISTS idx_users_marketing_opt_in ON users(marketing_opt_in);
@@ -230,3 +252,4 @@ CREATE INDEX IF NOT EXISTS idx_service_sessions_status_updated ON service_conver
 CREATE INDEX IF NOT EXISTS idx_service_messages_session_created ON service_conversation_messages(session_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_service_appointments_session_status ON service_appointments(session_id, status, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_service_quotes_session_status ON service_quotes(session_id, status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_admin_agent_configs_channel_enabled ON admin_agent_configs(channel, enabled);

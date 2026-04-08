@@ -257,6 +257,43 @@ export function renderAdminDashboardPage(data: {
       updatedAt: string
     }>
   }
+  agentConfigs: {
+    selectedId: string | null
+    items: Array<{
+      id: string
+      name: string
+      slug: string
+      channel: string
+      description: string | null
+      enabled: boolean
+      conversationEnabled: boolean
+      aiModel: string
+      maxReplyChars: number
+      promptTargetId: string | null
+      updatedAt: string | null
+    }>
+    selected: {
+      id: string
+      name: string
+      slug: string
+      channel: string
+      description: string | null
+      inboundWebhookUrl: string | null
+      dispatchWebhookUrl: string | null
+      testContact: string | null
+      testMessage: string | null
+      conversationEnabled: boolean
+      aiModel: string
+      maxReplyChars: number
+      promptTargetId: string | null
+      systemPrompt: string | null
+      openingMessage: string | null
+      stopKeywords: string | null
+      enabled: boolean
+      createdAt: string
+      updatedAt: string
+    } | null
+  }
 }): string {
   const noticeHtml =
     data.notice && data.noticeKind
@@ -326,6 +363,21 @@ export function renderAdminDashboardPage(data: {
         </tr>`
     )
     .join('')
+
+  const agentRowsHtml = data.agentConfigs.items
+    .map((agent) => {
+      const isActive = data.agentConfigs.selectedId === agent.id
+      return `<tr>
+        <td><a href="/admin?agentConfigId=${encodeURIComponent(agent.id)}#agents" class="font-bold ${isActive ? 'text-primary' : ''}">${escapeHtml(agent.name)}</a></td>
+        <td><code class="compact-code">${escapeHtml(agent.slug)}</code></td>
+        <td><span class="badge badge-outline">${escapeHtml(agent.channel)}</span></td>
+        <td><span class="badge ${agent.enabled ? 'badge-success' : 'badge-warn'}">${agent.enabled ? 'ativo' : 'inativo'}</span></td>
+        <td><span class="text-xs opacity-60">${escapeHtml(agent.updatedAt ? new Date(agent.updatedAt).toLocaleString('pt-BR') : '-')}</span></td>
+      </tr>`
+    })
+    .join('')
+
+  const selectedAgent = data.agentConfigs.selected
 
   const isJourneyControl = data.controlPanel.selectedType === 'journey'
   const showOperationalControls = data.controlPanel.detailLevel !== 'summary'
@@ -1706,6 +1758,10 @@ export function renderAdminDashboardPage(data: {
         <svg fill="currentColor" viewBox="0 0 20 20"><path d="M2 5a2 2 0 012-2h12a2 2 0 012 2v8a2 2 0 01-2 2h-3l-3 3-3-3H4a2 2 0 01-2-2V5zm4 2a1 1 0 000 2h8a1 1 0 100-2H6zm0 4a1 1 0 100 2h5a1 1 0 100-2H6z"></path></svg>
         <span>Agente Servicos</span>
       </a>
+      <a href="#" class="nav-item" data-view="agents">
+        <svg fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a4 4 0 00-4 4v1H5a2 2 0 00-2 2v6a3 3 0 003 3h8a3 3 0 003-3V9a2 2 0 00-2-2h-1V6a4 4 0 00-4-4zm2 5H8V6a2 2 0 114 0v1z"></path></svg>
+        <span>Agentes</span>
+      </a>
       <a href="#" class="nav-item" data-view="journeys">
         <svg fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M3 3a1 1 0 000 2v8a2 2 0 002 2h2.586l-1.293 1.293a1 1 0 101.414 1.414L10 15.414l2.293 2.293a1 1 0 001.414-1.414L12.414 15H15a2 2 0 002-2V5a1 1 0 100-2H3zm11.707 4.707a1 1 0 00-1.414-1.414L10 9.586 8.707 8.293a1 1 0 00-1.414 0l-2 2a1 1 0 101.414 1.414L8 10.414l1.293 1.293a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
         <span>Jornadas AI</span>
@@ -2672,6 +2728,118 @@ export function renderAdminDashboardPage(data: {
       </div>
     </div>
 
+    <!-- VIEW: Agents -->
+    <div id="view-agents" class="view-content">
+      <div class="panel-grid" style="grid-template-columns: minmax(320px, 1fr) 1.4fr;">
+        <section class="panel">
+          <div class="panel-header">
+            <h3 class="panel-title">Agentes Cadastrados</h3>
+            <span class="badge badge-outline">${data.agentConfigs.items.length}</span>
+          </div>
+          <p class="text-sm opacity-60 mb-6">Aqui voce cria e mantém agentes conversacionais como o modelo do Telegram (Veio).</p>
+          <div class="table-container" style="max-height: 420px; overflow-y: auto;">
+            <table>
+              <thead>
+                <tr><th>Nome</th><th>Slug</th><th>Canal</th><th>Status</th><th>Atualizado</th></tr>
+              </thead>
+              <tbody>
+                ${agentRowsHtml || '<tr><td colspan="5" class="opacity-40 text-center py-8">Nenhum agente cadastrado ainda.</td></tr>'}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-header">
+            <h3 class="panel-title">Criar Novo Agente</h3>
+            <span class="badge badge-glass">modelo base</span>
+          </div>
+          <form method="post" action="/admin/actions/agents/create">
+            <div class="panel-grid" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+              <div class="form-group"><label class="input-label">Nome</label><input class="input-control" name="name" placeholder="Ex: Veio Telegram" required /></div>
+              <div class="form-group"><label class="input-label">Slug</label><input class="input-control" name="slug" placeholder="veio-telegram" /></div>
+              <div class="form-group">
+                <label class="input-label">Canal</label>
+                <select class="input-control" name="channel">
+                  <option value="telegram">telegram</option>
+                  <option value="whatsapp">whatsapp</option>
+                  <option value="email">email</option>
+                  <option value="custom">custom</option>
+                </select>
+              </div>
+              <div class="form-group"><label class="input-label">Prompt Target</label><input class="input-control" name="promptTargetId" value="flow:telegram_agent_reply" /></div>
+            </div>
+            <div class="form-group"><label class="input-label">Descricao</label><textarea class="input-control" name="description" rows="2" placeholder="Escopo e comportamento esperado do agente"></textarea></div>
+            <div class="panel-grid" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+              <div class="form-group"><label class="input-label">Webhook Inbound</label><input class="input-control" name="inboundWebhookUrl" placeholder="https://dominio/webhooks/..." /></div>
+              <div class="form-group"><label class="input-label">Webhook Dispatch</label><input class="input-control" name="dispatchWebhookUrl" placeholder="https://dominio/dispatch/..." /></div>
+              <div class="form-group"><label class="input-label">Contato de Teste</label><input class="input-control" name="testContact" placeholder="chat id / telefone / email" /></div>
+              <div class="form-group"><label class="input-label">Max chars</label><input class="input-control" type="number" name="maxReplyChars" value="320" min="80" max="4000" /></div>
+            </div>
+            <div class="form-group"><label class="input-label">Modelo AI</label><input class="input-control" name="aiModel" value="${escapeHtml(DEFAULT_AI_MODEL)}" /></div>
+            <div class="form-group"><label class="input-label">Mensagem de teste</label><textarea class="input-control" name="testMessage" rows="2">Mensagem de teste do agente.</textarea></div>
+            <div class="form-group"><label class="input-label">System Prompt (opcional)</label><textarea class="input-control" name="systemPrompt" rows="4" placeholder="Instrucoes internas deste agente"></textarea></div>
+            <div class="form-group"><label class="input-label">Mensagem de abertura (opcional)</label><textarea class="input-control" name="openingMessage" rows="2" placeholder="Primeira mensagem sugerida"></textarea></div>
+            <div class="form-group"><label class="input-label">Stop keywords (csv)</label><input class="input-control" name="stopKeywords" placeholder="sair,parar,stop" /></div>
+            <div class="panel-grid" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+              <label class="checkbox-label"><input type="checkbox" name="conversationEnabled" checked /><span>Conversa ativa</span></label>
+              <label class="checkbox-label"><input type="checkbox" name="enabled" checked /><span>Agente ativo</span></label>
+            </div>
+            <button type="submit" class="btn btn-primary" style="width:auto; margin-top:10px;">Criar Agente</button>
+          </form>
+        </section>
+      </div>
+
+      <section class="panel" style="margin-top: 20px;">
+        <div class="panel-header">
+          <h3 class="panel-title">Editar Agente Selecionado</h3>
+          <span class="badge ${selectedAgent?.enabled ? 'badge-success' : 'badge-warn'}">${selectedAgent ? (selectedAgent.enabled ? 'ativo' : 'inativo') : 'nenhum'}</span>
+        </div>
+        ${selectedAgent ? `
+          <form method="post" action="/admin/actions/agents/update">
+            <input type="hidden" name="agentConfigId" value="${escapeHtml(selectedAgent.id)}" />
+            <div class="panel-grid" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+              <div class="form-group"><label class="input-label">Nome</label><input class="input-control" name="name" value="${escapeHtml(selectedAgent.name)}" required /></div>
+              <div class="form-group"><label class="input-label">Slug</label><input class="input-control" name="slug" value="${escapeHtml(selectedAgent.slug)}" required /></div>
+              <div class="form-group">
+                <label class="input-label">Canal</label>
+                <select class="input-control" name="channel">
+                  <option value="telegram" ${selectedAgent.channel === 'telegram' ? 'selected' : ''}>telegram</option>
+                  <option value="whatsapp" ${selectedAgent.channel === 'whatsapp' ? 'selected' : ''}>whatsapp</option>
+                  <option value="email" ${selectedAgent.channel === 'email' ? 'selected' : ''}>email</option>
+                  <option value="custom" ${selectedAgent.channel === 'custom' ? 'selected' : ''}>custom</option>
+                </select>
+              </div>
+              <div class="form-group"><label class="input-label">Prompt Target</label><input class="input-control" name="promptTargetId" value="${escapeHtml(selectedAgent.promptTargetId || '')}" /></div>
+            </div>
+            <div class="form-group"><label class="input-label">Descricao</label><textarea class="input-control" name="description" rows="2">${escapeHtml(selectedAgent.description || '')}</textarea></div>
+            <div class="panel-grid" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+              <div class="form-group"><label class="input-label">Webhook Inbound</label><input class="input-control" name="inboundWebhookUrl" value="${escapeHtml(selectedAgent.inboundWebhookUrl || '')}" /></div>
+              <div class="form-group"><label class="input-label">Webhook Dispatch</label><input class="input-control" name="dispatchWebhookUrl" value="${escapeHtml(selectedAgent.dispatchWebhookUrl || '')}" /></div>
+              <div class="form-group"><label class="input-label">Contato de Teste</label><input class="input-control" name="testContact" value="${escapeHtml(selectedAgent.testContact || '')}" /></div>
+              <div class="form-group"><label class="input-label">Max chars</label><input class="input-control" type="number" name="maxReplyChars" value="${selectedAgent.maxReplyChars}" min="80" max="4000" /></div>
+            </div>
+            <div class="form-group"><label class="input-label">Modelo AI</label><input class="input-control" name="aiModel" value="${escapeHtml(selectedAgent.aiModel)}" /></div>
+            <div class="form-group"><label class="input-label">Mensagem de teste</label><textarea class="input-control" name="testMessage" rows="2">${escapeHtml(selectedAgent.testMessage || '')}</textarea></div>
+            <div class="form-group"><label class="input-label">System Prompt</label><textarea class="input-control" name="systemPrompt" rows="4">${escapeHtml(selectedAgent.systemPrompt || '')}</textarea></div>
+            <div class="form-group"><label class="input-label">Mensagem de abertura</label><textarea class="input-control" name="openingMessage" rows="2">${escapeHtml(selectedAgent.openingMessage || '')}</textarea></div>
+            <div class="form-group"><label class="input-label">Stop keywords (csv)</label><input class="input-control" name="stopKeywords" value="${escapeHtml(selectedAgent.stopKeywords || '')}" /></div>
+            <div class="panel-grid" style="grid-template-columns: 1fr 1fr; gap: 12px;">
+              <label class="checkbox-label"><input type="checkbox" name="conversationEnabled" ${selectedAgent.conversationEnabled ? 'checked' : ''} /><span>Conversa ativa</span></label>
+              <label class="checkbox-label"><input type="checkbox" name="enabled" ${selectedAgent.enabled ? 'checked' : ''} /><span>Agente ativo</span></label>
+            </div>
+            <div class="flex items-center gap-3" style="margin-top: 12px;">
+              <button type="submit" class="btn btn-primary" style="width:auto;">Salvar Edicao</button>
+            </div>
+          </form>
+          <form method="post" action="/admin/actions/agents/toggle" style="margin-top: 10px;">
+            <input type="hidden" name="agentConfigId" value="${escapeHtml(selectedAgent.id)}" />
+            <button type="submit" class="btn btn-glass" style="width:auto;">${selectedAgent.enabled ? 'Desativar Agente' : 'Ativar Agente'}</button>
+          </form>
+        ` : '<div class="text-sm opacity-60">Selecione um agente na tabela para editar configuracoes.</div>'}
+      </section>
+    </div>
+
     <!-- VIEW: Playground AI -->
     <div id="view-playground" class="view-content">
       <div class="panel-grid" style="grid-template-columns: 1fr 2fr; align-items: start;">
@@ -3156,6 +3324,7 @@ export function renderAdminDashboardPage(data: {
       'control-room': { title: 'Control Room', subtitle: 'Selecione campanha ou jornada, visualize diagrama e execute ações em tempo real.' },
       'newsletter-agent': { title: 'Agente Newsletter', subtitle: 'Inicie abordagens por contato e audite histórico, sentimento e feedback em uma única tela.' },
       'service-agent': { title: 'Agente de Servicos', subtitle: 'Gerencie conversas de agendamento, orcamento e duvidas com rastreabilidade completa.' },
+      'agents': { title: 'Configuracao de Agentes', subtitle: 'Crie, edite e ative agentes multicanal usando o modelo do Telegram como base.' },
       'journeys': { title: 'Jornadas AI', subtitle: 'Crie e gerencie jornadas conversacionais com persona AI inteligente.' },
       'ai-prompts': { title: 'Engenharia de Prompt', subtitle: 'Versionamento, Rollback e Auditoria Oficial.' },
       'playground': { title: 'Playground AI', subtitle: 'Ambiente seguro para simular e calibrar o funil de IA.' },
@@ -4214,4 +4383,3 @@ export function renderAdminDashboardPage(data: {
 </body>
 </html>`
 }
-
