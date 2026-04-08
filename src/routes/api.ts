@@ -1192,6 +1192,19 @@ api.post('/journey/:journeyId/user/:userId/open', async (c) => {
 // -- Telegram Webhook for Conversational Agent -----------------------------
 
 api.post('/webhooks/telegram/inbound', async (c) => {
+  const expectedWebhookSecret = safeString(c.env.TELEGRAM_WEBHOOK_SECRET)
+  if (expectedWebhookSecret) {
+    const providedWebhookSecret = safeString(
+      c.req.header('x-telegram-bot-api-secret-token') ?? null
+    )
+    if (
+      !providedWebhookSecret ||
+      !constantTimeEqual(providedWebhookSecret, expectedWebhookSecret)
+    ) {
+      return c.json({ error: 'Unauthorized' }, 401)
+    }
+  }
+
   const body = (await c.req.json().catch(() => null)) as TelegramWebhookUpdate | null
 
   if (!body) return c.json({ error: 'Invalid JSON body' }, 400)

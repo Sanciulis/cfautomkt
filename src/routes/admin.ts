@@ -2512,6 +2512,9 @@ admin.post('/actions/integration/telegram/set-webhook', async (c) => {
       body: JSON.stringify({
         url: inboundValidation.normalizedUrl,
         allowed_updates: ['message'],
+        ...(safeString(c.env.TELEGRAM_WEBHOOK_SECRET)
+          ? { secret_token: safeString(c.env.TELEGRAM_WEBHOOK_SECRET) }
+          : {}),
       }),
     })
 

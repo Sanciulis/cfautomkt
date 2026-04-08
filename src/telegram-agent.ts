@@ -70,6 +70,23 @@ const OPT_OUT_HINTS = [
 
 const REACTIVATE_HINTS = ['/start', 'voltar', 'retomar', 'reiniciar', 'recomecar']
 
+function shouldIgnoreTelegramInboundText(text: string): boolean {
+  const normalized = text.trim().toLowerCase()
+  if (!normalized) return true
+
+  // Inline bot mentions like @otherbot are typically not for this assistant.
+  if (normalized.startsWith('@')) return true
+
+  // Ignore slash commands except explicit reactivation/start commands.
+  const isSlashCommand = normalized.startsWith('/')
+  if (isSlashCommand) {
+    const allowed = REACTIVATE_HINTS.some((hint) => normalized.startsWith(hint))
+    return !allowed
+  }
+
+  return false
+}
+
 function analyzeTelegramSentiment(text: string): TelegramSentiment {
   const lowerText = text.toLowerCase()
   let score = 0.5
@@ -249,6 +266,10 @@ export async function handleTelegramWebhook(
   const userMessage = message.text?.trim()
 
   if (!userMessage) {
+    return { shouldReply: false }
+  }
+
+  if (shouldIgnoreTelegramInboundText(userMessage)) {
     return { shouldReply: false }
   }
 

@@ -66,6 +66,7 @@ export type Bindings = {
   RESEND_API_KEY?: string
   RESEND_DEFAULT_FROM?: string
   TELEGRAM_BOT_TOKEN?: string
+  TELEGRAM_WEBHOOK_SECRET?: string
 }
 
 export type UserRecord = {
