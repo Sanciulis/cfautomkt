@@ -66,9 +66,9 @@ const OPT_OUT_HINTS = [
   'bloquear',
   'stop',
   'sair',
-  'adeus',
-  'tchau',
 ]
+
+const REACTIVATE_HINTS = ['/start', 'voltar', 'retomar', 'reiniciar', 'recomecar']
 
 function analyzeTelegramSentiment(text: string): TelegramSentiment {
   const lowerText = text.toLowerCase()
@@ -267,8 +267,18 @@ export async function handleTelegramWebhook(
     })
   }
 
-  if (session.status === 'closed' || session.status === 'opt_out') {
+  if (session.status === 'closed') {
     return { shouldReply: false }
+  }
+
+  if (session.status === 'opt_out') {
+    const lowerMessage = userMessage.toLowerCase()
+    const wantsReactivate = REACTIVATE_HINTS.some((hint) => lowerMessage.includes(hint))
+    if (!wantsReactivate) {
+      return { shouldReply: false }
+    }
+
+    await updateTelegramConversationSession(env, session.id, { status: 'active' })
   }
 
   await appendTelegramConversationMessage(env, session.id, {
