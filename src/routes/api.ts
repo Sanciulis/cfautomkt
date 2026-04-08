@@ -1192,6 +1192,17 @@ api.post('/journey/:journeyId/user/:userId/open', async (c) => {
 // -- Telegram Webhook for Conversational Agent -----------------------------
 
 api.post('/webhooks/telegram/inbound', async (c) => {
+  const expectedWebhookQueryToken = safeString(c.env.TELEGRAM_WEBHOOK_QUERY_TOKEN)
+  if (expectedWebhookQueryToken) {
+    const providedWebhookQueryToken = safeString(c.req.query('tgwh'))
+    if (
+      !providedWebhookQueryToken ||
+      !constantTimeEqual(providedWebhookQueryToken, expectedWebhookQueryToken)
+    ) {
+      return c.json({ error: 'Unauthorized' }, 401)
+    }
+  }
+
   const expectedWebhookSecret = safeString(c.env.TELEGRAM_WEBHOOK_SECRET)
   if (expectedWebhookSecret) {
     const providedWebhookSecret = safeString(
@@ -1211,6 +1222,19 @@ api.post('/webhooks/telegram/inbound', async (c) => {
 
   // Get Telegram configuration
   const telegramConfig = await getAdminTelegramIntegrationConfig(c.env)
+  const inboundChatId = safeString(body.message?.chat.id?.toString())
+
+  // Optional hard lock: when testChatId is configured as numeric chat id,
+  // only this chat can receive automated replies from this bot.
+  const configuredTestChatId = safeString(telegramConfig.testChatId)
+  if (
+    configuredTestChatId &&
+    /^[0-9-]+$/.test(configuredTestChatId) &&
+    inboundChatId &&
+    inboundChatId !== configuredTestChatId
+  ) {
+    return c.json({ status: 'chat_not_allowed' }, 200)
+  }
 
   if (!telegramConfig.conversationEnabled) {
     return c.json({ status: 'conversations_disabled' }, 200)

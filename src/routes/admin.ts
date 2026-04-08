@@ -2510,7 +2510,13 @@ admin.post('/actions/integration/telegram/set-webhook', async (c) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        url: inboundValidation.normalizedUrl,
+        url: (() => {
+          const queryToken = safeString(c.env.TELEGRAM_WEBHOOK_QUERY_TOKEN)
+          if (!queryToken) return inboundValidation.normalizedUrl
+          const targetUrl = new URL(inboundValidation.normalizedUrl)
+          targetUrl.searchParams.set('tgwh', queryToken)
+          return targetUrl.toString()
+        })(),
         allowed_updates: ['message'],
         ...(safeString(c.env.TELEGRAM_WEBHOOK_SECRET)
           ? { secret_token: safeString(c.env.TELEGRAM_WEBHOOK_SECRET) }
