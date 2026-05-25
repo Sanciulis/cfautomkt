@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "hono": "^4.0.0",
-    "resend": "^6.9.4"
+    "resend": "^6.12.3"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240117.0",
